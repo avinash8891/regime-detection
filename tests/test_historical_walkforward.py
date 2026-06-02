@@ -126,6 +126,26 @@ def test_historical_walkforward_runner_writes_expected_artifacts(
         "transition_risk_recent_axis_switch_count",
     }.issubset(summary_df.columns)
 
+    # F-019 / §5: every output artifact preserves engine_version, config_version,
+    # as_of_date, run_timestamp, input_archive_path. The immutable per-date JSON is a
+    # pure RegimeOutput, so a sibling provenance sidecar carries the run-metadata pair,
+    # and the summary CSV carries run_timestamp per row.
+    provenance = json.loads(
+        (out_root / "outputs" / "2023-12-14.provenance.json").read_text()
+    )
+    assert {
+        "as_of_date",
+        "engine_version",
+        "config_version",
+        "run_timestamp",
+        "input_archive_path",
+    } <= set(provenance)
+    assert provenance["as_of_date"] == "2023-12-14"
+    assert provenance["run_timestamp"]
+    assert provenance["input_archive_path"].endswith("input_archives/2023-12-14")
+    assert "run_timestamp" in summary_df.columns
+    assert summary_df["run_timestamp"].notna().all()
+
 
 def test_historical_walkforward_supplies_macro_series_for_configured_v2_axes(
     tmp_path: Path,
@@ -153,6 +173,39 @@ def test_historical_walkforward_supplies_macro_series_for_configured_v2_axes(
     payload = json.loads((out_root / "outputs" / "2026-05-13.json").read_text())
     assert payload["credit_funding_state"] is not None
     assert payload["inflation_growth_state"] is not None
+
+    # F-003: the macro_series passed to classify() must also be archived, so the
+    # V2 macro-dependent labels above are reproducible from the per-date archive.
+    # The archived macro must round-trip to exactly the dict the runner consumed.
+    from regime_detection.shadow_storage import load_archived_macro_series
+
+    archive_dir = out_root / "input_archives" / "2026-05-13"
+    macro_archive = archive_dir / "macro_series.parquet"
+    assert macro_archive.exists(), "walk-forward did not archive macro_series"
+    checksums = json.loads((archive_dir / "checksums.json").read_text())
+    assert "macro_series.parquet" in checksums
+    archived_macro = load_archived_macro_series(macro_archive)
+    consumed_macro = mod._load_v2_macro_series(
+        macro_parquet_path=macro_path,
+        pmi_path=None,
+        cpi_nowcast_parquet_path=None,
+        aggregate_forward_eps_weekly_history_parquet_path=None,
+    )
+    assert archived_macro is not None and consumed_macro is not None
+    assert set(archived_macro) == set(consumed_macro)
+    assert {"broad_usd_index", "hy_oas", "ig_bbb_oas"}.issubset(archived_macro)
+
+    # F-001: the as-of v2 daily-OHLCV slice is archived so a walk-forward replay
+    # can recompute the V2 axes; it round-trips to a point-in-time OHLCV frame.
+    from regime_detection.shadow_storage import load_archived_v2_daily
+
+    v2_daily_archive = archive_dir / "v2_daily.parquet"
+    assert v2_daily_archive.exists(), "walk-forward did not archive v2_daily slice"
+    assert "v2_daily.parquet" in checksums
+    archived_v2_daily = load_archived_v2_daily(v2_daily_archive)
+    assert archived_v2_daily is not None
+    assert archived_v2_daily["date"].max() == date(2026, 5, 13)  # no future rows
+    assert "SPY" in set(archived_v2_daily["symbol"])
 
 
 def test_historical_walkforward_runner_records_failures_without_silent_skip(
@@ -284,3 +337,19 @@ def test_historical_walkforward_cli_defaults_event_calendar_to_manifest_data_roo
     args = mod._parse_args()
 
     assert args.event_calendar == data_root / "event_calendar" / "us_events.yaml"
+
+
+def test_build_v2_classify_kwargs_falls_back_to_v1_on_empty_slice() -> None:
+    """CR-009: an empty (non-None) v2_slice — an as-of before the first v2_daily row —
+    degrades to the V1-only path (empty kwargs), not full V2 kwargs that raise in
+    _close_series_by_symbol on the missing sector symbols (status=failure)."""
+    runner = _load_runner_module()
+    empty = pd.DataFrame(
+        columns=["date", "symbol", "open", "high", "low", "close", "volume"]
+    )
+
+    kwargs = runner.build_v2_classify_kwargs(
+        v2_slice=empty, pit_intervals=None, macro_series=None
+    )
+
+    assert kwargs == {}

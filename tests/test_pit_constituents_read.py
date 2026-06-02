@@ -164,19 +164,28 @@ def test_read_pit_intervals_patches_stale_open_intervals_on_read(
     pit_dir = tmp_path / "pit_constituents"
     pit_dir.mkdir()
     parquet_path = pit_dir / "sp500_ticker_intervals.parquet"
-    stale_df = pd.DataFrame(
-        [
-            {
-                "ticker": ticker,
-                "start_date": "2020-01-02",
-                "end_date": None,  # open interval — stale artifact
-                "source": SOURCE_NAME,
-                "source_url": SOURCE_URL,
-                "bias_warning": BIAS_WARNING,
-            }
-            for ticker in corrected_tickers
-        ]
+    rows = [
+        {
+            "ticker": "IBM",
+            "start_date": "1957-03-04",
+            "end_date": "2008-12-31",
+            "source": SOURCE_NAME,
+            "source_url": SOURCE_URL,
+            "bias_warning": BIAS_WARNING,
+        }
+    ]
+    rows.extend(
+        {
+            "ticker": ticker,
+            "start_date": "2020-01-02",
+            "end_date": None,  # open interval — stale artifact
+            "source": SOURCE_NAME,
+            "source_url": SOURCE_URL,
+            "bias_warning": BIAS_WARNING,
+        }
+        for ticker in corrected_tickers
     )
+    stale_df = pd.DataFrame(rows)
     stale_df.to_parquet(parquet_path, index=False)
 
     df = read_pit_intervals(parquet_path)

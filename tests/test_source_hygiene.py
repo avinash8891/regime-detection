@@ -12,6 +12,50 @@ FORBIDDEN_SOURCE_PATTERNS = re.compile(
     r"documented implementation[^\n]*#|implementation phase\.[0-9]|"
     r"source-data audit[^\n]*M[0-9]|Log #[0-9]"
 )
+V1_CONTRACT_GUARD_PATHS = (
+    Path("src/regime_detection/trend_direction.py"),
+    Path("src/regime_detection/trend_character.py"),
+    Path("src/regime_detection/volatility_state.py"),
+    Path("src/regime_detection/breadth_state.py"),
+    Path("src/regime_detection/event_calendar.py"),
+    Path("src/regime_detection/strategy_response.py"),
+    Path("src/regime_detection/legacy_v1_wire.py"),
+)
+FORBIDDEN_V1_CONTRACT_SCAFFOLDING_PATTERNS = re.compile(
+    r"\b("
+    r"GaussianHMM|hmm|GMM|gmm|ORCA|SRR|"
+    r"hurst(?:_\w+)?|efficiency_ratio(?:_\w+)?|"
+    r"eigenvalue|weighted_transition_score|"
+    r"crash_condition"
+    r")\b",
+    re.IGNORECASE,
+)
+V1_CONTRACT_EXTENSION_ALLOWLIST: dict[Path, tuple[str, ...]] = {
+    Path("src/regime_detection/trend_direction.py"): (
+        '"efficiency_ratio_20d": _ev_float(features.efficiency_ratio_20d.loc[dt]),',
+        '"hurst_250d": _ev_float(features.hurst_250d.loc[dt]),',
+    ),
+}
+
+# F-023: §12.4 requires a check that fails on V2 scaffolding/imports (HMM/clustering/
+# change-point libraries) in V1 code. The pattern guard above covers only 7 enumerated
+# V1-contract paths, so a stray HMM import in ANY other nominally-V1 module would slip
+# through. Invert to a V2-EVIDENCE-IMPORT ALLOWLIST: name the V2-evidence modules that
+# are permitted to import these libraries; every OTHER regime_detection module is V1-owned
+# (§14.3: "V2 work occurs in V2 modules ... V1 modules either untouched or extended
+# additively") and must NOT import them. A new V1 file importing hmmlearn fails CI until
+# it is consciously added to this allowlist.
+V2_EVIDENCE_IMPORT_ALLOWLIST: frozenset[Path] = frozenset(
+    {
+        Path("src/regime_detection/hmm_state.py"),
+        Path("src/regime_detection/clustering.py"),
+        Path("src/regime_detection/change_point.py"),
+        Path("src/regime_detection/_config_evidence_strategy.py"),
+    }
+)
+FORBIDDEN_V2_EVIDENCE_IMPORT_ROOTS = frozenset(
+    {"hmmlearn", "sklearn", "bayesian_changepoint_detection"}
+)
 
 
 def test_source_comments_do_not_embed_task_or_audit_references() -> None:
@@ -23,6 +67,43 @@ def test_source_comments_do_not_embed_task_or_audit_references() -> None:
             for line_number, line in enumerate(path.read_text().splitlines(), start=1):
                 if FORBIDDEN_SOURCE_PATTERNS.search(line):
                     offenders.append(f"{path}:{line_number}: {line.strip()}")
+
+    assert offenders == []
+
+
+def test_v1_contract_paths_do_not_scaffold_unowned_v2_features() -> None:
+    """V2 extends shared modules; V1 contract paths still reject stray V2-only hooks."""
+
+    offenders: list[str] = []
+    for path in V1_CONTRACT_GUARD_PATHS:
+        allowed_snippets = V1_CONTRACT_EXTENSION_ALLOWLIST.get(path, ())
+        for line_number, line in enumerate(path.read_text().splitlines(), start=1):
+            if any(snippet in line for snippet in allowed_snippets):
+                continue
+            if FORBIDDEN_V1_CONTRACT_SCAFFOLDING_PATTERNS.search(line):
+                offenders.append(f"{path}:{line_number}: {line.strip()}")
+
+    assert offenders == []
+
+
+def test_v2_evidence_libraries_imported_only_by_allowlisted_modules() -> None:
+    # F-023: every regime_detection module that imports an HMM/clustering/change-point
+    # library must be in the V2-evidence allowlist — so a stray V2 import in any V1-owned
+    # file is caught, not just within the 7 enumerated contract paths.
+    offenders: list[str] = []
+    for path in sorted(Path("src/regime_detection").rglob("*.py")):
+        if path in V2_EVIDENCE_IMPORT_ALLOWLIST:
+            continue
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            modules: list[str] = []
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                modules = [node.module]
+            for module in modules:
+                if module.split(".")[0] in FORBIDDEN_V2_EVIDENCE_IMPORT_ROOTS:
+                    offenders.append(f"{path}: imports {module}")
 
     assert offenders == []
 
@@ -104,3 +185,68 @@ def test_market_context_has_single_sliced_context_constructor() -> None:
     ]
 
     assert len(constructors) <= 2
+
+
+def test_spec_scope_decisions_are_documented() -> None:
+    decision = Path("docs/decisions/0020-v2-prerequisite-and-shadow-scope.md")
+    assert decision.exists()
+    text = decision.read_text()
+
+    required_fragments = (
+        "F-019",
+        "9-slice prerequisite",
+        "process gate",
+        "F-021",
+        "ticker / start_date / end_date interval",
+        "F-025",
+        "HMM parameter-drift flags",
+        "20% state-mean parameter-drift alert",
+        "30% transition-probability review flag",
+        "F-053",
+        "Vol-crush exposure response",
+        "downstream strategy-layer contract",
+        "50% long-vol exposure reduction",
+        "5-day cooldown",
+        "F-045",
+        "CPI-only dual-vintage store",
+        "F-049",
+        "local/Alpaca archived parquet is the shadow source of truth",
+        "F-050",
+        "daily fetch is upstream of the runner",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in text]
+
+    assert missing == []
+
+
+def test_shadow_runner_spec_pins_current_shadow_source_and_fetch_boundary() -> None:
+    spec = Path("docs/shadow_runner_spec.md").read_text()
+
+    assert "local/Alpaca archived parquet is the shadow source of truth" in spec
+    assert "daily fetch is upstream of the runner" in spec
+
+
+def test_bocpd_online_changepoint_dependency_api_is_stable() -> None:
+    # F-046: the BOCPD (§4.6/§6.3) Adams-MacKay online implementation is pinned to the
+    # bayesian-changepoint-detection 0.2.dev1 artifact (the only PyPI release carrying
+    # the online API). Guard against a future version yanking or reshaping that API by
+    # asserting the symbols import and online_changepoint_detection returns a run-length
+    # posterior matrix of the expected (N+1, N+1) shape.
+    from functools import partial
+
+    import numpy as np
+    from bayesian_changepoint_detection.online_changepoint_detection import (
+        StudentT,
+        constant_hazard,
+        online_changepoint_detection,
+    )
+
+    data = np.concatenate([np.zeros(20, dtype=float), np.ones(20, dtype=float)])
+    posterior, run_length_maxes = online_changepoint_detection(
+        data,
+        partial(constant_hazard, 250),
+        StudentT(alpha=0.1, beta=0.01, kappa=1.0, mu=0.0),
+    )
+
+    assert posterior.shape == (len(data) + 1, len(data) + 1)
+    assert run_length_maxes.shape[0] == len(data) + 1

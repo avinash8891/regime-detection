@@ -174,6 +174,153 @@ def test_evaluate_euphoria_fails_when_return_126d_at_or_below_threshold(
     )
 
 
+def test_sentiment_score_is_nan_until_four_weekly_readings() -> None:
+    """v2 §1A cold-start (spec lines 231-233 / F-006): sentiment_score is NaN until
+    at least 4 weekly AAII readings exist on or before the session, even though the
+    fetcher's min_periods=1 8w-MA exposes a value from week 1."""
+    from regime_detection.feature_store import _build_sentiment_score_series
+
+    aaii = pd.DataFrame(
+        {
+            "publication_date": pd.to_datetime(
+                ["2024-01-05", "2024-01-12", "2024-01-19", "2024-01-26", "2024-02-02"]
+            ),
+            "bull_bear_spread_8w_ma": [10.0, 12.0, 15.0, 22.0, 25.0],
+        }
+    )
+    sessions = pd.bdate_range("2024-01-01", "2024-02-09")
+    series = _build_sentiment_score_series(aaii_sentiment=aaii, session_index=sessions)
+
+    assert series is not None
+    # 0-3 readings on/before the session → masked to NaN
+    assert pd.isna(series.loc[pd.Timestamp("2024-01-01")])  # 0 readings (pre-first)
+    assert pd.isna(series.loc[pd.Timestamp("2024-01-08")])  # 1 reading
+    assert pd.isna(series.loc[pd.Timestamp("2024-01-25")])  # 3 readings
+    # the 4th reading's own session and after → populated (forward-filled)
+    assert series.loc[pd.Timestamp("2024-01-26")] == 22.0  # exactly 4 readings
+    assert series.loc[pd.Timestamp("2024-02-05")] == 25.0  # 5 readings
+
+
+def test_sentiment_warmup_counts_distinct_weeks_not_duplicate_rows() -> None:
+    """CR-008: the 4-reading warmup counts DISTINCT weekly publication dates, not raw
+    AAII rows. A duplicated publication date must not warm sentiment_score early (which
+    would let euphoria fire on only 3 distinct weeks), and must not break the ffill."""
+    from regime_detection.feature_store import _build_sentiment_score_series
+
+    aaii = pd.DataFrame(
+        {
+            "publication_date": pd.to_datetime(
+                # 3 DISTINCT weeks; 2024-01-12 duplicated → 4 rows but 3 distinct dates.
+                ["2024-01-05", "2024-01-12", "2024-01-12", "2024-01-19"]
+            ),
+            "bull_bear_spread_8w_ma": [10.0, 12.0, 13.0, 25.0],
+        }
+    )
+    sessions = pd.bdate_range("2024-01-01", "2024-01-26")
+    series = _build_sentiment_score_series(aaii_sentiment=aaii, session_index=sessions)
+
+    assert series is not None
+    # Only 3 DISTINCT weeks on/before 2024-01-24 → still masked NaN (the duplicate row
+    # does not count as a 4th reading).
+    assert pd.isna(series.loc[pd.Timestamp("2024-01-24")])
+
+
+def test_sentiment_dedupe_deterministically_keeps_last_source_row() -> None:
+    # CR-008 follow-up (PR review P2): the duplicate-date dedupe must be DETERMINISTIC.
+    # sort_values uses a STABLE sort (kind="mergesort"), so among rows sharing a
+    # publication_date, keep="last" always retains the last row in SOURCE order. Put the
+    # duplicate on the most-recent week (value 20.0 then 21.0) so the kept value is the
+    # active ffill read at a warm session; assert it is 21.0 (the last source row), and
+    # that two independent calls produce byte-identical series (replay safety).
+    from regime_detection.feature_store import _build_sentiment_score_series
+
+    aaii = pd.DataFrame(
+        {
+            "publication_date": pd.to_datetime(
+                # 4 distinct weeks; 2024-01-26 duplicated with DIFFERENT values.
+                [
+                    "2024-01-05",
+                    "2024-01-12",
+                    "2024-01-19",
+                    "2024-01-26",
+                    "2024-01-26",
+                ]
+            ),
+            "bull_bear_spread_8w_ma": [10.0, 11.0, 12.0, 20.0, 21.0],
+        }
+    )
+    sessions = pd.bdate_range("2024-01-01", "2024-01-31")
+
+    series = _build_sentiment_score_series(aaii_sentiment=aaii, session_index=sessions)
+    again = _build_sentiment_score_series(aaii_sentiment=aaii, session_index=sessions)
+
+    assert series is not None and again is not None
+    # 4 distinct weeks by 2024-01-26 → warm on 2024-01-29; the kept 01-26 value is the
+    # LAST source row (21.0), not 20.0.
+    assert series.loc[pd.Timestamp("2024-01-29")] == 21.0
+    # Deterministic across calls (no quicksort nondeterminism among equal-key rows).
+    pd.testing.assert_series_equal(series, again)
+
+
+def test_euphoria_suppressed_during_sentiment_warmup_then_fires_when_warm(
+    euphoria_rules: TrendDirectionV2RulesConfig,
+) -> None:
+    """Integration (F-006): with close/return/vol conjuncts satisfied and the SAME
+    +25 sentiment value at the session, euphoria must NOT fire while fewer than 4
+    AAII readings exist (sentiment masked to NaN), and MUST fire once a 4th reading
+    lands — proving the cold-start mask is the gating factor, not a value change."""
+    from regime_detection.feature_store import _build_sentiment_score_series
+
+    dt = pd.Timestamp("2024-03-15")
+    idx = pd.bdate_range(
+        end=dt, periods=_SPEC_EUPHORIA_VOL_RISING_LOOKBACK + 1, freq="B"
+    )
+    nan_series = pd.Series([float("nan")] * len(idx), index=idx)
+    close = nan_series.copy()
+    close.loc[dt] = 520.0  # > SMA_200 ✓
+    sma_200 = nan_series.copy()
+    sma_200.loc[dt] = 450.0
+    return_126d = nan_series.copy()
+    return_126d.loc[dt] = 0.30  # > 0.20 ✓
+    vol = nan_series.copy()
+    vol.loc[dt] = 0.18  # rising: 0.18 > 0.15 ✓
+    vol.loc[idx[0]] = 0.15
+
+    def _features_with(publications: list[str]) -> TrendDirectionV2Features:
+        aaii = pd.DataFrame(
+            {
+                "publication_date": pd.to_datetime(publications),
+                "bull_bear_spread_8w_ma": [25.0] * len(publications),  # >= +20 ✓
+            }
+        )
+        sentiment = _build_sentiment_score_series(
+            aaii_sentiment=aaii, session_index=idx
+        )
+        return TrendDirectionV2Features(
+            efficiency_ratio_20d=nan_series.copy(),
+            hurst_250d=nan_series.copy(),
+            slope_sma_50=nan_series.copy(),
+            slope_sma_200=nan_series.copy(),
+            return_63d=nan_series.copy(),
+            return_126d=return_126d,
+            drawdown_252d=nan_series.copy(),
+            sma_50=nan_series.copy(),
+            sma_200=sma_200,
+            realized_vol_21d=vol,
+            sentiment_score=sentiment,
+        )
+
+    # 3 readings on/before dt → sentiment NaN → euphoria suppressed.
+    warmup = _features_with(["2024-03-01", "2024-03-08", "2024-03-15"])
+    assert pd.isna(warmup.sentiment_score.loc[dt])
+    assert evaluate_euphoria(warmup, close, dt=dt, rules_config=euphoria_rules) is False
+
+    # 4 readings on/before dt → sentiment = +25 → euphoria fires.
+    warm = _features_with(["2024-02-23", "2024-03-01", "2024-03-08", "2024-03-15"])
+    assert warm.sentiment_score.loc[dt] == 25.0
+    assert evaluate_euphoria(warm, close, dt=dt, rules_config=euphoria_rules) is True
+
+
 def test_evaluate_euphoria_fails_when_vol_not_rising_over_5_sessions(
     euphoria_rules: TrendDirectionV2RulesConfig,
 ) -> None:
@@ -442,18 +589,30 @@ def test_hysteresis_accepts_euphoria_trend_label() -> None:
 def test_build_sentiment_score_series_forward_fills_from_publication_date() -> None:
     """v2 §1A line 164 alignment (ADR 0004 Q4): each NYSE session inherits
     the latest AAII publication-date row on or before it. V1 §2.2
-    stateless-replay — never consult a future-dated reading."""
+    stateless-replay — never consult a future-dated reading. Three earlier
+    readings warm the §1A 4-reading cold-start gate (F-006) so the forward-fill
+    between the last two readings is observable."""
     from regime_detection.feature_store import _build_sentiment_score_series
 
     aaii = pd.DataFrame(
         [
             {
-                "date": pd.Timestamp("2024-03-07"),
+                "publication_date": pd.Timestamp("2024-02-15"),
+                "bull_bear_spread_8w_ma": 5.0,
+            },
+            {
+                "publication_date": pd.Timestamp("2024-02-22"),
+                "bull_bear_spread_8w_ma": 8.0,
+            },
+            {
+                "publication_date": pd.Timestamp("2024-02-29"),
+                "bull_bear_spread_8w_ma": 11.0,
+            },
+            {
                 "publication_date": pd.Timestamp("2024-03-07"),
                 "bull_bear_spread_8w_ma": 15.0,
             },
             {
-                "date": pd.Timestamp("2024-03-14"),
                 "publication_date": pd.Timestamp("2024-03-14"),
                 "bull_bear_spread_8w_ma": 22.0,
             },
@@ -464,40 +623,14 @@ def test_build_sentiment_score_series_forward_fills_from_publication_date() -> N
     score = _build_sentiment_score_series(aaii_sentiment=aaii, session_index=sessions)
 
     assert score is not None
-    # Sessions 03-08, 03-11, 03-12, 03-13: pre-03-14 publication →
-    # inherit the 03-07 row's value (15.0).
+    # Sessions 03-08..03-13: latest publication on/before is 03-07 (4 readings
+    # warm) → inherit the 03-07 row's value (15.0).
     assert score.loc[pd.Timestamp("2024-03-08")] == 15.0
     assert score.loc[pd.Timestamp("2024-03-13")] == 15.0
     # Sessions 03-14, 03-15: at or after the 03-14 publication →
     # inherit the new value (22.0).
     assert score.loc[pd.Timestamp("2024-03-14")] == 22.0
     assert score.loc[pd.Timestamp("2024-03-15")] == 22.0
-
-
-def test_build_sentiment_score_series_cold_start_returns_nan_before_first_row() -> None:
-    """Sessions before the first AAII publication date receive NaN; the
-    euphoria predicate then falsifies (V1 §2.7 cold-start)."""
-    from regime_detection.feature_store import _build_sentiment_score_series
-
-    aaii = pd.DataFrame(
-        [
-            {
-                "date": pd.Timestamp("2024-03-14"),
-                "publication_date": pd.Timestamp("2024-03-14"),
-                "bull_bear_spread_8w_ma": 22.0,
-            },
-        ]
-    )
-    sessions = pd.bdate_range(start="2024-03-01", end="2024-03-15", freq="B")
-
-    score = _build_sentiment_score_series(aaii_sentiment=aaii, session_index=sessions)
-
-    assert score is not None
-    # Sessions before 03-14 have no preceding AAII row → NaN.
-    assert pd.isna(score.loc[pd.Timestamp("2024-03-01")])
-    assert pd.isna(score.loc[pd.Timestamp("2024-03-13")])
-    # 03-14 onward inherits the row.
-    assert score.loc[pd.Timestamp("2024-03-14")] == 22.0
 
 
 def test_build_sentiment_score_series_returns_none_when_no_aaii() -> None:

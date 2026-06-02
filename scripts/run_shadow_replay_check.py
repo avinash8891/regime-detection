@@ -19,6 +19,7 @@ from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.rule_provenance import rule_provenance_payload
 from regime_detection.shadow_storage import (
     fetch_run_row,
+    insert_incident,
     insert_replay_check,
     load_archived_event_calendar,
     load_archived_macro_series,
@@ -80,6 +81,23 @@ def _diff_values(replayed: Any, stored: Any) -> Any:
         if replayed == stored:
             return None
     return {"replayed": _jsonable(replayed), "stored": _jsonable(stored)}
+
+
+def _diff_touches_classification_fields(diff: Any) -> bool:
+    if isinstance(diff, dict):
+        for key, value in diff.items():
+            if (
+                key in {"state", "label"}
+                or key.endswith("_state")
+                or key.endswith("_label")
+            ):
+                return True
+            if _diff_touches_classification_fields(value):
+                return True
+        return False
+    if isinstance(diff, list):
+        return any(_diff_touches_classification_fields(item) for item in diff)
+    return False
 
 
 def run_replay_check(
@@ -165,6 +183,18 @@ def run_replay_check(
             matches=matches,
             diff=diff,
         )
+        if not matches:
+            breaks_qualification = _diff_touches_classification_fields(diff)
+            insert_incident(
+                conn=conn,
+                incident_date=as_of_date,
+                description=(
+                    f"Replay mismatch for {as_of_date.isoformat()} "
+                    f"run_id={int(run_row['run_id'])}"
+                ),
+                resolution=None,
+                breaks_qualification=breaks_qualification,
+            )
         return {
             "as_of_date": as_of_date.isoformat(),
             "run_id": int(run_row["run_id"]),

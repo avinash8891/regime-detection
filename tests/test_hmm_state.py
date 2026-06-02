@@ -17,8 +17,10 @@ import pytest
 from regime_detection.config import HMMConfig, load_default_regime_config
 from regime_detection.hmm_state import (
     HMMFeatures,
+    HMMParameterDrift,
     _StrictConvergenceMonitor,
     compute_hmm_features,
+    compute_hmm_parameter_drift,
 )
 from regime_shared.pandas_compat import cow_safe_assign
 
@@ -489,3 +491,224 @@ def test_feature_store_hmm_seam_none_when_hmm_config_absent(
         monetary_pressure_v2_config=cfg.monetary_pressure_v2,
     )
     assert feature_store.hmm is None
+
+
+# ---------------------------------------------------------------------------
+# F-025 — v2 §6.1 HMM parameter-drift monitor (operator calibration review).
+# Spec: docs/regime_engine_v2_spec.md lines 4434-4468. State-mean drift is the
+# max over (state x feature) relative change after Hungarian alignment, alert
+# at 20%. Transition-probability shift is a separate non-blocking review flag
+# at 30% (absolute, since transition entries are bounded [0,1]).
+# ---------------------------------------------------------------------------
+
+# Realistic fitted-state means over the 5 §6.1 HMM seams, in the order
+# compute_hmm_features feeds them: return_1d, realized_vol_21d, drawdown_63d,
+# volume_zscore_20d, avg_pairwise_corr_63d. State 0 = calm, State 1 = stress.
+_CALM_STATE_MEAN = [0.0005, 0.10, -0.02, -0.10, 0.30]
+_STRESS_STATE_MEAN = [-0.010, 0.45, -0.20, 2.00, 0.80]
+_PREV_STATE_MEANS = np.array([_CALM_STATE_MEAN, _STRESS_STATE_MEAN])
+# calm is sticky (0.95 self), stress decays faster.
+_PREV_TRANSITION_MATRIX = np.array([[0.95, 0.05], [0.20, 0.80]])
+
+
+def test_hmm_parameter_drift_reports_no_drift_when_parameters_unchanged() -> None:
+    drift = compute_hmm_parameter_drift(
+        previous_state_means=_PREV_STATE_MEANS,
+        current_state_means=_PREV_STATE_MEANS.copy(),
+        previous_transition_matrix=_PREV_TRANSITION_MATRIX,
+        current_transition_matrix=_PREV_TRANSITION_MATRIX.copy(),
+    )
+
+    assert isinstance(drift, HMMParameterDrift)
+    assert drift.parameter_drift == 0.0
+    assert drift.state_mean_drift_alert is False
+    assert drift.max_transition_prob_shift == 0.0
+    assert drift.transition_prob_review_flag is False
+    assert drift.alignment == (0, 1)
+
+
+def test_hmm_parameter_drift_ignores_state_index_permutation() -> None:
+    # New refit relabels the same two states in swapped index order. Hungarian
+    # alignment must recover the match so a pure permutation is NOT drift.
+    swap = [1, 0]
+    current_means = _PREV_STATE_MEANS[swap]
+    current_transition = _PREV_TRANSITION_MATRIX[np.ix_(swap, swap)]
+
+    drift = compute_hmm_parameter_drift(
+        previous_state_means=_PREV_STATE_MEANS,
+        current_state_means=current_means,
+        previous_transition_matrix=_PREV_TRANSITION_MATRIX,
+        current_transition_matrix=current_transition,
+    )
+
+    assert drift.alignment == (1, 0)
+    assert drift.parameter_drift == 0.0
+    assert drift.state_mean_drift_alert is False
+    assert drift.max_transition_prob_shift == 0.0
+    assert drift.transition_prob_review_flag is False
+
+
+def test_hmm_parameter_drift_flags_state_mean_drift_above_twenty_percent() -> None:
+    # Stress-state realized_vol_21d jumps 0.45 -> 0.5625 (a 25% relative move);
+    # every other parameter is unchanged. Drift metric = 0.25 > 0.20 alert.
+    current_means = _PREV_STATE_MEANS.copy()
+    current_means[1][1] = 0.45 * 1.25
+
+    drift = compute_hmm_parameter_drift(
+        previous_state_means=_PREV_STATE_MEANS,
+        current_state_means=current_means,
+        previous_transition_matrix=_PREV_TRANSITION_MATRIX,
+        current_transition_matrix=_PREV_TRANSITION_MATRIX.copy(),
+    )
+
+    assert drift.parameter_drift == pytest.approx(0.25)
+    assert drift.state_mean_drift_alert is True
+    # Means moved but transitions did not — the review flag stays independent.
+    assert drift.transition_prob_review_flag is False
+
+
+def test_hmm_parameter_drift_transition_review_flag_is_independent() -> None:
+    # Identical means; the stress-state self-transition shifts 0.80 -> 0.42
+    # (a 0.38 absolute move > 0.30). Mean alert must stay False, review True.
+    current_transition = np.array([[0.95, 0.05], [0.58, 0.42]])
+
+    drift = compute_hmm_parameter_drift(
+        previous_state_means=_PREV_STATE_MEANS,
+        current_state_means=_PREV_STATE_MEANS.copy(),
+        previous_transition_matrix=_PREV_TRANSITION_MATRIX,
+        current_transition_matrix=current_transition,
+    )
+
+    assert drift.state_mean_drift_alert is False
+    assert drift.max_transition_prob_shift == pytest.approx(0.38)
+    assert drift.transition_prob_review_flag is True
+
+
+def test_hmm_parameter_drift_transition_flag_is_absolute_not_relative() -> None:
+    # F-052 / ADR 0024: the 30% transition-prob flag is an ABSOLUTE move, not a
+    # relative one. A near-zero entry shifts 0.01 -> 0.05: +400% RELATIVE (would trip
+    # a relative threshold) but only 0.04 ABSOLUTE (< 0.30). The flag must stay False,
+    # and max_transition_prob_shift must read the absolute 0.04 — proving the absolute
+    # definition is what ships.
+    previous_transition = np.array([[0.99, 0.01], [0.20, 0.80]])
+    current_transition = np.array([[0.95, 0.05], [0.20, 0.80]])
+
+    drift = compute_hmm_parameter_drift(
+        previous_state_means=_PREV_STATE_MEANS,
+        current_state_means=_PREV_STATE_MEANS.copy(),
+        previous_transition_matrix=previous_transition,
+        current_transition_matrix=current_transition,
+    )
+
+    assert drift.max_transition_prob_shift == pytest.approx(0.04)
+    assert drift.transition_prob_review_flag is False
+
+
+def test_hmm_parameter_drift_below_thresholds_raises_no_alert() -> None:
+    # 10% mean move and a 0.10 transition shift — both under their thresholds.
+    current_means = _PREV_STATE_MEANS.copy()
+    current_means[0][1] = 0.10 * 1.10
+    current_transition = np.array([[0.85, 0.15], [0.20, 0.80]])
+
+    drift = compute_hmm_parameter_drift(
+        previous_state_means=_PREV_STATE_MEANS,
+        current_state_means=current_means,
+        previous_transition_matrix=_PREV_TRANSITION_MATRIX,
+        current_transition_matrix=current_transition,
+    )
+
+    assert drift.parameter_drift == pytest.approx(0.10)
+    assert drift.state_mean_drift_alert is False
+    assert drift.max_transition_prob_shift == pytest.approx(0.10)
+    assert drift.transition_prob_review_flag is False
+
+
+# ---------------------------------------------------------------------------
+# F-025 (ideal) — the §6.1 drift monitor RUNS inside compute_hmm_features,
+# comparing consecutive PIT refit checkpoints (de-standardized to raw units).
+# ---------------------------------------------------------------------------
+
+
+def test_compute_hmm_features_reports_parameter_drift_across_refit_checkpoints(
+    _computed_default_hmm: HMMFeatures,
+) -> None:
+    result = _computed_default_hmm  # 1500 sessions → many 21-day refit checkpoints
+    assert result.parameter_drift is not None
+    assert isinstance(result.parameter_drift, HMMParameterDrift)
+    # Alignment covers every state; drift metrics are well-formed and finite.
+    assert len(result.parameter_drift.alignment) == result.n_states
+    assert result.parameter_drift.parameter_drift >= 0.0
+    assert result.parameter_drift.max_transition_prob_shift >= 0.0
+    # De-standardized to raw feature units: relative drift must stay finite
+    # (a standardized-space comparison would explode near zero-mean states).
+    assert np.isfinite(result.parameter_drift.parameter_drift)
+
+
+def test_compute_hmm_features_warns_when_drift_alert_fires(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # F-039: the §6.1 drift seam is computed and exposed, but the >20% state-mean /
+    # >30% transition-prob alerts must reach the quarterly operator review via a
+    # WARNING. Force an alerting drift at every refit-checkpoint comparison and assert
+    # the WARNING is emitted (with the magnitudes) so the review cannot miss it.
+    alerting_drift = HMMParameterDrift(
+        parameter_drift=0.42,
+        state_mean_drift_alert=True,
+        max_transition_prob_shift=0.37,
+        transition_prob_review_flag=True,
+        alignment=(0, 1, 2, 3),
+    )
+    monkeypatch.setattr(
+        "regime_detection.hmm_state.compute_hmm_parameter_drift",
+        lambda **_kwargs: alerting_drift,
+    )
+
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config()
+    with caplog.at_level("WARNING", logger="regime_detection.hmm_state"):
+        result = compute_hmm_features(config=cfg, **inputs)
+
+    assert result is not None
+    assert result.parameter_drift is alerting_drift
+    assert "HMM parameter drift alert" in caplog.text
+    assert "0.4200" in caplog.text  # state_mean_drift magnitude surfaced
+    assert "0.3700" in caplog.text  # max_transition_prob_shift surfaced
+
+
+def test_compute_hmm_features_does_not_warn_when_drift_below_thresholds(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # F-039: a quiet refit (both flags False) must NOT emit the alert WARNING — the
+    # quarterly review channel stays silent unless a real threshold is crossed.
+    quiet_drift = HMMParameterDrift(
+        parameter_drift=0.05,
+        state_mean_drift_alert=False,
+        max_transition_prob_shift=0.04,
+        transition_prob_review_flag=False,
+        alignment=(0, 1, 2, 3),
+    )
+    monkeypatch.setattr(
+        "regime_detection.hmm_state.compute_hmm_parameter_drift",
+        lambda **_kwargs: quiet_drift,
+    )
+
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config()
+    with caplog.at_level("WARNING", logger="regime_detection.hmm_state"):
+        result = compute_hmm_features(config=cfg, **inputs)
+
+    assert result is not None
+    assert "HMM parameter drift alert" not in caplog.text
+
+
+def test_compute_hmm_features_parameter_drift_is_none_with_single_checkpoint() -> None:
+    # frame length = n_sessions - 62 warm-up (drawdown_63d is binding); pick a
+    # training window equal to that so only ONE refit checkpoint fits → no prior
+    # to compare against → drift is None.
+    inputs = _synthetic_inputs(n_sessions=314)
+    cfg = _default_hmm_config(training_window_days=252)
+    result = compute_hmm_features(config=cfg, **inputs)
+    assert result is not None
+    assert result.parameter_drift is None

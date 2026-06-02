@@ -395,19 +395,27 @@ The wider V2 range covers:
 
 This section is the **operational plan** for the future V1 shadow runner. It is intentionally different from the development fetch path above.
 
+ADR 0020 supersedes the original Stooq-only source note for this repository's
+current implementation: local/Alpaca archived parquet is the shadow source of
+truth, and daily fetch is upstream of the runner. The runner consumes archived
+inputs, computes checksums, and classifies only after those inputs exist.
+
 ### 3.1 Authoritative Daily Source for Shadow
 
 Use:
 
-- **Stooq** for `SPY`, `RSP`, and `VIX` daily data during shadow mode
+- **Local/Alpaca archived parquet** for `SPY`, `RSP`, the VIX proxy, and shared
+  ETF/constituent inputs during shadow mode
 - **FRED** for macro series used by V2-style evidence layers
 
 Rationale:
 
 - shadow replay must be reproducible from archived daily inputs
 - daily source bytes must be frozen before classification
-- Stooq is acceptable as the free, no-auth daily source for the shadow window
-- if Stooq has a quality incident during shadow, upgrade the shadow source to Tiingo and restart or document according to incident policy
+- local/Alpaca archived parquet is acceptable as the current verified source
+  for the shadow window
+- if the archived source has a quality incident during shadow, upgrade the
+  source and restart or document according to incident policy
 
 ### 3.2 Shadow Storage
 

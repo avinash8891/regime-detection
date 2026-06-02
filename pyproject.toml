@@ -23,6 +23,11 @@ dependencies = [
   # Adapter in regime_detection.change_point uses
   # online_changepoint_detection(data, hazard_func, observation_likelihood),
   # constant_hazard(lam, r), and StudentT(alpha, beta, kappa, mu).
+  # F-046: 0.2.dev1 is the ONLY PyPI artifact that ships the Adams-MacKay (2007) ONLINE
+  # BOCPD API (the stable 0.2 release does not expose online_changepoint_detection); the
+  # pin is exact (==) for reproducibility. The API surface is guarded by
+  # tests/test_source_hygiene.py::test_bocpd_online_changepoint_dependency_api_is_stable
+  # so a yank/reshape fails CI. If a non-dev release later ships the online API, re-pin.
   "bayesian-changepoint-detection==0.2.dev1",
 ]
 
@@ -105,6 +110,8 @@ known_first_party = [
   "_fetch_regime_engine_v1_args",
   "_v2_calibration_helpers",
   "run_shadow_regime",
+  "run_historical_walkforward",
+  "run_shadow_replay_check",
 ]
 optional_dependencies_dev_groups = [
   "dev",
@@ -143,4 +150,5 @@ line-ending = "lf"
 "scripts/run_shadow_replay_check.py" = ["E402"]
 "scripts/run_v2_shadow_ab_gate.py" = ["E402"]
 "scripts/run_v2_walkforward_gate.py" = ["E402"]
+"scripts/run_walkforward_replay_check.py" = ["E402"]
 "scripts/upload_missing_ohlcv_to_manifest.py" = ["E402"]

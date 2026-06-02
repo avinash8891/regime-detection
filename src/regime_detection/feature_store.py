@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeVar
 
+import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
@@ -139,6 +140,9 @@ __all__ = [
 
 
 _FRED_DGS2_KEY = "2y_yield"
+# v2 §1A (spec lines 231-233): euphoria's sentiment_score is NaN until at least
+# this many weekly AAII readings exist on or before the session (F-006).
+_MIN_SENTIMENT_WEEKLY_READINGS = 4
 _T = TypeVar("_T")
 
 
@@ -310,11 +314,12 @@ def _build_sentiment_score_series(
     supplied (lets the euphoria predicate falsify per the V2 §10 absolute
     "do not invent" rule at spec L4364).
 
-    Cold-start (ADR 0004 Q5): a session with no AAII row at or before it
-    receives NaN; the euphoria predicate then falsifies on that session
-    per V1 §2.7. With the AAII fetcher's `min_periods=1` 8-week MA, the
-    output column is populated from week 1 of the data, so the practical
-    cold-start window is just "no AAII history yet."
+    Cold-start (v2 §1A spec lines 231-233 / ADR 0004 Q5): ``sentiment_score``
+    is NaN until at least ``_MIN_SENTIMENT_WEEKLY_READINGS`` (4) weekly readings
+    exist on or before the session; the euphoria predicate then falsifies on those
+    sessions per V1 §2.7. The AAII fetcher's `min_periods=1` 8-week MA otherwise
+    exposes an under-warmed value from week 1, which would let euphoria fire on
+    only 1-3 readings (F-006) — so the under-4-reading window is masked here.
 
     Note on the Optional contract: the FeatureSpec resolver in
     `_resolve_sentiment_score` gates the None/empty/missing-column cases
@@ -333,15 +338,44 @@ def _build_sentiment_score_series(
     )
     if publication_column not in aaii_sentiment.columns:
         return None
-    sorted_aaii = aaii_sentiment.sort_values(publication_column).reset_index(drop=True)
-    publication = pd.to_datetime(sorted_aaii[publication_column])
+    sorted_aaii = (
+        # kind="mergesort" is a STABLE sort: rows sharing a publication_date keep their
+        # source order, so the keep="last" dedupe below deterministically retains the
+        # same physical row every replay. The default quicksort is unstable and could
+        # pick a different duplicate row across runs/pandas versions, breaking the
+        # byte-identical replay contract.
+        aaii_sentiment.sort_values(publication_column, kind="mergesort")
+        # CR-008: collapse duplicate publication dates so the warmup counts DISTINCT
+        # weekly readings (a re-published row must not warm early) and the ffill reindex
+        # below stays on a unique index.
+        .drop_duplicates(subset=[publication_column], keep="last").reset_index(
+            drop=True
+        )
+    )
+    publication = pd.DatetimeIndex(pd.to_datetime(sorted_aaii[publication_column]))
     score_values = sorted_aaii["bull_bear_spread_8w_ma"].astype(float).to_numpy()
     aligned = pd.Series(
         score_values,
-        index=pd.DatetimeIndex(publication),
+        index=publication,
         name="sentiment_score",
     )
-    return aligned.reindex(session_index, method="ffill")
+    result = aligned.reindex(session_index, method="ffill")
+    # v2 §1A cold-start (spec lines 231-233): sentiment_score is NaN until at least 4
+    # weekly readings exist on or before the session. `publication` is now distinct
+    # (deduped above, CR-008), so this counts DISTINCT weekly publication dates; the
+    # under-warmed warmup window is masked to NaN so the euphoria predicate falsifies
+    # instead of firing on 1-3 readings (F-006).
+    readings_on_or_before = np.asarray(
+        # pandas-stubs types DatetimeIndex.searchsorted as -> Unknown; np.asarray with
+        # an explicit dtype gives a concrete int array for the warm-count comparison.
+        publication.searchsorted(session_index, side="right"),  # type: ignore[reportUnknownMemberType]
+        dtype=int,
+    )
+    warm = pd.Series(
+        readings_on_or_before >= _MIN_SENTIMENT_WEEKLY_READINGS,
+        index=session_index,
+    )
+    return result.where(warm)
 
 
 def _build_news_sentiment_score_series(

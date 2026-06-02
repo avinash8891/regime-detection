@@ -1,6 +1,6 @@
 {
   "engine_version": "regime-engine-v2.0.0",
-  "config_version": "core3-v2.0.0",
+  "config_version": "core3-v1.0.0",
   "as_of_date": "2023-12-14",
   "market": "SPY",
   "trend_direction": {
@@ -9,16 +9,20 @@
     "active_label": "bull",
     "evidence": {
       "rule_evidence": {
-        "bull": true,
-        "bear": false,
-        "sideways": false,
-        "transition": false,
+        "sma_50": 441.108,
+        "sma_200": 430.41925,
+        "return_63d": 0.06459616,
+        "close_gt_sma50": true,
+        "close_gt_sma200": true,
+        "sma50_gt_sma200": true,
         "within_5pct_sma200": false
       },
       "risk_rank": {
         "bull": 0,
         "sideways": 1,
+        "recovery": 1,
         "transition": 2,
+        "euphoria": 4,
         "bear": 3,
         "unknown": 2
       },
@@ -36,15 +40,26 @@
     "active_label": "trending",
     "evidence": {
       "rule_evidence": {
+        "adx_14": 46.15143227,
+        "return_10d": 0.03420245,
+        "return_21d": 0.05187975,
+        "prior_63d_drawdown": 0.0,
         "recovery_attempt": false,
         "trending": true,
+        "mild_trend": false,
         "chop": false,
-        "transition": false
+        "volatile_chop": false,
+        "range_bound": false,
+        "breakout_expansion": false
       },
       "risk_rank": {
         "trending": 0,
-        "chop": 1,
+        "breakout_expansion": 0,
+        "mild_trend": 0,
         "recovery_attempt": 1,
+        "range_bound": 1,
+        "chop": 1,
+        "volatile_chop": 1,
         "transition": 2,
         "unknown": 2
       },
@@ -62,18 +77,21 @@
     "active_label": "low_vol",
     "evidence": {
       "rule_evidence": {
+        "realized_vol_21d": 0.06883111,
+        "realized_vol_percentile_252d": 0.00396825,
+        "vix_percentile_252d": 0.51984127,
         "crisis_vol": false,
         "high_vol": false,
-        "low_vol": true,
-        "normal_vol": false,
-        "vix_percentile_present": true
+        "low_vol": true
       },
       "risk_rank": {
         "low_vol": 0,
         "normal_vol": 1,
         "high_vol": 2,
         "crisis_vol": 3,
-        "unknown": 2
+        "unknown": 2,
+        "rising_vol": 2,
+        "vol_crush": 3
       },
       "deescalation_days": 2
     },
@@ -88,21 +106,31 @@
     "stable_label": "healthy_breadth",
     "active_label": "healthy_breadth",
     "evidence": {
-      "proxy": "RSP/SPY",
       "rule_evidence": {
+        "proxy": "RSP/SPY",
+        "relative_breadth_ratio": 0.33374293,
+        "relative_breadth_sma50": 0.32483233,
+        "relative_breadth_return_20d": 0.03309369,
+        "index_distance_from_63d_high": 0.0,
         "divergent_fragile": false,
         "weak_breadth": false,
-        "healthy_breadth": true,
-        "neutral_breadth": false
+        "healthy_breadth": true
       },
       "risk_rank": {
+        "breadth_thrust": 0,
         "healthy_breadth": 0,
+        "broadening_breadth": 0,
         "neutral_breadth": 1,
+        "recovery_breadth": 1,
         "weak_breadth": 2,
+        "narrowing_breadth": 2,
         "divergent_fragile": 3,
         "unknown": 2
       },
-      "deescalation_days": 2
+      "deescalation_days": 2,
+      "proxy": "RSP/SPY",
+      "row_provenance_mode": "etf_proxy",
+      "active_label_source": "etf_proxy"
     },
     "data_quality": {
       "status": "ok",
@@ -122,38 +150,45 @@
       }
     },
     "monetary_pressure": {
-      "label": "unknown",
+      "state": "unknown",
       "reason": "not_implemented_v1"
     }
   },
   "network_fragility": {
-    "label": "not_implemented_v1",
+    "state": "not_implemented_v1",
     "reason": "breadth_state_used_as_v1_fragility_proxy"
   },
   "transition_risk": {
-    "label": "stable",
+    "state": "watch",
     "evidence": {
-      "triggered_rules": [],
+      "triggered_rules": [
+        "post_switch_cooldown"
+      ],
       "stable_changed_today": false,
       "days_since_axis_switch": 2,
       "axis_switch_count": 0,
-      "recent_axis_switch_count": 0
+      "recent_axis_switch_count": 1,
+      "macro_event_labels": [
+        "expiry_week"
+      ]
     }
   },
   "strategy_response": {
-    "position_size_multiplier": 1.0,
+    "position_size_multiplier": 0.5,
     "allow_trend_following": true,
     "allow_mean_reversion": true,
     "leverage_allowed": true,
     "allow_buy_dip": true,
-    "allow_breakout": true,
+    "allow_breakout": false,
     "allow_shorts": true,
-    "require_confirmation_for_new_longs": false,
+    "require_confirmation_for_new_longs": true,
     "require_confirmation_for_shorts": false,
     "log_for_review": false,
     "modifiers_applied": [
-      "bull_healthy_low_vol"
+      "bull_healthy_low_vol",
+      "sideways_stress"
     ],
-    "allow_leverage_expansion": true
+    "take_profit_faster": true,
+    "allow_leverage_expansion": false
   }
 }

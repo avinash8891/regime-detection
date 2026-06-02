@@ -16,7 +16,7 @@ if str(REPO_ROOT) not in sys.path:
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from regime_detection.calendar import require_nyse_trading_day
-from regime_detection.config import RegimeConfig
+from regime_detection.config import RegimeConfig, default_config_text
 from regime_detection.dependency_payload_contracts import (
     dependency_payload_contracts_report as _v2_dependency_payload_contracts,
 )
@@ -26,7 +26,9 @@ from regime_detection.loaders import load_event_calendar
 from regime_detection.rule_provenance import rule_provenance_payload
 from regime_detection.shadow_storage import (
     ensure_shadow_layout,
+    insert_incident,
     insert_run_row,
+    latest_config_sha256,
     load_archived_event_calendar,
     load_archived_macro_series,
     load_archived_market_data,
@@ -37,6 +39,7 @@ from regime_detection.shadow_storage import (
     write_archived_inputs,
 )
 from regime_detection.versioning import engine_version as resolved_engine_version
+from regime_data_fetch.artifact_store import sha256_bytes
 from regime_data_fetch.materialization import materialize_if_requested
 from regime_shared.pandas_compat import cow_safe_assign
 from scripts._v2_calibration_helpers import (
@@ -258,6 +261,35 @@ def run_shadow(
         engine = RegimeEngine(config_path=config_path)
         engine_version = resolved_engine_version()
         config_version = engine.config.config_version
+        # F-018: hash the resolved config *content*, not just the coarse config_version
+        # Literal. Two different configs can share one Literal, so a same-Literal
+        # content change would otherwise span a single qualification window. Capture
+        # the hash on every run and, when it differs from the window's prior hash,
+        # insert a breaking incident that resets qualification from this session.
+        config_text = (
+            config_path.read_text(encoding="utf-8")
+            if config_path is not None
+            else default_config_text()
+        )
+        config_sha256 = sha256_bytes(config_text.encode("utf-8"))
+        prior_config_sha256 = latest_config_sha256(
+            conn=conn,
+            engine_version=engine_version,
+            config_version=config_version,
+        )
+        if prior_config_sha256 is not None and prior_config_sha256 != config_sha256:
+            insert_incident(
+                conn=conn,
+                incident_date=as_of_date,
+                description=(
+                    "Config content changed mid-window for "
+                    f"{engine_version}/{config_version}: "
+                    f"{prior_config_sha256[:12]} -> {config_sha256[:12]}; "
+                    "qualification window reset"
+                ),
+                resolution=None,
+                breaks_qualification=True,
+            )
         run_timestamp = utc_iso_now()
         archive_dir = paths["input_archives"] / as_of_date.isoformat()
         archived_market_path, archived_events_path, _ = write_archived_inputs(
@@ -273,6 +305,7 @@ def run_shadow(
             engine_version=engine_version,
             config_version=config_version,
             archive_dir=archive_dir,
+            config_sha256=config_sha256,
         )
 
         try:

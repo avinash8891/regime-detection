@@ -39,7 +39,6 @@ Module invariant:
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 from typing import Literal
 
@@ -47,32 +46,25 @@ import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
+from regime_detection.axis_output_models import NetworkFragilityLabel
 from regime_detection.breadth_state import BreadthLabel
 from regime_detection.config import NetworkFragilityRulesConfig
 from regime_detection.network_fragility import NetworkFragilityFeatures
 from regime_detection.volatility_state import VolatilityLabel
 
-# v2 §3.3 labels.
-NetworkFragilityLabel = Literal[
-    "diversified_normal",
-    "stock_picker_dispersion",
-    "rising_fragility",
-    "correlation_concentration",
-    "correlation_to_one",
-    "systemic_stress_unconfirmed",
-    "systemic_stress",
-    "decorrelated_calm",
-    "rotation_watch",
-    "idiosyncratic_crisis",
-    "unknown",
-]
+# v2 §3.3 labels — the closed NetworkFragilityLabel Literal is the single source of
+# truth in axis_output_models (F-040, alongside the other axis-output label triples);
+# re-exported here (used below by RULE_PRECEDENCE / NETWORK_FRAGILITY_RISK_RANK) so
+# existing importers are unchanged.
 
 
-# v2 §3.4: systemic_stress > correlation_to_one > correlation_concentration
-#          > rising_fragility > idiosyncratic_crisis > stock_picker_dispersion
-#          > rotation_watch > decorrelated_calm > diversified_normal > unknown
+# v2 §3.4: systemic_stress > systemic_stress_unconfirmed > correlation_to_one
+#          > correlation_concentration > rising_fragility > idiosyncratic_crisis
+#          > stock_picker_dispersion > rotation_watch > decorrelated_calm
+#          > diversified_normal > unknown
 RULE_PRECEDENCE: tuple[NetworkFragilityLabel, ...] = (
     "systemic_stress",
+    "systemic_stress_unconfirmed",
     "correlation_to_one",
     "correlation_concentration",
     "rising_fragility",
@@ -169,54 +161,11 @@ class NetworkFragilityRuleEvaluation:
     reason: str | None = None
 
 
-def _trailing_slope(series: pd.Series, dt: pd.Timestamp, window: int) -> float:
-    """OLS slope of ``series`` vs a unit trading-day index over the trailing
-    ``window`` sessions ending at ``dt`` (inclusive). NaN if window not full."""
-    sub = series.loc[:dt].tail(window)
-    if len(sub) < window:
+def _scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
+    """Pick the value of a vectorized reducer series at ``dt`` (NaN if absent)."""
+    if dt not in series.index:
         return float("nan")
-    y = sub.to_numpy(dtype=float)
-    if np.isnan(y).any():
-        return float("nan")
-    x = np.arange(window, dtype=float)
-    # polyfit deg=1 returns [slope, intercept]. Suppress RankWarning emitted
-    # on flat / near-constant inputs — it is CI noise; the returned slope is
-    # still numerically correct (effectively zero) for our predicate.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", np.exceptions.RankWarning)
-        slope, _ = np.polyfit(x, y, 1)
-    return float(slope)
-
-
-def _trailing_stability(series: pd.Series, dt: pd.Timestamp, window: int) -> float:
-    """std / mean of ``series`` over the trailing ``window`` sessions
-    ending at ``dt`` (inclusive). NaN on insufficient data or zero mean."""
-    sub = series.loc[:dt].tail(window)
-    if len(sub) < window:
-        return float("nan")
-    arr = sub.to_numpy(dtype=float)
-    if np.isnan(arr).any():
-        return float("nan")
-    mean = arr.mean()
-    if mean == 0:
-        return float("nan")
-    return float(arr.std(ddof=0) / mean)
-
-
-def _trailing_drawdown(spy_close: pd.Series, dt: pd.Timestamp, window: int) -> float:
-    """drawdown_21d per v2 §3.5: (P_t / max(P over trailing 21d)) - 1.
-
-    Negative means below the 21d high. NaN on insufficient data."""
-    sub = spy_close.loc[:dt].tail(window)
-    if len(sub) < window:
-        return float("nan")
-    arr = sub.to_numpy(dtype=float)
-    if np.isnan(arr).any():
-        return float("nan")
-    peak = arr.max()
-    if peak <= 0:
-        return float("nan")
-    return float(arr[-1] / peak - 1.0)
+    return float(series.loc[dt])
 
 
 def build_rule_inputs_for_date(
@@ -230,9 +179,27 @@ def build_rule_inputs_for_date(
 ) -> NetworkFragilityRuleInputs:
     """Materialize per-day scalar inputs for the §3.5 rules.
 
-    All windows are fixed by §3.5 text (21d). Series-to-scalar reduction
-    lives here so the rule functions stay pure scalar predicates.
+    F-053: the 21d slope/stability/drawdown predicates are computed by the SAME
+    vectorized ``_rolling_*_series`` reducers that ``build_rule_inputs_by_date`` (the
+    production path) uses, then sampled at ``dt`` — a single source of truth for the
+    §3.5 reduction. Previously this path hand-rolled scalar ``_trailing_*`` variants
+    (polyfit slope, ``.loc[:dt].tail(window)`` index-order-dependent windows) that could
+    silently diverge from the positional production reducers on an edit. All windows are
+    fixed by §3.5 text (21d).
     """
+    index = features.avg_pairwise_corr_63d.index
+    avg_corr_slope = _rolling_ols_slope_series(
+        features.avg_pairwise_corr_63d, _SPEC_SLOPE_WINDOW_DAYS
+    )
+    largest_eig_slope = _rolling_ols_slope_series(
+        features.largest_eigenvalue_share, _SPEC_SLOPE_WINDOW_DAYS
+    )
+    eff_rank_stability = _rolling_stability_series(
+        features.effective_rank, _SPEC_STABILITY_WINDOW_DAYS
+    )
+    drawdown = _rolling_drawdown_series(
+        spy_close.reindex(index), _SPEC_DRAWDOWN_WINDOW_DAYS
+    )
     return NetworkFragilityRuleInputs(
         avg_pairwise_corr_percentile_504d=float(
             features.avg_pairwise_corr_percentile_504d.loc[dt]
@@ -249,22 +216,16 @@ def build_rule_inputs_for_date(
             features.dispersion_ratio_percentile_252d.loc[dt]
         ),
         absorption_ratio_top3=float(features.absorption_ratio_top3.loc[dt]),
-        avg_pairwise_corr_slope_21d=_trailing_slope(
-            features.avg_pairwise_corr_63d, dt, _SPEC_SLOPE_WINDOW_DAYS
-        ),
-        largest_eigenvalue_share_slope_21d=_trailing_slope(
-            features.largest_eigenvalue_share, dt, _SPEC_SLOPE_WINDOW_DAYS
-        ),
-        effective_rank_stability_21d=_trailing_stability(
-            features.effective_rank, dt, _SPEC_STABILITY_WINDOW_DAYS
-        ),
+        avg_pairwise_corr_slope_21d=_scalar_at(avg_corr_slope, dt),
+        largest_eigenvalue_share_slope_21d=_scalar_at(largest_eig_slope, dt),
+        effective_rank_stability_21d=_scalar_at(eff_rank_stability, dt),
         realized_vol_percentile_252d=float(realized_vol_percentile_252d.loc[dt]),
         realized_vol_21d=(
             float(realized_vol_21d.loc[dt])
             if realized_vol_21d is not None and dt in realized_vol_21d.index
             else float("nan")
         ),
-        drawdown_21d=_trailing_drawdown(spy_close, dt, _SPEC_DRAWDOWN_WINDOW_DAYS),
+        drawdown_21d=_scalar_at(drawdown, dt),
         vix_percentile_252d=float(vix_percentile_252d.loc[dt]),
     )
 
@@ -728,17 +689,10 @@ def evaluate_rules_with_evidence(
         if label == "systemic_stress":
             path = systemic_stress_rule_path(inputs, config, breadth_label)
             accepted_credit: set[CreditFundingLabel] = {"credit_stress", "deleveraging"}
-            if path is not None and (
-                credit_funding_label is None or credit_funding_label in accepted_credit
-            ):
+            if path is not None and credit_funding_label in accepted_credit:
                 return NetworkFragilityRuleEvaluation(
                     label="systemic_stress",
                     rule_path=path,
-                    reason=(
-                        "credit_funding_unavailable"
-                        if credit_funding_label is None
-                        else None
-                    ),
                 )
         elif label == "systemic_stress_unconfirmed":
             path = systemic_stress_rule_path(inputs, config, breadth_label)

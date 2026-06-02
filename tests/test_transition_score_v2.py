@@ -88,7 +88,7 @@ def test_component_formulas_have_expected_boundaries(
         "credit_stress": pytest.approx(0.75),
         "liquidity_stress": pytest.approx(1.0),
         "macro_event": pytest.approx(1.0),
-        "model_instability": pytest.approx(0.70),
+        "model_instability": pytest.approx(1.0),
     }
 
 
@@ -244,15 +244,22 @@ def test_compose_transition_score_exposes_only_present_components(
         "cluster_id_5d_ago",
     ],
 )
-def test_compose_transition_score_accepts_partial_model_evidence_layer_inputs(
+def test_compose_transition_score_forces_insufficient_data_on_missing_model_evidence(
     transition_score_config: TransitionScoreConfig,
     missing_field: str,
 ) -> None:
+    """F-002 / §4.2 / §4.0 / §10 rule 3: once the transition_score seam is enabled,
+    per-session model evidence (HMM probability, change-point score, cluster id) is
+    MANDATORY. A missing per-session value must force ``insufficient_data`` (score=None)
+    — it must NEVER be silently renormalized away into a normal score. The whole-seam-
+    absent build error is raised earlier in ``transition_risk_series``; this guards the
+    per-session-missing case on the (only) emitted V2 path. Fails if reverted."""
     out = _compose(transition_score_config, **{missing_field: None})
 
-    assert out.score is not None
-    assert out.components is not None
-    assert out.components["model_instability"] == pytest.approx(0.0)
+    assert out.score is None
+    assert out.interpretation is None
+    assert out.components is None
+    assert out.missing_components == ("model_instability",)
 
 
 def test_compose_transition_score_returns_insufficient_when_many_components_missing(

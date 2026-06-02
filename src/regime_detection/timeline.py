@@ -584,6 +584,7 @@ def _build_timeline_output_for_day(
         breadth_state=breadth_output,
         structural_causal_state=StructuralCausalState(
             event_calendar=event_output,
+            monetary_pressure=monetary_pressure_output,
         ),
         network_fragility=network_fragility_output,
         transition_risk=transition_output,

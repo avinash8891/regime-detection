@@ -136,7 +136,8 @@ class RegimeTimeline(BaseModel):
 
 `outputs` is sorted ascending by `as_of_date` and contains exactly one `RegimeOutput` per NYSE trading day in the inclusive window. Unknown outputs are emitted, not skipped.
 
-V1.1 helper (deferred):
+V1.1 helper (shipped — see `RegimeEngine.classify_series` in
+`src/regime_detection/engine.py`):
 
 ```python
 RegimeEngine.classify_series(
@@ -146,6 +147,12 @@ RegimeEngine.classify_series(
     ...
 ) -> pd.DataFrame
 ```
+
+Classifies every NYSE session in the inclusive `[start_date, end_date]` window
+and returns one row per session (ascending by `as_of_date`, columns =
+`as_of_date`, `market`, `engine_version`, `config_version`, and the five active
+axis labels). It is a thin wrapper over `classify_window`; each row is
+byte-identical to the corresponding `classify(as_of_date)` output.
 
 ### 2.2 Stateless Replay Rule
 
@@ -177,6 +184,13 @@ Every top-level output includes:
 
 The package version in `pyproject.toml` and emitted `engine_version` must be coupled by test. A mismatch fails CI.
 
+> **Phase note (unified package).** The literal `regime-engine-v1.0.0` / `core3-v1.0.0` in the example
+> above are phase-1 examples. This repository is one engine built in two phases (see `CLAUDE.md`); the
+> package `regime_detection.__version__` is currently `2.0.0`, so the runtime emits
+> `engine_version = regime-engine-v<package-version>` (`regime-engine-v2.0.0`). The **binding** rule is
+> the package↔`engine_version` coupling test — not the literal `v1.0.0`. V1 frozen-replay byte-identity
+> is compared modulo `engine_version`.
+
 ### 2.4.1 Config Loading
 
 V1 ships with `configs/core3-v1.0.0.yaml`.
@@ -189,6 +203,10 @@ Rules:
 - `RegimeConfig` is a Pydantic model with `extra="forbid"`; unknown config keys raise.
 - `config_version` in output reflects the loaded config.
 - Precedence orderings and risk-rank tables are hardcoded in code, not config.
+
+> **Phase note.** `core3-v1.0.0.yaml` is the phase-1 default. Under the unified package the default
+> config follows the package major (`__version__` major `2` → `configs/core3-v2.0.0.yaml`); the V1
+> config remains explicitly selectable and its frozen outputs stay byte-identical. See `CLAUDE.md`.
 
 ### 2.5 Trading Calendar
 
@@ -260,6 +278,12 @@ Every classifier output includes:
 }
 ```
 
+> **Wire note (F-044).** The block above is the in-memory model shape. On the wire the
+> engine serializes with `exclude_none=True`, so a **null `reason` is omitted** from the
+> emitted JSON — the frozen V1 fixtures under `tests/fixtures/v1_frozen_outputs/` carry
+> `data_quality` as `{status, freshness_days, completeness}` with no `reason` key when it
+> is null. A non-null `reason` (e.g. `insufficient_history`, `stale_data`) is emitted.
+
 Thresholds (config-driven; values shown are V1 defaults):
 
 ```yaml
@@ -290,7 +314,12 @@ Every classifier outputs three labels:
 
 ### 2.10 Asymmetric Hysteresis
 
-Risk escalation defaults to immediate via `*_escalation_days: 1`; raising those knobs delays stable-label entry. De-escalation remains debounced.
+Risk escalation defaults to immediate via `default_escalation_days: 1` on each
+axis-level hysteresis config section. Raising `default_escalation_days` or
+adding an `escalation_days_by_label` override delays stable-label entry for the
+configured label; `active_label` still surfaces the riskier raw label on the
+first session. De-escalation remains debounced by `deescalation_days_by_label`
+and `default_deescalation_days`.
 
 ```python
 if risk_rank(raw_label) > risk_rank(stable_label):
@@ -301,19 +330,46 @@ else:
     escalation_fast_path = False
 ```
 
-Default V1 hysteresis:
+Default V1 hysteresis ships under the neutral axis sections, not a separate
+flat `hysteresis` block:
 
 ```yaml
-hysteresis:
-  trend_direction_escalation_days: 1
-  trend_direction_deescalation_days: 3
-  trend_character_escalation_days: 1
-  trend_character_deescalation_days: 3
-  volatility_escalation_days: 1
-  volatility_deescalation_days: 2
-  breadth_escalation_days: 1
-  breadth_deescalation_days: 2
-  composite_deescalation_days: 3
+trend_direction:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    bear: 3
+    transition: 3
+    sideways: 3
+    bull: 3
+    unknown: 3
+  default_deescalation_days: 3
+trend_character:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    recovery_attempt: 3
+    trending: 3
+    chop: 3
+    transition: 3
+    unknown: 3
+  default_deescalation_days: 3
+volatility_state:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    crisis_vol: 2
+    high_vol: 2
+    rising_vol: 2
+    low_vol: 2
+    normal_vol: 2
+    vol_crush: 2
+    unknown: 2
+  default_deescalation_days: 2
+breadth_state:
+  default_escalation_days: 1
+  deescalation_days_by_label:
+    weak_breadth: 2
+    healthy_breadth: 2
+    unknown: 2
+  default_deescalation_days: 2
 ```
 
 > The event_calendar output intentionally has **no hysteresis**. Calendar windows are themselves deterministic (`as_of_date` is inside an event window or it is not), so a debounce knob is meaningless. The current wire shape exposes `primary_label` for compact display/precedence and `matching_labels` for all overlapping event windows. It does not construct the usual hysteresis label triple for the calendar output.
@@ -450,6 +506,8 @@ return_10d = close / close.shift(10) - 1
 return_21d = close / close.shift(21) - 1
 prior_63d_drawdown = close / close.rolling(63).max() - 1
 # ADX_14 standard Wilder formula
+# Implementation pin: ADX_14 uses pandas ewm(alpha=1/14, adjust=False, min_periods=14)
+# for ATR, +DM, -DM, and DX smoothing.
 ```
 
 ### 4.5 Rules
@@ -747,6 +805,13 @@ breadth_risk_rank:
 - Event calendar: required.
 - Monetary pressure: not implemented in V1.
 - Inflation/growth, credit/funding: **not implemented in V1**. Output `"state": "unknown", "reason": "not_implemented_v1"`.
+
+> **Phase note (V2).** These axes ARE implemented in phase 2: monetary_pressure (§2A), inflation/growth
+> (§2B), credit/funding (§2C). The "not implemented in V1" text describes the **V1 config path** only;
+> under a V2 config the real axes are emitted as top-level fields (see §11.1). On the V1 wire,
+> `structural_causal_state` remains exactly `{event_calendar, monetary_pressure}` — with
+> `monetary_pressure` as the `{state, reason}` placeholder — and inflation/growth and credit/funding do
+> not appear nested under `structural_causal_state`.
 
 ### 7.2 Event Calendar
 
@@ -1070,9 +1135,16 @@ not branch on the compact display label.
   "allow_trend_following": true,
   "allow_buy_dip": true,
   "require_breadth_confirmation": true,
+  "leverage_allowed": false,
   "allow_leverage_expansion": false
 }
 ```
+> A `recovery_attempt` is a tentative bounce off a bear bottom, so it disallows
+> leverage **outright** (`leverage_allowed: false`), not merely leverage *expansion*
+> — matching the defensive `crisis` / `bear_stress` posture. (F-013 reconciliation:
+> `leverage_allowed` was already enforced by `strategy_response` and asserted by
+> `test_transition_and_strategy`; this lists it in the §10.4 field-set so the modifier
+> emits no out-of-spec field.)
 
 `bull_healthy_low_vol` — when:
 ```text
@@ -1101,6 +1173,8 @@ Modifier:
 > - `network_fragility` is rewritten to `{"state": "not_implemented_v1", "reason": "breadth_state_used_as_v1_fragility_proxy"}`.
 >
 > When `config_version != "core3-v1.0.0"` (V2 mode), the live richer shapes are emitted instead and additional V2-only top-level fields appear — see §11.1.
+>
+> **Wire note.** Null-valued optional fields (e.g. `data_quality.reason` when `null`) are omitted from the emitted wire via `exclude_none=True`; the `"reason": null` entries in the canonical JSON below illustrate the model field, not literal wire bytes. Frozen-replay fixtures reflect the post-`exclude_none` wire.
 
 ```json
 {
@@ -1208,6 +1282,16 @@ Modifier:
     "state": "not_implemented_v1",
     "reason": "breadth_state_used_as_v1_fragility_proxy"
   },
+  "transition_risk": {
+    "state": "stable",
+    "evidence": {
+      "triggered_rules": [],
+      "stable_changed_today": false,
+      "days_since_axis_switch": 2,
+      "axis_switch_count": 0,
+      "recent_axis_switch_count": 0
+    }
+  },
   "strategy_response": {
     "position_size_multiplier": 0.75,
     "allow_trend_following": false,
@@ -1234,9 +1318,11 @@ When the engine runs under a V2 config, the wire shape extends in two ways:
 "structural_causal_state": {
   "event_calendar": { /* unchanged from V1 */ },
   "monetary_pressure": {
-    "state": "unknown",
-    "evidence": {},
-    "data_quality": { "status": "insufficient_history", ... }
+    "raw_label": "<§2A monetary_pressure label>",
+    "stable_label": "...",
+    "active_label": "...",
+    "evidence": { /* §2A rule inputs */ },
+    "data_quality": { "status": "ok", ... }
   }
 },
 "network_fragility": {
@@ -1248,6 +1334,9 @@ When the engine runs under a V2 config, the wire shape extends in two ways:
   "mode": "sector_cross_asset_24"
 }
 ```
+
+The same `exclude_none=True` serialization that omits a null `data_quality.reason`
+from the wire (see §2.8) governs the optional fields below.
 
 **New optional top-level fields** (each lands when its V2 slice ships and the config + inputs are wired; omitted from the wire via `exclude_none=True` when absent):
 
@@ -1331,6 +1420,21 @@ tests/fixtures/raw/*.csv -diff
 These are hand-labeled expectations pending Slice 2 verification. The deterministic rule predicates win over intuition. If a slice can't pass its assigned date after verification, the bug is either the spec or the implementation — investigate before moving on. Do not relax expectations to make tests pass.
 
 After all slices ship, all 10 dates run as a regression suite on every commit.
+
+> **Golden-date replacement (F-008).** The active regression fixture
+> (`tests/fixtures/derived/golden_dates.yaml`) uses 10 committed replacement
+> `as_of_date` values rather than the literal table above. The table labels are
+> "pending verification" intuition, and when the engine classifies the literal
+> dates the deterministic predicates diverge from that intuition on every one of
+> them (e.g. on 2018-02-05 SPY fell ≈ −4.1%, which does not breach the §5.5
+> `crisis_vol` −5% trigger, so the engine emits `high_vol`, not the table's
+> `crisis_vol`). Anchoring to the literal dates cannot satisfy both "predicates
+> win" and the `provenance: hand_labeled` invariant simultaneously, and
+> `2020-04-10` is Good Friday (a non-NYSE session the engine rejects). The active
+> set therefore uses same-regime sessions where independent hand-labels and the
+> predicates agree. The full per-date mapping, divergence evidence, and rationale
+> are in `docs/verification/golden_dates_replacement_justification.md`, enforced by
+> `tests/test_fixture_verification.py::test_golden_date_replacement_set_has_documented_justification`.
 
 ### 12.3 Validation Beyond Unit Tests
 
@@ -1435,7 +1539,10 @@ V1 implementation contract:
    Section 11 output shape and the Section 10 conditional strategy-response
    field whitelist exactly.
 
-8. Hysteresis is asymmetric: escalation defaults to immediate via `*_escalation_days: 1`; raising those knobs delays stable-label entry. De-escalation remains debounced.
+8. Hysteresis is asymmetric: escalation defaults to immediate via each axis
+   section's `default_escalation_days: 1`; raising that default or adding
+   `escalation_days_by_label` delays stable-label entry while `active_label`
+   still surfaces the riskier raw label. De-escalation remains debounced.
 
 9. trend_direction and trend_character are SEPARATE axes. Never collapse
    them into a single label.

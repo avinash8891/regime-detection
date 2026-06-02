@@ -520,6 +520,134 @@ def test_build_raw_outputs_matches_per_day() -> None:
         assert labels_vec[i] == per_day
 
 
+def test_build_raw_outputs_direct_expected_v2_labels() -> None:
+    idx = _trading_index(8)
+    f = _synthetic_features(
+        close=pd.Series(
+            [120.0, 105.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
+            index=idx,
+            dtype=float,
+        ),
+        sma_50=pd.Series(
+            [100.0, 100.0, 99.0, 99.0, 99.0, 99.0, 99.0, 99.0],
+            index=idx,
+            dtype=float,
+        ),
+        return_10d=pd.Series(
+            [0.08, 0.06, 0.01, 0.01, 0.02, 0.02, 0.04, float("nan")],
+            index=idx,
+            dtype=float,
+        ),
+        return_21d=pd.Series(
+            [0.10, 0.04, 0.06, 0.01, 0.02, 0.04, 0.04, 0.01],
+            index=idx,
+            dtype=float,
+        ),
+        return_63d=pd.Series(
+            [0.20, 0.10, 0.10, 0.01, 0.01, 0.10, 0.10, 0.01],
+            index=idx,
+            dtype=float,
+        ),
+        prior_63d_drawdown=pd.Series(
+            [-0.20, -0.20, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            index=idx,
+            dtype=float,
+        ),
+        adx_14=pd.Series(
+            [25.0, 15.0, 25.0, 25.0, 15.0, 15.0, 15.0, 25.0],
+            index=idx,
+            dtype=float,
+        ),
+        midpoint_excursion_20d=pd.Series(
+            [0.20, 0.20, 0.20, 0.10, 0.03, 0.10, 0.10, 0.10],
+            index=idx,
+            dtype=float,
+        ),
+        breakout_20d_or_50d=pd.Series(
+            [True, False, False, False, False, False, False, False],
+            index=idx,
+        ),
+        bb_width_expanding=pd.Series(
+            [True, False, False, False, False, False, False, False],
+            index=idx,
+        ),
+        volume_above_20d_average=pd.Series(
+            [True, False, False, False, False, False, False, False],
+            index=idx,
+        ),
+        followthrough_rate=pd.Series(
+            [
+                0.80,
+                float("nan"),
+                float("nan"),
+                float("nan"),
+                float("nan"),
+                float("nan"),
+                float("nan"),
+                float("nan"),
+            ],
+            index=idx,
+            dtype=float,
+        ),
+    )
+
+    labels, evidence = build_raw_outputs(f)
+
+    assert labels == [
+        "breakout_expansion",
+        "recovery_attempt",
+        "trending",
+        "mild_trend",
+        "range_bound",
+        "chop",
+        "volatile_chop",
+        "unknown",
+    ]
+    assert evidence[0]["breakout_expansion"] is True
+    assert evidence[4]["range_bound"] is True
+    assert evidence[7] == {"reason": "insufficient_history"}
+
+
+def test_build_raw_outputs_v1_path_suppresses_v2_only_labels_vectorized() -> None:
+    idx = _trading_index(4)
+    f = _synthetic_features(
+        close=pd.Series([120.0, 100.0, 100.0, 100.0], index=idx, dtype=float),
+        sma_50=pd.Series([99.0, 99.0, 99.0, 99.0], index=idx, dtype=float),
+        return_10d=pd.Series([0.01, 0.01, 0.02, 0.04], index=idx, dtype=float),
+        return_21d=pd.Series([0.06, 0.01, 0.02, 0.04], index=idx, dtype=float),
+        return_63d=pd.Series([0.20, 0.10, 0.01, 0.10], index=idx, dtype=float),
+        prior_63d_drawdown=pd.Series([0.0, 0.0, 0.0, 0.0], index=idx, dtype=float),
+        adx_14=pd.Series([25.0, 25.0, 15.0, 15.0], index=idx, dtype=float),
+        midpoint_excursion_20d=pd.Series(
+            [0.20, 0.10, 0.03, 0.10], index=idx, dtype=float
+        ),
+        breakout_20d_or_50d=pd.Series([True, False, False, False], index=idx),
+        bb_width_expanding=pd.Series([True, False, False, False], index=idx),
+        volume_above_20d_average=pd.Series([True, False, False, False], index=idx),
+        followthrough_rate=pd.Series(
+            [0.80, float("nan"), float("nan"), float("nan")],
+            index=idx,
+            dtype=float,
+        ),
+    )
+
+    v2_labels, _ = build_raw_outputs(f)
+    v1_labels, _ = build_raw_outputs(f, allow_v2_labels=False)
+
+    assert v2_labels == [
+        "breakout_expansion",
+        "mild_trend",
+        "range_bound",
+        "volatile_chop",
+    ]
+    assert v1_labels == [
+        "trending",
+        "transition",
+        "chop",
+        "transition",
+    ]
+
+
 def test_v1_default_config_path_only_v1_or_v2_labels_on_golden_dates(
     classified_golden_outputs,
 ) -> None:

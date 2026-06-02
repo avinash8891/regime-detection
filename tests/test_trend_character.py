@@ -10,8 +10,10 @@ import yaml
 
 from regime_detection.trend_character import (
     TrendCharacterFeatures,
+    _compute_adx_14,
     _compute_breakout_20d_or_50d,
     _compute_followthrough_rate,
+    build_raw_outputs,
     compute_features,
     raw_label_for_day,
 )
@@ -65,11 +67,10 @@ def test_trend_character_matches_pinned_fixtures(classified_golden_outputs) -> N
     golden = yaml.safe_load(
         (repo_root / "tests" / "fixtures" / "derived" / "golden_dates.yaml").read_text()
     )
-    first_classified_date = min(classified_golden_outputs)
     for row in golden["rows"]:
+        if "expected" not in row:
+            continue  # V2-axis rows run through the V2 harness, not here
         as_of = date.fromisoformat(row["as_of_date"])
-        if as_of < first_classified_date:
-            continue
         out = classified_golden_outputs[as_of]
         assert (
             out.trend_character.active_label == row["expected"]["trend_character"]
@@ -180,3 +181,137 @@ def test_trend_character_raw_label_unknown_when_required_feature_is_nan() -> Non
 
     assert label == "unknown"
     assert evidence == {"reason": "insufficient_history"}
+
+
+def test_trend_character_vectorized_raw_outputs_match_scalar_rules() -> None:
+    idx = pd.DatetimeIndex(
+        [
+            pd.Timestamp("2024-01-02"),
+            pd.Timestamp("2024-01-03"),
+            pd.Timestamp("2024-01-04"),
+            pd.Timestamp("2024-01-05"),
+            pd.Timestamp("2024-01-08"),
+        ]
+    )
+    features = TrendCharacterFeatures(
+        close=pd.Series([105.0, 100.0, 100.0, 100.0, 100.0], index=idx),
+        sma_50=pd.Series([100.0, 99.0, 99.0, 99.0, 99.0], index=idx),
+        return_10d=pd.Series([0.05, 0.01, 0.02, 0.04, float("nan")], index=idx),
+        return_21d=pd.Series([0.00, 0.06, 0.04, 0.04, 0.01], index=idx),
+        prior_63d_drawdown=pd.Series([-0.10, 0.0, 0.0, 0.0, 0.0], index=idx),
+        adx_14=pd.Series([30.0, 25.0, 19.0, 19.0, 30.0], index=idx),
+        return_63d=pd.Series([0.0, 0.0, 0.0, 0.0, 0.0], index=idx),
+        midpoint_excursion_20d=pd.Series([0.10, 0.10, 0.10, 0.10, 0.10], index=idx),
+        breakout_20d_or_50d=pd.Series([False, False, False, False, False], index=idx),
+        bb_width_expanding=pd.Series([False, False, False, False, False], index=idx),
+        volume_above_20d_average=pd.Series(
+            [False, False, False, False, False], index=idx
+        ),
+        followthrough_rate=pd.Series(
+            [float("nan"), float("nan"), float("nan"), float("nan"), float("nan")],
+            index=idx,
+        ),
+    )
+
+    vector_labels, vector_evidence = build_raw_outputs(
+        features,
+        allow_v2_labels=False,
+    )
+
+    assert vector_labels == [
+        "recovery_attempt",
+        "trending",
+        "chop",
+        "transition",
+        "unknown",
+    ]
+    assert vector_evidence[-1] == {"reason": "insufficient_history"}
+    assert vector_evidence[0]["recovery_attempt"] is True
+    assert vector_evidence[1]["trending"] is True
+    assert vector_evidence[2]["chop"] is True
+
+    scalar = [raw_label_for_day(features, ts, allow_v2_labels=False) for ts in idx]
+    assert vector_labels == [label for label, _ in scalar]
+    assert vector_evidence == [evidence for _, evidence in scalar]
+
+
+def test_v1_spec_pins_adx_ewm_seeding_convention() -> None:
+    spec = (
+        Path(__file__).resolve().parents[1] / "docs" / "regime_engine_v1_final_spec.md"
+    ).read_text()
+
+    assert "ADX_14 uses pandas ewm(alpha=1/14, adjust=False, min_periods=14)" in spec
+
+
+def test_followthrough_rate_breakout_level_tie_break_prefers_20d() -> None:
+    # F-055: when a breakout session crosses BOTH its 20d and 50d prior-window maxima,
+    # the tie-break deterministically uses the 20d level (lower bar). Construct a
+    # series where the 50d max (130, an early spike) exceeds the 20d max (110), the
+    # breakout close (135) crosses both, and the subsequent holds (120) sit BETWEEN
+    # the two levels — so they hold above the 20d level but NOT the 50d level. With the
+    # 20d level chosen the breakout is held (rate 1.0); had 50d been chosen it would be
+    # not-held (0.0). Locks the documented tie-break.
+    from regime_detection.trend_character import _compute_followthrough_rate
+
+    values = [100.0] * 10  # 0..9
+    values += [130.0]  # 10 — the 50d-window peak (B), outside the trailing 20d window
+    values += [100.0] * 24  # 11..34
+    values += [105.0 + i * 0.25 for i in range(20)]  # 35..54, max 109.75 (< B) = A
+    values += [135.0]  # 55 — breakout close C > B, crosses both maxima
+    values += [120.0] * 5  # 56..60 — between the 20d (A) and 50d (B) levels
+    idx = pd.bdate_range("2023-01-02", periods=len(values))
+    close = pd.Series(values, index=idx, name="close")
+    breakout = pd.Series(False, index=idx)
+    breakout.iloc[55] = True  # only the crossing session fires
+
+    rate = _compute_followthrough_rate(
+        close,
+        breakout,
+        lookback_sessions=len(values),
+        window_count=1,
+        hold_sessions=5,
+    )
+
+    # The single breakout held above the 20d level → rate 1.0 from the held session on.
+    assert rate.iloc[-1] == 1.0
+
+
+def test_compute_adx_14_matches_independent_wilder_ewm_reimplementation() -> None:
+    # F-033: verify _compute_adx_14 against an INDEPENDENT inline reimplementation of
+    # the §4.4 Wilder ADX using the pinned ewm(alpha=1/14, adjust=False,
+    # min_periods=14) at every smoothing step. A deterministic OHLC series with real
+    # directional movement and pullbacks (no toy constants).
+    idx = pd.bdate_range("2022-01-03", periods=80)
+    close = pd.Series(
+        [300.0 + i * 0.8 - (i % 11) * 3.0 + (i % 5) * 1.5 for i in range(80)],
+        index=idx,
+        name="close",
+    )
+    high = (close + 2.5 + (pd.Series(range(80), index=idx) % 7) * 0.4).rename("high")
+    low = (close - 2.5 - (pd.Series(range(80), index=idx) % 6) * 0.4).rename("low")
+
+    actual = _compute_adx_14(high=high, low=low, close=close)
+
+    # Independent inline reimplementation — does NOT call _wilder_ewm.
+    def _ewm14(series: pd.Series) -> pd.Series:
+        return series.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+
+    prev_close = close.shift(1)
+    tr = pd.concat(
+        [(high - low), (high - prev_close).abs(), (low - prev_close).abs()], axis=1
+    ).max(axis=1)
+    up = high.diff()
+    down = -low.diff()
+    plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=idx)
+    minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.0), index=idx)
+    atr_safe = _ewm14(tr).replace(0.0, np.nan)
+    plus_di = 100 * _ewm14(plus_dm) / atr_safe
+    minus_di = 100 * _ewm14(minus_dm) / atr_safe
+    denom = (plus_di + minus_di).replace(0.0, np.nan)
+    dx = ((plus_di - minus_di).abs() / denom) * 100
+    expected = _ewm14(dx)
+
+    pd.testing.assert_series_equal(actual, expected, check_names=False)
+    # ewm(min_periods=14) keeps the first 13 observations NaN; the double-smoothed
+    # ADX is therefore NaN at least through the first 13 sessions.
+    assert actual.iloc[:13].isna().all()

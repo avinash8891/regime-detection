@@ -237,81 +237,29 @@ def raw_label_for_day(
     ``crisis_vol > vol_crush > high_vol > rising_vol > low_vol >
     normal_vol > unknown``) is layered ON TOP of the v1 label. When either
     is ``None`` the function returns the v1 label and evidence unchanged.
+
+    F-043: this is a thin wrapper over :func:`build_raw_outputs` so the §5.5
+    rule predicates, evidence shape, and v2 override have a single encoding.
+    Slicing each feature to ``[dt]`` is safe because the vectorized builder and
+    ``evaluate_v2_volatility_label`` only read values at the target session.
     """
-    ret1 = f.return_1d.loc[dt]
-    ret5 = f.return_5d.loc[dt]
-    ret21 = f.return_21d.loc[dt]
-    rv21 = f.realized_vol_21d.loc[dt]
-    vol_pct = f.realized_vol_percentile_252d.loc[dt]
-    vix_pct = None if f.vix_percentile_252d is None else f.vix_percentile_252d.loc[dt]
-
-    # V1 required features exclude VIX percentile (it is optional).
-    if any(pd.isna(x) for x in [ret1, ret5, ret21, vol_pct]):
-        return "unknown", {"reason": "insufficient_history"}
-
-    vix_crisis = False
-    vix_high = False
-    if vix_pct is not None and not pd.isna(vix_pct):
-        vix_crisis = bool(vix_pct >= 0.95)
-        vix_high = bool(vix_pct >= 0.80)
-
-    crisis = bool(
-        (ret1 <= -0.05)
-        or (ret5 <= -0.08)
-        or ((vol_pct >= 0.90) and (ret21 <= -0.05))
-        or vix_crisis
-    )
-    high_vol = bool((vol_pct >= 0.80) or vix_high)
-    low_vol = bool(vol_pct <= 0.30)
-
-    if crisis:
-        label: VolatilityLabel = "crisis_vol"
-    elif high_vol:
-        label = "high_vol"
-    elif low_vol:
-        label = "low_vol"
-    else:
-        label = "normal_vol"
-
-    evidence: dict[str, Any] = {
-        "realized_vol_21d": _ev_float(rv21),
-        "realized_vol_percentile_252d": _ev_float(vol_pct),
-        "vix_percentile_252d": (
-            _ev_float(vix_pct)
-            if (vix_pct is not None and not pd.isna(vix_pct))
-            else None
+    day_features = VolatilityFeatures(
+        close=f.close.loc[[dt]],
+        return_1d=f.return_1d.loc[[dt]],
+        return_5d=f.return_5d.loc[[dt]],
+        return_21d=f.return_21d.loc[[dt]],
+        realized_vol_21d=f.realized_vol_21d.loc[[dt]],
+        realized_vol_percentile_252d=f.realized_vol_percentile_252d.loc[[dt]],
+        vix_percentile_252d=(
+            None if f.vix_percentile_252d is None else f.vix_percentile_252d.loc[[dt]]
         ),
-        "crisis_vol": crisis,
-        "high_vol": high_vol,
-        "low_vol": low_vol,
-    }
-
-    if (
-        volatility_state_v2_features is not None
-        and volatility_state_v2_rules is not None
-    ):
-        # Local import keeps the v1 path free of v2 module load on cold
-        # callers and avoids a circular import (volatility_state_v2 imports
-        # VolatilityV2RulesConfig from config).
-        from regime_detection.volatility_state_v2 import (
-            evaluate_v2_volatility_label,
-        )
-
-        v2_label = evaluate_v2_volatility_label(
-            v1_label=label,
-            features=volatility_state_v2_features,
-            dt=dt,
-            rules_config=volatility_state_v2_rules,
-        )
-        if v2_label is not None:
-            evidence["v2_override"] = {
-                "from": label,
-                "to": v2_label,
-                "rule": v2_label,  # the winning v2 §1C rule (rising_vol / vol_crush)
-            }
-            label = v2_label  # type: ignore[assignment]
-
-    return label, evidence
+    )
+    labels, evidence = build_raw_outputs(
+        day_features,
+        volatility_state_v2_features=volatility_state_v2_features,
+        volatility_state_v2_rules=volatility_state_v2_rules,
+    )
+    return labels[0], evidence[0]
 
 
 def build_raw_outputs(
@@ -380,7 +328,14 @@ def build_raw_outputs(
             }
         )
 
-    if volatility_state_v2_features is not None:
+    # Both v2 evidence enrichment (iv_rv_spread) and the v2 §1C label override apply
+    # ONLY when BOTH v2 args are present — otherwise the output is byte-identical to v1
+    # (docstring contract). Gating the iv_rv_spread block on features alone would change
+    # the evidence shape on a partial v2 arg.
+    if (
+        volatility_state_v2_features is not None
+        and volatility_state_v2_rules is not None
+    ):
         iv_rv = volatility_state_v2_features.iv_rv_spread
         for idx, dt in enumerate(ret1.index):
             if labels[idx] != "unknown" and iv_rv is not None and dt in iv_rv.index:
@@ -388,10 +343,6 @@ def build_raw_outputs(
                 if not pd.isna(val):
                     evidence[idx]["iv_rv_spread"] = _ev_float(val)
 
-    if (
-        volatility_state_v2_features is not None
-        and volatility_state_v2_rules is not None
-    ):
         # v2 §1C line 311 precedence — applied per-day on top of v1.
         # Localize import to avoid a runtime cycle with volatility_state_v2.
         from regime_detection.volatility_state_v2 import (

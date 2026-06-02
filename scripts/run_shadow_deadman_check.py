@@ -6,6 +6,7 @@ import json
 import sys
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -19,6 +20,7 @@ from regime_detection.shadow_storage import (
     insert_incident,
     open_shadow_db,
 )
+from regime_detection.shadow_qualification import evaluate_shadow_qualification
 
 
 def _previous_nyse_session(check_date: date) -> date:
@@ -34,22 +36,88 @@ def _previous_nyse_session(check_date: date) -> date:
     return previous[-1]
 
 
+def _interior_session_gaps(
+    conn: Any,
+    *,
+    engine_version: str,
+    config_version: str,
+) -> list[date]:
+    """F-017: NYSE sessions with no run row that fall *between* two recorded sessions.
+
+    A contiguity break is a hole inside the recorded history — distinct from the
+    natural left edge of a young shadow window (sessions predating the program),
+    which is NOT a gap. We therefore only flag missing sessions strictly between the
+    earliest and latest recorded session for this engine/config pair.
+    """
+    rows = conn.execute(
+        """
+        SELECT DISTINCT as_of_date
+        FROM runs
+        WHERE engine_version = ? AND config_version = ?
+        """,
+        (engine_version, config_version),
+    ).fetchall()
+    recorded = sorted(date.fromisoformat(str(row[0])) for row in rows)
+    if len(recorded) < 2:
+        return []
+    schedule = nyse_calendar().schedule(start_date=recorded[0], end_date=recorded[-1])
+    expected = [session for session in schedule.index.date]
+    recorded_set = set(recorded)
+    return [session for session in expected if session not in recorded_set]
+
+
 def run_deadman_check(
     *,
     output_root: Path,
     check_date: date,
-) -> dict[str, str | None]:
+) -> dict[str, Any]:
     paths = ensure_shadow_layout(output_root)
     conn = open_shadow_db(paths["db"])
     try:
         expected_as_of_date = _previous_nyse_session(check_date)
         run_row = fetch_run_row(conn=conn, as_of_date=expected_as_of_date)
         if run_row is not None:
+            qualification = evaluate_shadow_qualification(
+                conn=conn,
+                end_date=expected_as_of_date,
+                engine_version=str(run_row["engine_version"]),
+                config_version=str(run_row["config_version"]),
+            )
+            # F-017: the previous session ran, but an interior session may be missing
+            # — a hole between two recorded sessions silently resets the consecutive-
+            # clean window. Surface it as a non-ok status so main() exits nonzero
+            # (the deadman fails loudly) instead of the previous unconditional "ok".
+            interior_gaps = _interior_session_gaps(
+                conn,
+                engine_version=str(run_row["engine_version"]),
+                config_version=str(run_row["config_version"]),
+            )
+            if interior_gaps:
+                gap_list = ", ".join(session.isoformat() for session in interior_gaps)
+                alert = (
+                    "Shadow qualification window broken by interior "
+                    f"missing_session_gap ({gap_list})"
+                )
+                insert_incident(
+                    conn=conn,
+                    incident_date=check_date,
+                    description=alert,
+                    resolution=None,
+                    breaks_qualification=True,
+                )
+                return {
+                    "status": "window_gap",
+                    "check_date": check_date.isoformat(),
+                    "expected_as_of_date": expected_as_of_date.isoformat(),
+                    "alert": alert,
+                    "qualification": qualification,
+                }
             return {
                 "status": "ok",
                 "check_date": check_date.isoformat(),
                 "expected_as_of_date": expected_as_of_date.isoformat(),
                 "alert": None,
+                "qualification": qualification,
             }
 
         alert = f"Missing shadow run for previous NYSE session {expected_as_of_date.isoformat()}"
@@ -65,6 +133,7 @@ def run_deadman_check(
             "check_date": check_date.isoformat(),
             "expected_as_of_date": expected_as_of_date.isoformat(),
             "alert": alert,
+            "qualification": None,
         }
     finally:
         conn.close()
@@ -86,7 +155,9 @@ def main() -> int:
         check_date=args.check_date,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
+    # F-017: both a missing previous run ("alert") and an interior contiguity gap
+    # ("window_gap") are deadman failures and must exit nonzero.
+    return 0 if result["status"] == "ok" else 1
 
 
 if __name__ == "__main__":

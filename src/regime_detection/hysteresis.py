@@ -14,17 +14,27 @@ def apply_per_label_asymmetric_hysteresis(
     raw_labels: list[TLabel],
     risk_rank: dict[TLabel, int],
     deescalation_days_by_label: dict[TLabel, int],
+    escalation_days_by_label: dict[TLabel, int] | None = None,
+    default_escalation_days: int = 1,
     default_deescalation_days: int = 0,
 ) -> tuple[list[TLabel], list[TLabel]]:
     """
     Per-label asymmetric hysteresis (spec v2 §3.7):
-    - Escalation (higher risk_rank) updates stable immediately, identical to V1.
+    - Escalation (higher risk_rank) defaults to immediate, identical to V1.
+      Raising `default_escalation_days` or a per-label escalation threshold delays
+      stable-label entry while active_label still surfaces the riskier raw label.
     - De-escalation threshold depends on the label being LEFT (the current stable label):
       `deescalation_days_by_label.get(stable_label, default_deescalation_days)`.
     - active_label uses the same fast-path as V1: if raw is riskier than stable, active=raw else active=stable.
     """
+    escalation_days_by_label = escalation_days_by_label or {}
+    if default_escalation_days < 1:
+        raise ValueError("default_escalation_days must be >= 1")
     if default_deescalation_days < 0:
         raise ValueError("default_deescalation_days must be >= 0")
+    for label, days in escalation_days_by_label.items():
+        if days < 1:
+            raise ValueError(f"escalation_days_by_label[{label!r}] must be >= 1")
     for label, days in deescalation_days_by_label.items():
         if days < 0:
             raise ValueError(f"deescalation_days_by_label[{label!r}] must be >= 0")
@@ -46,9 +56,21 @@ def apply_per_label_asymmetric_hysteresis(
         )
 
         if raw_rank > stable_rank:
-            stable_label = raw
-            pending_label = None
-            pending_count = 0
+            threshold = escalation_days_by_label.get(raw, default_escalation_days)
+            if threshold == 1:
+                stable_label = raw
+                pending_label = None
+                pending_count = 0
+            else:
+                if pending_label != raw:
+                    pending_label = raw
+                    pending_count = 1
+                else:
+                    pending_count += 1
+                if pending_count >= threshold:
+                    stable_label = raw
+                    pending_label = None
+                    pending_count = 0
         elif raw_rank < stable_rank or raw != stable_label:
             if threshold == 0:
                 stable_label = raw
@@ -83,6 +105,8 @@ def apply_data_quality_aware_hysteresis(
     risk_rank: dict[TLabel, int],
     deescalation_days_by_label: dict[TLabel, int],
     data_quality: Sequence[DataQuality],
+    escalation_days_by_label: dict[TLabel, int] | None = None,
+    default_escalation_days: int = 1,
     default_deescalation_days: int = 0,
     max_unknown_freeze_days: int = 0,
 ) -> tuple[list[TLabel], list[TLabel], list[bool]]:
@@ -100,11 +124,19 @@ def apply_data_quality_aware_hysteresis(
         raise ValueError("max_unknown_freeze_days must be >= 0")
     if len(raw_labels) != len(data_quality):
         raise ValueError("raw_labels and data_quality must have the same length")
+    escalation_days_by_label = escalation_days_by_label or {}
+    if default_escalation_days < 1:
+        raise ValueError("default_escalation_days must be >= 1")
+    for label, days in escalation_days_by_label.items():
+        if days < 1:
+            raise ValueError(f"escalation_days_by_label[{label!r}] must be >= 1")
     if max_unknown_freeze_days == 0:
         stable, active = apply_per_label_asymmetric_hysteresis(
             raw_labels=raw_labels,
             risk_rank=risk_rank,
             deescalation_days_by_label=deescalation_days_by_label,
+            escalation_days_by_label=escalation_days_by_label,
+            default_escalation_days=default_escalation_days,
             default_deescalation_days=default_deescalation_days,
         )
         return stable, active, [False] * len(raw_labels)
@@ -129,10 +161,17 @@ def apply_data_quality_aware_hysteresis(
     for raw, dq in zip(raw_labels, data_quality, strict=True):
         if quality_forces_unknown(dq):
             data_gap_count += 1
+            hold_limit = max_unknown_freeze_days
+            if last_known_stable is not None:
+                threshold = deescalation_days_by_label.get(
+                    last_known_stable, default_deescalation_days
+                )
+                if threshold > 0:
+                    hold_limit = max(hold_limit, threshold - 1)
             if (
                 last_known_stable is not None
                 and last_known_active is not None
-                and data_gap_count <= max_unknown_freeze_days
+                and data_gap_count <= hold_limit
             ):
                 stable.append(last_known_stable)
                 active.append(last_known_active)
@@ -158,9 +197,21 @@ def apply_data_quality_aware_hysteresis(
                 stable_label, default_deescalation_days
             )
             if raw_rank > stable_rank:
-                stable_label = raw
-                pending_label = None
-                pending_count = 0
+                threshold = escalation_days_by_label.get(raw, default_escalation_days)
+                if threshold == 1:
+                    stable_label = raw
+                    pending_label = None
+                    pending_count = 0
+                else:
+                    if pending_label != raw:
+                        pending_label = raw
+                        pending_count = 1
+                    else:
+                        pending_count += 1
+                    if pending_count >= threshold:
+                        stable_label = raw
+                        pending_label = None
+                        pending_count = 0
             elif raw_rank < stable_rank or raw != stable_label:
                 if threshold == 0:
                     stable_label = raw

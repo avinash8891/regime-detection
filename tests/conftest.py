@@ -43,6 +43,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from regime_shared.pandas_compat import cow_safe_assign  # noqa: E402
+from regime_detection.config import load_regime_config  # noqa: E402
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.fragility_universe import (
     CROSS_ASSET_SYMBOLS,
@@ -513,7 +514,12 @@ def v2_pit_constituent_intervals() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "ticker": list(SECTOR_ETFS),
-            "start_date": [date(2019, 1, 2)] * len(SECTOR_ETFS),
+            "start_date": [
+                {"XLRE": date(2015, 10, 8), "XLC": date(2018, 6, 19)}.get(
+                    t, date(2009, 1, 2)
+                )
+                for t in SECTOR_ETFS
+            ],
             "end_date": [None] * len(SECTOR_ETFS),
         }
     )
@@ -606,7 +612,7 @@ def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
         required_cross_assets = sorted(
             set(CROSS_ASSET_SYMBOLS) | {"KRE", "XLY", "XLI", "XLP", "XLU"}
         )
-        if start < v2_start or as_of < v2_start or not _v2_macro_fixture_covers(as_of):
+        if as_of < v2_start or not _v2_macro_fixture_covers(as_of):
             raise RuntimeError(
                 "real V2 fixture rows do not cover synthetic_v2_kwargs "
                 f"window start={start} as_of={as_of}"
@@ -648,14 +654,23 @@ def event_calendar_df() -> pd.DataFrame:
 
 @pytest.fixture(scope="session")
 def golden_rows() -> list[dict[str, object]]:
+    """Core-axis golden rows (those carrying an ``expected`` block).
+
+    The unified golden_dates.yaml also holds ``expected_v2_fields`` rows that run
+    through the separate V2 harness (v2_classify_kwargs_for_asof); those are
+    excluded here so classified_golden_outputs only classifies dates the
+    core/frozen-V1 pipeline can reproduce.
+    """
     golden = yaml.safe_load(_GOLDEN_DATES_PATH.read_text())
-    return list(golden["rows"])
+    return [row for row in golden["rows"] if "expected" in row]
 
 
 def _classify_all_golden_rows(
     golden_rows: list[dict[str, object]],
     v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
+    raw_market_data: pd.DataFrame,
+    event_calendar_df: pd.DataFrame,
 ) -> dict[date, object]:
     """Classify every golden date in ONE classify_window pass.
 
@@ -666,9 +681,9 @@ def _classify_all_golden_rows(
 
     PIT correctness: classify_window's per-day emission is stateless-replay
     compliant — each emitted day's classifier state is computed using only
-    data on or before that day. The default V2 config requires transition
-    score inputs, so this fixture supplies the canonical V2 fixture bundle and
-    only emits golden rows covered by that real V2 fixture window.
+    data on or before that day. Golden dates before the V2 fixture start are
+    V1 regression rows and are classified through the frozen V1 config instead
+    of being silently filtered out.
     """
     engine = RegimeEngine()
     all_golden_dates = sorted(
@@ -677,42 +692,80 @@ def _classify_all_golden_rows(
     if not all_golden_dates:
         return {}
     end = all_golden_dates[-1]
-    market_data = v2_market_df_for_asof(end)
-    v2_start = min(market_data["date"])
-    golden_dates = [d for d in all_golden_dates if d >= v2_start]
-    if not golden_dates:
-        return {}
-    earliest = golden_dates[0]
-    # NYSE has ~252 sessions per calendar year. Upper-bound lookback to
-    # comfortably cover earliest..end inclusive plus engine min-history.
-    span_days = (end - earliest).days
-    lookback_sessions = max(1, int(span_days / 365.25 * 252) + 220)
-    available_sessions = market_data.loc[
-        market_data["symbol"] == "SPY", "date"
-    ].nunique()
-    lookback_sessions = min(lookback_sessions, available_sessions)
-    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
-    timeline = engine.classify_window(
-        end_date=end,
-        market_data=market_data,
-        lookback_days=lookback_sessions,
-        config=kwargs["config"],
-        event_calendar=kwargs["event_calendar"],
-        sector_etf_closes=kwargs["sector_etf_closes"],
-        cross_asset_closes=kwargs["cross_asset_closes"],
-        macro_series=kwargs["macro_series"],
-        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
-        constituent_ohlcv=kwargs["constituent_ohlcv"],
-    )
-    by_date = {out.as_of_date: out for out in timeline.outputs}
-    missing = [d for d in golden_dates if d not in by_date]
-    if missing:
-        raise RuntimeError(
-            f"classify_window did not emit outputs for golden dates: {missing!r}. "
-            f"Window end={end}, lookback_sessions={lookback_sessions}, "
-            f"emitted span={timeline.outputs[0].as_of_date}..{timeline.outputs[-1].as_of_date}"
+    v2_market_data = v2_market_df_for_asof(end)
+    v2_replay_start = date(2020, 1, 1)
+    v1_dates = [d for d in all_golden_dates if d < v2_replay_start]
+    v2_dates = [d for d in all_golden_dates if d >= v2_replay_start]
+    outputs: dict[date, object] = {}
+
+    if v1_dates:
+        v1_end = max(v1_dates)
+        v1_market_data = (
+            raw_market_data[raw_market_data["date"] <= v1_end]
+            .copy()
+            .reset_index(drop=True)
         )
-    return {d: by_date[d] for d in golden_dates}
+        v1_lookback_sessions = v1_market_data.loc[
+            v1_market_data["symbol"] == "SPY", "date"
+        ].nunique()
+        v1_timeline = engine.classify_window(
+            end_date=v1_end,
+            market_data=v1_market_data,
+            lookback_days=v1_lookback_sessions,
+            config=load_regime_config(
+                _REPO_ROOT
+                / "src"
+                / "regime_detection"
+                / "configs"
+                / "core3-v1.0.0.yaml"
+            ),
+            event_calendar=event_calendar_df,
+        )
+        v1_by_date = {out.as_of_date: out for out in v1_timeline.outputs}
+        missing_v1 = [d for d in v1_dates if d not in v1_by_date]
+        if missing_v1:
+            raise RuntimeError(
+                f"classify_window did not emit V1 golden dates: {missing_v1!r}"
+            )
+        outputs.update({d: v1_by_date[d] for d in v1_dates})
+
+    if v2_dates:
+        market_data = v2_market_data
+        earliest = v2_dates[0]
+        span_days = (end - earliest).days
+        lookback_sessions = max(1, int(span_days / 365.25 * 252) + 220)
+        available_sessions = market_data.loc[
+            market_data["symbol"] == "SPY",
+            "date",
+        ].nunique()
+        lookback_sessions = min(lookback_sessions, available_sessions)
+        kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+        timeline = engine.classify_window(
+            end_date=end,
+            market_data=market_data,
+            lookback_days=lookback_sessions,
+            config=kwargs["config"],
+            event_calendar=kwargs["event_calendar"],
+            sector_etf_closes=kwargs["sector_etf_closes"],
+            cross_asset_closes=kwargs["cross_asset_closes"],
+            macro_series=kwargs["macro_series"],
+            pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+            constituent_ohlcv=kwargs["constituent_ohlcv"],
+        )
+        by_date = {out.as_of_date: out for out in timeline.outputs}
+        missing = [d for d in v2_dates if d not in by_date]
+        if missing:
+            raise RuntimeError(
+                f"classify_window did not emit outputs for golden dates: {missing!r}. "
+                f"Window end={end}, lookback_sessions={lookback_sessions}, "
+                f"emitted span={timeline.outputs[0].as_of_date}..{timeline.outputs[-1].as_of_date}"
+            )
+        outputs.update({d: by_date[d] for d in v2_dates})
+
+    missing_outputs = [d for d in all_golden_dates if d not in outputs]
+    if missing_outputs:
+        raise RuntimeError(f"golden dates were not classified: {missing_outputs!r}")
+    return outputs
 
 
 def _load_module_for_fixture(name: str, rel_path: str):
@@ -936,6 +989,8 @@ def classified_golden_outputs(
     golden_rows: list[dict[str, object]],
     v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
+    raw_market_data: pd.DataFrame,
+    event_calendar_df: pd.DataFrame,
     worker_id: str,
 ) -> dict[date, object]:
     """Session-scoped fixture, shared across pytest-xdist workers via a disk
@@ -948,6 +1003,8 @@ def classified_golden_outputs(
             golden_rows,
             v2_market_df_for_asof,
             synthetic_v2_kwargs_for_market_data,
+            raw_market_data,
+            event_calendar_df,
         )
 
     shared_dir = tmp_path_factory.getbasetemp().parent
@@ -965,6 +1022,8 @@ def classified_golden_outputs(
             golden_rows,
             v2_market_df_for_asof,
             synthetic_v2_kwargs_for_market_data,
+            raw_market_data,
+            event_calendar_df,
         )
         tmp_path = cache_path.with_suffix(".pkl.tmp")
         tmp_path.write_bytes(pickle.dumps(outputs))

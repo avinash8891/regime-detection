@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from regime_detection.calendar import is_nyse_trading_day
-from regime_detection.config import RegimeConfig
+from regime_detection.config import RegimeConfig, load_regime_config
 from regime_detection.engine import (
     ClassifyRequest,
     RegimeEngine,
@@ -64,8 +64,25 @@ def test_market_data_contract_requires_spy(market_df_for_asof) -> None:
     assert is_nyse_trading_day(as_of)
     df = market_df_for_asof(as_of)
     df = df[df["symbol"] != "SPY"].copy()
+    # Isolate the market_data SPY contract under the V1 config: F-038 reorders the V2
+    # input-contract validation ahead of build_market_context, so under the V2 config a
+    # request with no V2 inputs would fail the V2-contract check first. The SPY contract
+    # (inside build_market_context) is config-independent; the V1 config skips V2
+    # validation so this test exercises the SPY contract specifically.
+    v1_config = load_regime_config(
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "regime_detection"
+        / "configs"
+        / "core3-v1.0.0.yaml"
+    )
     with pytest.raises(ValueError) as excinfo:
-        engine.classify(as_of_date=as_of, market_data=df, event_calendar=pd.DataFrame())
+        engine.classify(
+            as_of_date=as_of,
+            market_data=df,
+            event_calendar=pd.DataFrame(),
+            config=v1_config,
+        )
     assert "must contain SPY" in str(excinfo.value)
 
 
@@ -96,6 +113,29 @@ def test_classify_request_requires_event_calendar(market_df_for_asof) -> None:
         RegimeEngine().classify_request(request)
 
 
+def test_classify_request_validates_v2_inputs_before_building_context(
+    market_df_for_asof, event_calendar_df, monkeypatch
+) -> None:
+    # F-038: a missing required V2 input must surface as the explicit V2 contract error
+    # at the boundary, BEFORE build_market_context runs. Monkeypatch build_market_context
+    # to a sentinel that would raise if reached; assert the V2-contract ValueError wins,
+    # proving validation is ordered first. The default engine uses the V2 config, whose
+    # configured axes require macro/cross-asset inputs the request omits.
+    def _sentinel(**_kwargs):
+        raise AssertionError("build_market_context ran before V2 input validation")
+
+    monkeypatch.setattr("regime_detection.engine.build_market_context", _sentinel)
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_df_for_asof(date(2023, 12, 14)),
+        lookback_days=1,
+        event_calendar=event_calendar_df,
+    )
+
+    with pytest.raises(ValueError, match="missing configured V2 inputs"):
+        RegimeEngine().classify_request(request)
+
+
 def test_classify_request_rejects_non_positive_lookback(
     market_df_for_asof, event_calendar_df
 ) -> None:
@@ -107,6 +147,25 @@ def test_classify_request_rejects_non_positive_lookback(
     )
 
     with pytest.raises(ValueError, match="lookback_days must be positive"):
+        RegimeEngine().classify_request(request)
+
+
+def test_classify_request_rejects_non_regime_config_override(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    """F-042 / §2.4.1: a config override may only be a validated RegimeConfig instance.
+    Because ClassifyRequest is a plain dataclass (no Pydantic enforcement), a non-config
+    (here a dict) must fail loudly with a TypeError at the request boundary — not deep
+    inside build_market_context."""
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_df_for_asof(date(2023, 12, 14)),
+        lookback_days=1,
+        event_calendar=event_calendar_df,
+        config={"not": "a regime config"},  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(TypeError, match="RegimeConfig"):
         RegimeEngine().classify_request(request)
 
 
@@ -125,9 +184,42 @@ def test_classify_rejects_legacy_breadth_data_argument(market_df_for_asof) -> No
         )
 
 
-def test_classify_request_rejects_profile_manifest_without_event_calendar_resolution(
+def test_classify_request_rejects_profile_manifest_without_any_provenance(
     market_df_for_asof, event_calendar_df
 ) -> None:
+    # F-048: §2.1 requires profile_manifest calls to pass manifest provenance but does
+    # not enumerate which input names. The gate now requires NON-EMPTY provenance, not a
+    # hardcoded 'event_calendar'. Empty provenance (no resolved inputs, no CLI overrides)
+    # raises; a provenance under any name (covered by the accepts test below) passes.
+    request = ClassifyRequest(
+        end_date=date(2023, 12, 14),
+        market_data=market_df_for_asof(date(2023, 12, 14)),
+        event_calendar=event_calendar_df,
+        request_source="profile_manifest",
+        manifest_resolved_inputs=frozenset(),
+        manifest_cli_overrides=frozenset(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="profile_manifest request missing manifest provenance",
+    ):
+        RegimeEngine().classify_request(request)
+
+
+def test_classify_request_accepts_profile_manifest_with_non_event_calendar_provenance(
+    market_df_for_asof, event_calendar_df
+) -> None:
+    # F-048: a profile_manifest run whose provenance is named something other than
+    # 'event_calendar' must pass the provenance gate (the prior hardcoded literal
+    # rejected it). Use the V1 config so the run completes without V2 inputs.
+    config_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "regime_detection"
+        / "configs"
+        / "core3-v1.0.0.yaml"
+    )
     request = ClassifyRequest(
         end_date=date(2023, 12, 14),
         market_data=market_df_for_asof(date(2023, 12, 14)),
@@ -136,11 +228,9 @@ def test_classify_request_rejects_profile_manifest_without_event_calendar_resolu
         manifest_resolved_inputs=frozenset({"news_sentiment_parquet"}),
     )
 
-    with pytest.raises(
-        ValueError,
-        match="profile_manifest request missing manifest-backed required inputs",
-    ):
-        RegimeEngine().classify_request(request)
+    output = RegimeEngine(config_path=config_path).classify_request(request)
+
+    assert output.outputs[-1].as_of_date == date(2023, 12, 14)
 
 
 def test_classify_request_accepts_profile_manifest_event_calendar_cli_override(

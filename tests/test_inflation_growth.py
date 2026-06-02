@@ -638,6 +638,47 @@ def test_recession_scare_fires() -> None:
     assert evaluate_rules(inputs=inputs, config=rules) == "recession_scare"
 
 
+def test_risk_off_mild_fires_on_credit_stress_mild_decline_with_growth_signal() -> None:
+    """Amb #2: risk_off_mild fires on credit stress + a MILD equity decline (SPY in
+    [-0.05, 0), above recession_scare's -0.05 crash threshold) + at least one
+    growth-deterioration signal. Pins the §2B operational rule (previously undefined)
+    to inflation_growth_rules.evaluate_risk_off_mild."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        credit_funding_active_label="credit_stress",
+        spy_21d_return=-0.03,  # mild decline, NOT a crash (recession_scare needs < -0.05)
+        cyclical_defensive_slope_21d=-0.01,  # growth-deterioration signal
+        treasury_10y_yield_slope_21d=0.0,  # keep recession_scare (treasury < 0) silent
+    )
+    assert evaluate_rules(inputs=inputs, config=rules) == "risk_off_mild"
+
+
+def test_risk_off_mild_silent_without_growth_deterioration_signal() -> None:
+    """Amb #2: credit stress + mild decline but NO growth-deterioration signal ⇒
+    risk_off_mild must NOT fire (its third clause is unmet)."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        credit_funding_active_label="credit_stress",
+        spy_21d_return=-0.03,
+        cyclical_defensive_slope_21d=0.0,  # no rotation signal
+        treasury_10y_yield_slope_21d=0.0,  # no flight-to-safety signal
+        pmi_manufacturing=52.0,  # > 50 → no manufacturing-softening signal
+    )
+    assert evaluate_rules(inputs=inputs, config=rules) != "risk_off_mild"
+
+
+def test_risk_off_mild_does_not_shadow_benign_goldilocks() -> None:
+    """Amb #2: although risk_off_mild outranks goldilocks/recovery_growth, it requires
+    credit stress, so a benign credit_calm tape (even with a lone risk-off rotation
+    reading) stays goldilocks — risk_off_mild cannot shadow benign regimes."""
+    rules = _default_rules()
+    inputs = _rule_inputs(
+        cyclical_defensive_slope_21d=-0.01,  # a risk-off-ish signal, but credit_calm +
+        # spy_21d_return > 0 (defaults) keep risk_off_mild's credit-stress clause unmet
+    )
+    assert evaluate_rules(inputs=inputs, config=rules) == "goldilocks"
+
+
 def test_recession_scare_fires_when_credit_unavailable_with_stricter_threshold() -> (
     None
 ):

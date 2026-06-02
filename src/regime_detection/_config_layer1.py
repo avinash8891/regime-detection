@@ -9,6 +9,8 @@ class AxisHysteresisConfig(StrictBaseModel):
     """Axis-level per-label hysteresis config shared by V1-origin and V2 axes."""
 
     deescalation_days_by_label: dict[str, int]
+    default_escalation_days: int = Field(default=1, ge=1)
+    escalation_days_by_label: dict[str, int] = Field(default_factory=dict)
     default_deescalation_days: int = Field(default=0, ge=0)
     max_unknown_freeze_days: int = Field(default=0, ge=0)
 

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import importlib.util
 import sqlite3
-from datetime import date
+import sys
+from datetime import date, timedelta
 from pathlib import Path
 from contextlib import closing
+
+from regime_detection.calendar import nyse_calendar
 
 
 def _load_module(name: str, rel_path: str):
@@ -99,6 +102,77 @@ def test_deadman_check_alerts_and_records_incident_when_previous_session_missing
     ]
 
 
+def test_deadman_main_returns_nonzero_on_alert(tmp_path: Path, monkeypatch) -> None:
+    monitor = _load_module(
+        "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
+    )
+    out_root = tmp_path / "shadow_run"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_shadow_deadman_check.py",
+            "--output-root",
+            str(out_root),
+            "--check-date",
+            "2023-12-15",
+        ],
+    )
+
+    assert monitor.main() == 1
+
+
+def test_deadman_check_flags_interior_gap_and_exits_nonzero(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # F-017: the previous NYSE session ran, but an interior session is missing, so
+    # the consecutive-clean qualification window is broken. The deadman must NOT
+    # report "ok" — it returns window_gap, records a breaking incident, and main()
+    # exits nonzero so the scheduled job fails loudly.
+    monitor = _load_module(
+        "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
+    )
+    out_root = tmp_path / "shadow_run"
+    schedule = nyse_calendar().schedule(
+        start_date=date(2023, 11, 1),
+        end_date=date(2023, 12, 15),
+    )
+    sessions = list(schedule.index.date)
+    interior_gap = sessions[-3]
+    for session in sessions:
+        if session == interior_gap:
+            continue
+        _record_shadow_run(out_root, session)
+
+    check_date = sessions[-1] + timedelta(days=1)
+    result = monitor.run_deadman_check(output_root=out_root, check_date=check_date)
+
+    assert result["status"] == "window_gap"
+    assert result["expected_as_of_date"] == sessions[-1].isoformat()
+    assert "missing_session_gap" in result["alert"]
+    assert result["qualification"]["qualifies"] is False
+    assert "missing_session_gap" in result["qualification"]["blocking_reasons"]
+
+    with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
+        incidents = conn.execute(
+            "SELECT incident_date, breaks_qualification FROM incidents"
+        ).fetchall()
+    assert incidents == [(check_date.isoformat(), 1)]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_shadow_deadman_check.py",
+            "--output-root",
+            str(out_root),
+            "--check-date",
+            check_date.isoformat(),
+        ],
+    )
+    assert monitor.main() == 1
+
+
 def test_deadman_check_uses_previous_friday_for_weekend_check(
     tmp_path: Path,
 ) -> None:
@@ -115,3 +189,29 @@ def test_deadman_check_uses_previous_friday_for_weekend_check(
 
     assert result["status"] == "ok"
     assert result["expected_as_of_date"] == "2023-12-15"
+
+
+def test_deadman_check_reports_shadow_qualification_counter(
+    tmp_path: Path,
+) -> None:
+    monitor = _load_module(
+        "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
+    )
+    out_root = tmp_path / "shadow_run"
+    schedule = nyse_calendar().schedule(
+        start_date=date(2023, 1, 3),
+        end_date=date(2024, 3, 31),
+    )
+    sessions = list(schedule.index.date)[:252]
+    assert len(sessions) == 252
+    for session in sessions:
+        _record_shadow_run(out_root, session)
+
+    result = monitor.run_deadman_check(
+        output_root=out_root,
+        check_date=sessions[-1] + timedelta(days=1),
+    )
+
+    assert result["status"] == "ok"
+    assert result["qualification"]["qualifies"] is True
+    assert result["qualification"]["current_consecutive_sessions"] == 252

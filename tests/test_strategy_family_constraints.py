@@ -222,6 +222,9 @@ def test_regime_output_carries_strategy_family_constraints_when_configured(
 ) -> None:
     assert classified_golden_outputs
     for _as_of, out in classified_golden_outputs.items():
+        if out.config_version == "core3-v1.0.0":
+            assert out.strategy_family_constraints is None
+            continue
         assert out.strategy_family_constraints is not None
         assert set(STRATEGY_FAMILIES).issubset(
             set(out.strategy_family_constraints.keys())

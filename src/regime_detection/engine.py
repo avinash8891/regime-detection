@@ -8,7 +8,11 @@ from typing import Literal
 
 import pandas as pd
 
-from regime_detection.calendar import as_date, require_nyse_trading_day
+from regime_detection.calendar import (
+    as_date,
+    nyse_sessions_between,
+    require_nyse_trading_day,
+)
 from regime_detection.config import (
     RegimeConfig,
     load_default_regime_config,
@@ -27,7 +31,6 @@ from regime_detection.models import RegimeOutput, RegimeTimeline
 from regime_detection.timeline import build_regime_timeline
 
 ClassifyRequestSource = Literal["direct", "profile_manifest"]
-_PROFILE_MANIFEST_REQUIRED_INPUTS = frozenset({"event_calendar"})
 V2RequestInputPolicy = Literal["required", "optional_evidence"]
 ManifestInputNames = Collection[str]
 
@@ -244,12 +247,17 @@ def _validate_request_source(request: ClassifyRequest) -> None:
             )
         return
     if request.request_source == "profile_manifest":
-        missing = _PROFILE_MANIFEST_REQUIRED_INPUTS - manifest_inputs
-        if missing:
-            missing_text = ", ".join(sorted(missing))
+        # F-048: §2.1 requires profile_manifest calls to "pass manifest provenance"
+        # but does NOT enumerate which input names must appear. Require NON-EMPTY
+        # provenance rather than a hardcoded literal (the prior gate demanded
+        # 'event_calendar' specifically, rejecting a runner that legitimately resolved
+        # provenance under different names). Direct vs profile_manifest is still cleanly
+        # distinguished — a profile_manifest run must carry at least one resolved input
+        # or CLI override.
+        if not manifest_inputs:
             raise ValueError(
-                "profile_manifest request missing manifest-backed required inputs: "
-                f"{missing_text}"
+                "profile_manifest request missing manifest provenance: "
+                "manifest_resolved_inputs / manifest_cli_overrides must be non-empty"
             )
         return
     raise ValueError(
@@ -323,6 +331,21 @@ def _market_data_has_non_null_spy_close(
     return not close.empty and not bool(close.isna().all())
 
 
+def _regime_output_to_series_row(output: RegimeOutput) -> dict[str, object]:
+    """Flatten one ``RegimeOutput`` to a ``classify_series`` DataFrame row."""
+    return {
+        "as_of_date": output.as_of_date,
+        "market": output.market,
+        "engine_version": output.engine_version,
+        "config_version": output.config_version,
+        "trend_direction": output.trend_direction.active_label,
+        "trend_character": output.trend_character.active_label,
+        "volatility_state": output.volatility_state.active_label,
+        "breadth_state": output.breadth_state.active_label,
+        "transition_risk": output.transition_risk.state,
+    }
+
+
 class RegimeEngine:
     def __init__(self, config_path: str | Path | None = None) -> None:
         if config_path is None:
@@ -380,6 +403,81 @@ class RegimeEngine:
         )
         return timeline.outputs[-1]
 
+    def classify_series(
+        self,
+        start_date: date,
+        end_date: date,
+        market_data: pd.DataFrame,
+        vix_data: pd.DataFrame | None = None,
+        event_calendar: pd.DataFrame | None = None,
+        config: RegimeConfig | None = None,
+        sector_etf_closes: dict[str, pd.Series] | None = None,
+        cross_asset_closes: dict[str, pd.Series] | None = None,
+        macro_series: dict[str, pd.Series] | None = None,
+        pit_constituent_intervals: pd.DataFrame | None = None,
+        constituent_ohlcv: dict[str, pd.DataFrame] | None = None,
+        aaii_sentiment: pd.DataFrame | None = None,
+        implied_vol_30d: pd.Series | None = None,
+        central_bank_text_releases: pd.DataFrame | None = None,
+        cpi_first_release: pd.Series | None = None,
+        news_sentiment: pd.Series | None = None,
+        request_source: ClassifyRequestSource = "direct",
+        manifest_resolved_inputs: ManifestInputNames | None = None,
+        manifest_cli_overrides: ManifestInputNames | None = None,
+    ) -> pd.DataFrame:
+        """§2.1 V1.1 helper: per-session DataFrame of active axis labels.
+
+        Classifies every NYSE trading session in the inclusive
+        ``[start_date, end_date]`` window and returns one row per session
+        (ascending by ``as_of_date``). Thin wrapper over ``classify_window`` —
+        each row's labels are byte-identical to the corresponding
+        ``classify(as_of_date)`` output; only the presentation (a flat frame
+        instead of a ``RegimeTimeline``) differs.
+        """
+        start = as_date(start_date)
+        end = as_date(end_date)
+        if start > end:
+            raise ValueError(
+                f"start_date ({start.isoformat()}) must not be after end_date "
+                f"({end.isoformat()})."
+            )
+        window_sessions = nyse_sessions_between(start, end)
+        if not window_sessions:
+            raise ValueError(
+                "no NYSE trading sessions in "
+                f"[{start.isoformat()}, {end.isoformat()}]."
+            )
+        timeline = self.classify_window(
+            # Use the last NYSE session in the window, not the raw end_date: a
+            # weekend/holiday end_date would make classify_window's
+            # require_nyse_trading_day raise instead of returning the window rows.
+            end_date=window_sessions[-1],
+            market_data=market_data,
+            lookback_days=len(window_sessions),
+            vix_data=vix_data,
+            event_calendar=event_calendar,
+            config=config,
+            sector_etf_closes=sector_etf_closes,
+            cross_asset_closes=cross_asset_closes,
+            macro_series=macro_series,
+            pit_constituent_intervals=pit_constituent_intervals,
+            constituent_ohlcv=constituent_ohlcv,
+            aaii_sentiment=aaii_sentiment,
+            implied_vol_30d=implied_vol_30d,
+            central_bank_text_releases=central_bank_text_releases,
+            cpi_first_release=cpi_first_release,
+            news_sentiment=news_sentiment,
+            request_source=request_source,
+            manifest_resolved_inputs=manifest_resolved_inputs,
+            manifest_cli_overrides=manifest_cli_overrides,
+        )
+        rows = [
+            _regime_output_to_series_row(output)
+            for output in timeline.outputs
+            if output.as_of_date >= start
+        ]
+        return pd.DataFrame(rows)
+
     def classify_request(self, request: ClassifyRequest) -> RegimeTimeline:
         """Classify a validated request through the canonical engine path."""
 
@@ -388,7 +486,22 @@ class RegimeEngine:
         end_date = as_date(request.end_date)
         require_nyse_trading_day(end_date)
         event_calendar = _require_event_calendar(request.event_calendar)
+        # F-042 / §2.4.1: a config override may only be a validated RegimeConfig
+        # instance. ClassifyRequest is a plain dataclass (no Pydantic enforcement), so
+        # reject a non-RegimeConfig loudly at the boundary instead of failing deep inside
+        # build_market_context. The isinstance reads as "unnecessary" to pyright (the
+        # static annotation is RegimeConfig | None) but it is a real RUNTIME guard — the
+        # dataclass does not enforce the annotation at construction.
+        if request.config is not None and not isinstance(request.config, RegimeConfig):  # type: ignore[reportUnnecessaryIsInstance]
+            raise TypeError(
+                "ClassifyRequest.config override must be a RegimeConfig instance "
+                f"(§2.4.1), got {type(request.config).__name__}"
+            )
         cfg = request.config if request.config is not None else self._config
+        # F-038: validate the V2 input contracts at the boundary BEFORE building the
+        # market context. A missing required V2 input must surface as the explicit
+        # contract error, not as an opaque failure deep inside build_market_context.
+        _validate_v2_request_input_contracts(request, cfg)
         context = build_market_context(
             end_date=end_date,
             market_data=request.market_data,
@@ -406,7 +519,6 @@ class RegimeEngine:
             cpi_first_release=request.cpi_first_release,
             news_sentiment=request.news_sentiment,
         )
-        _validate_v2_request_input_contracts(request, cfg)
         return build_regime_timeline(
             context=context, lookback_days=lookback_days, config=cfg
         )

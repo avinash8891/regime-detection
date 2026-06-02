@@ -280,12 +280,12 @@ def test_core3_v1_regime_output_keeps_legacy_placeholder_wire_shapes(
     payload = out.model_dump()
 
     assert payload["network_fragility"] == {
-        "label": "not_implemented_v1",
+        "state": "not_implemented_v1",
         "reason": "breadth_state_used_as_v1_fragility_proxy",
     }
-    assert "label" in payload["transition_risk"]
-    assert "state" not in payload["transition_risk"]
-    assert set(payload["transition_risk"]) == {"label", "evidence"}
+    assert "state" in payload["transition_risk"]
+    assert "label" not in payload["transition_risk"]
+    assert set(payload["transition_risk"]) == {"state", "evidence"}
 
 
 def test_runtime_evidence_fields_use_named_payloads() -> None:
@@ -630,7 +630,11 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
         wraps=build_strategy_response,
     )
     config = _fast_v2_test_config().model_copy(
-        update={"credit_funding": None, "inflation_growth": None}
+        update={
+            "credit_funding": None,
+            "inflation_growth": None,
+            "transition_score": None,
+        }
     )
 
     out = engine.classify(

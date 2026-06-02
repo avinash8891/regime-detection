@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 import warnings
 
 import pandas as pd
 import pytest
 
+from regime_detection.config import load_regime_config
 from regime_detection.engine import RegimeEngine
 from regime_detection.fragility_universe import (
     CROSS_ASSET_SYMBOLS,
@@ -101,7 +103,9 @@ def test_synthetic_v2_kwargs_use_real_fixture_rows_when_covered(
     xlb = kwargs["sector_etf_closes"]["XLB"]
     constituent_xlb = kwargs["constituent_ohlcv"]["XLB"]
 
-    assert xlb.index.min() == pd.Timestamp("2019-01-02")
+    # Real fixture rows span the full extended history (2009-01-02) up to as_of.
+    assert xlb.index.min() == pd.Timestamp("2009-01-02")
+    assert xlb.index.max() == pd.Timestamp("2023-12-14")
     assert not (
         constituent_xlb["open"].equals(constituent_xlb["high"])
         and constituent_xlb["high"].equals(constituent_xlb["low"])
@@ -109,12 +113,12 @@ def test_synthetic_v2_kwargs_use_real_fixture_rows_when_covered(
     )
 
 
-def test_synthetic_v2_kwargs_rejects_uncovered_market_window_start(
+def test_synthetic_v2_kwargs_rejects_pre_v2_as_of_date(
     market_df_for_asof, synthetic_v2_kwargs_for_market_data
 ) -> None:
-    market_data = market_df_for_asof(date(2023, 12, 14))
+    market_data = market_df_for_asof(date(2018, 12, 31))
 
-    with pytest.raises(RuntimeError, match="window start=2016-01-04"):
+    with pytest.raises(RuntimeError, match="as_of=2018-12-31"):
         synthetic_v2_kwargs_for_market_data(market_data)
 
 
@@ -713,6 +717,18 @@ def test_build_market_context_rejects_malformed_date_values(market_df_for_asof) 
     bad_row["date"] = "not-a-date-at-all"
     corrupted = pd.concat([good_df, pd.DataFrame([bad_row])], ignore_index=True)
 
+    # Isolate the build_market_context ingestion boundary under the V1 config: F-038
+    # reorders the V2 input-contract validation ahead of build_market_context, so under
+    # the V2 config a request with no V2 inputs would fail the V2-contract check first.
+    # The malformed-date normalization is config-independent; the V1 config skips V2
+    # validation so this regression exercises the ingestion boundary it targets.
+    v1_config = load_regime_config(
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "regime_detection"
+        / "configs"
+        / "core3-v1.0.0.yaml"
+    )
     with pytest.raises(ValueError, match=r"malformed date"):
         RegimeEngine().classify(
             as_of_date=as_of,
@@ -720,6 +736,7 @@ def test_build_market_context_rejects_malformed_date_values(market_df_for_asof) 
             event_calendar=pd.DataFrame(
                 columns=["date", "market", "type", "importance"]
             ),
+            config=v1_config,
         )
 
 

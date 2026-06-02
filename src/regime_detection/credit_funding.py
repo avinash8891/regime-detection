@@ -328,7 +328,12 @@ def compute_credit_funding_features(
     spy = spy_close.reindex(spy_index).astype(float)
     sofr_s = sofr.reindex(spy_index).astype(float).ffill()
     iorb_s = iorb.reindex(spy_index).astype(float).ffill()
-    nfci_w = nfci_weekly.reindex(spy_index).astype(float)
+    # F-010: forward-fill from the publication stamp (latest reading with date <= each
+    # session), matching the AAII/EPS leak-safe pattern. A bare reindex(spy_index) lands
+    # values only on exact-match dates, so a week-ending NFCI stamp on a NYSE-closed day
+    # (e.g. Good Friday) would be dropped and the prior week carried. method="ffill"
+    # honors the most-recent on-or-before reading; sort_index guards the requirement.
+    nfci_w = nfci_weekly.sort_index().reindex(spy_index, method="ffill").astype(float)
     usd = broad_usd_index.reindex(spy_index).astype(float).ffill()
 
     pct_window = config.hy_percentile_504d_lookback

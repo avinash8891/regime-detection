@@ -30,6 +30,8 @@ def build_per_label_axis_outputs(
     risk_rank: Mapping[str, int],
     deescalation_days_by_label: Mapping[str, int],
     default_deescalation_days: int,
+    escalation_days_by_label: Mapping[str, int] | None = None,
+    default_escalation_days: int = 1,
     max_unknown_freeze_days: int = 0,
     data_quality: Sequence[DataQuality],
     evidence: Sequence[dict[str, object]],
@@ -39,7 +41,11 @@ def build_per_label_axis_outputs(
         raw_labels=list(raw_labels),
         risk_rank=dict(risk_rank),
         deescalation_days_by_label=dict(deescalation_days_by_label),
+        escalation_days_by_label=(
+            None if escalation_days_by_label is None else dict(escalation_days_by_label)
+        ),
         data_quality=data_quality,
+        default_escalation_days=default_escalation_days,
         default_deescalation_days=default_deescalation_days,
         max_unknown_freeze_days=max_unknown_freeze_days,
     )

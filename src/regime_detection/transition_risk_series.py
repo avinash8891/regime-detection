@@ -150,6 +150,12 @@ def build_transition_risk_series(
         missing.append("feature_store.network_fragility")
     if trend_v2 is None:
         missing.append("feature_store.trend_direction_v2")
+    if feature_store.hmm is None:
+        missing.append("model evidence feature_store.hmm")
+    if feature_store.change_point is None:
+        missing.append("model evidence feature_store.change_point")
+    if feature_store.clustering is None:
+        missing.append("model evidence feature_store.clustering")
     if missing:
         raise RuntimeError(
             "transition_risk requires score inputs; missing: " + ", ".join(missing)
@@ -642,6 +648,13 @@ def build_transition_risk_outputs_by_date(
             ),
         )
         if transition_score_config is None:
+            # F-049: V1 path. The legacy transition-risk state machine above is run in
+            # full (hard-override flags, debounce) and its STATE + evidence are
+            # load-bearing for V1 byte-identity replay. Only the V2-only score fields
+            # are intentionally suppressed here so the V1 wire carries exactly
+            # {state, evidence} (V1OUT-029). Do NOT wire score / score_components /
+            # primary_drivers back into the V1 output — that would break the frozen
+            # V1 replay contract. The compute-then-suppress is deliberate, not dead code.
             output = output.model_copy(
                 update={
                     "score": None,

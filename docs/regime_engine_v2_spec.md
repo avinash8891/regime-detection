@@ -67,7 +67,7 @@ diagnosis. Every data-quality-aware label output MUST also expose:
 
 ```json
 {
-  "classification_status": "classified | no_rule_fired | data_unavailable | stale_data | insufficient_history | not_wired",
+  "classification_status": "classified | no_rule_fired | no_rule_fired_hysteresis | no_rule_fired_missing_feature | data_unavailable | stale_data | insufficient_history | not_wired",
   "classification_reason": "short machine-readable reason or null"
 }
 ```
@@ -78,6 +78,8 @@ Status semantics:
 |---|---|
 | `classified` | A non-`unknown` label is active. |
 | `no_rule_fired` | Required data was usable, but no rule predicate matched a named state. |
+| `no_rule_fired_hysteresis` | Raw or stable history produced a non-`unknown` state, but hysteresis held the active label at `unknown`. |
+| `no_rule_fired_missing_feature` | Required data quality passed, but a non-binding rule feature was absent so no predicate could fire. |
 | `data_unavailable` | Required data existed too sparsely to evaluate the classifier. |
 | `stale_data` | A required source exists, but its latest usable point is older than the axis freshness budget. |
 | `insufficient_history` | A required lookback/window is still in cold-start. |
@@ -158,6 +160,15 @@ volume_above_20d_average = volume[t] > mean(volume[t-20..t-1])
 #   `breakout_level` = the max-of-prior-window that close[b] crossed at b.
 followthrough_rate = held_count / 20
 ```
+
+> **Ambiguity #4 — `breakout_level` tie-break (DECISION, pairs with F-055).** When
+> close[b] crosses BOTH the 20d and 50d prior-window maxima (m50 ≥ m20 always, so
+> close > m50 implies close > m20), "the max-of-prior-window that close crossed" does
+> not uniquely select a level. **Pinned: use the 20d level** (the lower, more lenient
+> hold bar), not max(m20, m50). Rationale: the 20d window is the tighter, more recent
+> breakout reference and keeps the hold test from over-rejecting shallow continuation.
+> Encoded in `trend_character._compute_followthrough_rate` and locked by
+> `test_followthrough_rate_breakout_level_tie_break_prefers_20d`.
 
 Direction: `breakout_expansion` fires on **upside** breakouts only — `followthrough_rate`'s definition explicitly requires close to stay **above** the breakout level. Downside breakouts are out of scope for this label.
 
@@ -420,6 +431,10 @@ gap_frequency_20d percentile_252d > 0.75
 AND intraday_range_percentile_252d > 0.75
 ```
 
+> A cold-start fallback predicate (`cold_start_liquidity_gap`, enabled by default) fires during the
+> pre-2016 percentile warmup before the 252-session percentile is available; it is inert in the emitted
+> (2016+) window. See ADR 0021.
+
 `normal_volume`:
 ```text
 otherwise
@@ -530,7 +545,11 @@ the slice/commit that resolved it. Entries are append-only.
    can re-tune both the listed and default cohorts without code changes.
    Resolved by Slice 1.4 cleanup.
 
-9. **V1↔V2 axis date alignment (`axis_series.py` v2 classifier).**
+9. **V1↔V2 axis date alignment
+   (`axis_builders.network_fragility.build_network_fragility_axis_series`).**
+   *(F-045: the pinned KeyError-vs-None-fallback logic was extracted out of
+   `axis_series.py` into `axis_builders/network_fragility.py`; citation updated to its
+   current home. Behavior is unchanged.)*
    The classifier consumes V1 breadth/volatility `active_labels_by_date`
    dicts. The pre-cleanup code used `dict.get(day, "unknown")`, which
    silently downgraded any drifted session to `"unknown"` — defanging
@@ -769,6 +788,10 @@ the slice/commit that resolved it. Entries are append-only.
     `BreadthLabel` enum unchanged, and ship `sector_breadth` as
     evidence-only. Models / classifier remain untouched.
     Deferred by Slice 2.3.
+    Resolved by Slice 2.8c status update — PIT breadth features and labels
+    now ship. `breadth_thrust`, `broadening_breadth`,
+    `recovery_breadth`, and `narrowing_breadth` are formal V2 breadth
+    labels with the §1D predicates and precedence above.
 
 27. **§1D line 229 — `sector_breadth` denominator policy when a sector
     ETF is absent from `MarketContext.sector_etf_closes`.**
@@ -1879,9 +1902,10 @@ the slice/commit that resolved it. Entries are append-only.
       (V2.1 ship) and the offline pilot. The change-point feature stays
       V2.1 — only the algorithm choice is pinned now.
 
-    - **§5.1 cohort routing pinned: 9 cohorts** (8 specialist +
-      `default_neutral` fallback). Precedence (fail-defensive default):
-      `crisis > euphoria > bear_stress > tightening > easing > recovery
+    - **§5.1 cohort routing pinned: 10 cohorts** (8 axis-predicate specialists +
+      `data_outage_specialist` fail-closed cohort + `default_neutral` fallback).
+      Precedence (fail-defensive default):
+      `crisis > data_outage > euphoria > bear_stress > tightening > easing > recovery
       > chop_mean_reversion > bull_low_vol > default_neutral`. Each
       cohort's routing rule defined in terms of V2-axis label
       membership (`network_fragility`, `volatility_state`,
@@ -3011,6 +3035,24 @@ recession_scare:
   # -5% during credit stress, ~338 sessions) stays unresolved until a
   # future ADR introduces a `credit_watch` label.
 
+risk_off_mild:
+  credit_funding.active_label in {spread_widening, credit_stress}      # credit stressed
+  AND spy_recession_credit_confirmed_threshold <= spy_21d_return < 0   # equities declining but NOT crashing (default threshold -0.05)
+  AND at_least_one_growth_deterioration_signal:
+      cyclical_defensive_slope_21d < 0                                 # risk-off sector rotation
+      OR treasury_10y_yield_slope_21d < 0                             # flight to safety
+      OR pmi_manufacturing < pmi_goldilocks_threshold                 # manufacturing softening (default 50)
+  # Pinned by Ambiguity #2 to match inflation_growth_rules.evaluate_risk_off_mild
+  # (the label was previously present in §2B Labels / Precedence / Risk-Rank /
+  # Hysteresis but had no entry in this operational-definitions block). It covers the
+  # credit-stress + MILD equity-decline band (SPY in [-0.05, 0)) that sits just above
+  # recession_scare's spy_21d_return < -0.05 crash condition (see the recession_scare
+  # coverage-gap note above) WHEN a growth-deterioration signal is also present.
+  # Outranks goldilocks / recovery_growth by DEFENSIVE precedence — a credit-stressed,
+  # growth-softening tape must not read benign — yet it cannot shadow a benign
+  # credit_calm regime because it requires credit stress. NaN growth inputs are
+  # skipped; a NaN spy_21d_return falsifies.
+
 recovery_growth:
   pmi_manufacturing_slope_21d > 0 AND pmi_manufacturing > 50
   AND cyclical_defensive_slope_21d > 0
@@ -3297,7 +3339,12 @@ credit_funding:
 `unknown` is forced when:
 - HYG / LQD / TLT stale > 5 sessions
 - NFCI stale > 14 days (2× weekly release cycle)
-- SOFR or IORB stale beyond `data_quality.max_freshness_days`
+- The funding spread is stale beyond `data_quality.max_freshness_days`. The funding
+  spread is the **freshest available** of the SOFR–IORB pair or its ADR 0009 fallback
+  pairs (SOFR–IOER, FEDFUNDS–IOER), so `unknown` is forced only when that freshest
+  pair is stale. A stale SOFR/IORB while a fresh legacy FEDFUNDS–IOER proxy exists does
+  NOT force `unknown` (the pre-2021 SOFR/IORB splice — each pair's staleness is
+  `max(rate_a, rate_b)`, and the spread staleness is the `min` across the three pairs).
 - `assess_series_input_quality` fails on any required series
 
 SOFR/IORB and OAS observations are carried forward for feature math when fresh;
@@ -3492,13 +3539,14 @@ idiosyncratic_crisis
 rising_fragility
 correlation_concentration
 correlation_to_one
+systemic_stress_unconfirmed
 systemic_stress
 unknown
 ```
 
 ### 3.4 Precedence
 ```text
-systemic_stress > correlation_to_one > correlation_concentration > rising_fragility > idiosyncratic_crisis > stock_picker_dispersion > rotation_watch > decorrelated_calm > diversified_normal > unknown
+systemic_stress > systemic_stress_unconfirmed > correlation_to_one > correlation_concentration > rising_fragility > idiosyncratic_crisis > stock_picker_dispersion > rotation_watch > decorrelated_calm > diversified_normal > unknown
 ```
 
 ### 3.5 Rules
@@ -3574,10 +3622,22 @@ AND realized_vol_percentile_252d > 0.80
 AND drawdown_21d < 0
 ```
 
+> A cold-start fallback predicate (`cold_start_corr_to_one`, enabled by default) widens
+> `correlation_to_one` during the pre-2016 percentile warmup before
+> `avg_pairwise_corr_percentile_504d` is available; it is inert in the emitted (2016+) window. See ADR 0021.
+
 `systemic_stress`:
 ```text
 correlation_to_one
 AND credit_funding.active_label in [credit_stress, deleveraging]
+AND VIX_percentile_252d > 0.80
+AND breadth_state.active_label in [weak_breadth, narrowing_breadth]
+```
+
+`systemic_stress_unconfirmed`:
+```text
+correlation_to_one
+AND credit_funding.active_label is unavailable
 AND VIX_percentile_252d > 0.80
 AND breadth_state.active_label in [weak_breadth, narrowing_breadth]
 ```
@@ -3593,13 +3653,14 @@ network_fragility_risk_rank:
   rising_fragility: 2
   correlation_concentration: 2
   correlation_to_one: 3
+  systemic_stress_unconfirmed: 3
   systemic_stress: 3
   unknown: 2
 ```
 
 ### 3.7 Hysteresis
 
-Per-label asymmetric de-escalation is **mandatory for all 9 label axes** (ADR 0010). Every axis must supply a `deescalation_days_by_label` config block; missing config raises immediately — no silent flat fallback. Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis. Layer-1 hysteresis lives under neutral axis-level sections (`trend_direction`, `trend_character`, `volatility_state`, `breadth_state`) so V1-origin raw labels are not coupled to V2 feature/rule config sections. Those V2 feature/rule sections intentionally reject hysteresis keys; calibration must edit the neutral axis sections or validation fails.
+Per-label asymmetric de-escalation is **mandatory for all 9 label axes** (ADR 0010). Every axis must supply a `deescalation_days_by_label` config block; missing config raises immediately — no silent flat fallback. Escalation defaults to immediate via `default_escalation_days: 1`; raising the default or adding an `escalation_days_by_label` override delays stable-label entry while active-label still surfaces the riskier raw label. Both `core3-v1.0.0.yaml` and `core3-v2.0.0.yaml` ship per-label hysteresis. Layer-1 hysteresis lives under neutral axis-level sections (`trend_direction`, `trend_character`, `volatility_state`, `breadth_state`) so V1-origin raw labels are not coupled to V2 feature/rule config sections. Those V2 feature/rule sections intentionally reject hysteresis keys; calibration must edit the neutral axis sections or validation fails.
 
 Network fragility de-escalation defaults:
 ```yaml
@@ -3607,6 +3668,7 @@ network_fragility_deescalation_days:
   rising_fragility: 3
   correlation_concentration: 3
   correlation_to_one: 5
+  systemic_stress_unconfirmed: 5
   systemic_stress: 5
   idiosyncratic_crisis: 3
   rotation_watch: 0
@@ -3698,9 +3760,15 @@ cluster
 change_point
 ```
 
-These three inputs jointly produce `model_instability_score`. They are not
-renormalized away: once `transition_score` is enabled, a missing HMM
-probability, cluster id, or change-point score raises a runtime error.
+These three inputs jointly produce `model_instability_score`. They are
+**mandatory — never renormalized away**. Once `transition_score` is enabled, an
+absent model-evidence **seam** (the HMM, change-point, or clustering
+infrastructure itself) raises a runtime error; a missing **per-session** HMM
+probability, cluster id, or change-point score (a cold-start / NaN value) forces
+the final state to `insufficient_data` per the cold-start carve-out above — it is
+never renormalized away into a normal score. (F-002: the seam guard lives in
+`transition_risk_series`; the per-session guard in
+`compose_transition_score_for_session`.)
 
 Final states:
 
@@ -3825,8 +3893,10 @@ score = max(
 )
 ```
 
-Missing HMM, change-point, or cluster evidence raises a runtime error. The
-engine must not fabricate or silently omit model-instability evidence.
+Missing HMM, change-point, or cluster evidence is mandatory-input handling, not
+optional renormalization: an absent seam raises a runtime error, and a missing
+per-session value forces `insufficient_data` (see §4.0). The engine must not
+fabricate, renormalize away, or silently omit model-instability evidence.
 
 ### 4.3 Weights
 
@@ -4044,17 +4114,18 @@ Specialist cohorts:
 - `chop_mean_reversion_specialist`
 - `bull_low_vol_specialist`
 - `bear_stress_specialist`
+- `data_outage_specialist` (fail-closed cohort: fires when any **core risk axis** — `trend_direction`, `trend_character`, `volatility_state`, `breadth_state`, `network_fragility` — is `unknown` and no higher-precedence specialist matched; emitted as `active_cohort`, blocking aggressive modes)
 - `default_neutral` (fallback when no specialist rule matches)
 
 #### Cohort Precedence (V2 ship starter, V2 §9.1 walk-forward calibration placeholder)
 
 ```text
-crisis_specialist > euphoria_specialist > bear_stress_specialist
+crisis_specialist > data_outage_specialist > euphoria_specialist > bear_stress_specialist
 > tightening_specialist > easing_specialist > recovery_specialist
 > chop_mean_reversion_specialist > bull_low_vol_specialist > default_neutral
 ```
 
-Reasoning: defensive cohorts (`crisis_specialist`, `bear_stress_specialist`) outrank optimistic ones (`bull_low_vol_specialist`, `chop_mean_reversion_specialist`) so a bullish trend with a single crisis signal routes to crisis — fail-defensive default. Monetary cohorts outrank generic bull/chop to ensure rate regime drives strategy choice when it's the dominant signal.
+Reasoning: defensive cohorts (`crisis_specialist`, `bear_stress_specialist`) outrank optimistic ones (`bull_low_vol_specialist`, `chop_mean_reversion_specialist`) so a bullish trend with a single crisis signal routes to crisis — fail-defensive default. Monetary cohorts outrank generic bull/chop to ensure rate regime drives strategy choice when it's the dominant signal. `data_outage_specialist` sits directly below `crisis_specialist`: when a core risk axis is `unknown` the engine must not trust an optimistic specialist's inputs, so it fails closed to `data_outage_specialist` (blocking `short_vol`/`leveraged_long`/`breakout`) unless the most-defensive `crisis_specialist` already matched. The cohort-routing walker enforces this precedence (see resolution finding F-005).
 
 #### Routing Rules (V2 ship starter, walk-forward calibration placeholder)
 
@@ -4101,6 +4172,7 @@ The `blocked_strategy_modes` JSON field at the top of §5.1 is populated by the 
 ```yaml
 blocked_strategy_modes:
   crisis_specialist:        [short_vol, leveraged_long, breakout]
+  data_outage_specialist:   [short_vol, leveraged_long, breakout]   # fail-closed on core-axis outage
   euphoria_specialist:      [mean_reversion]    # don't fade strength
   bear_stress_specialist:   [short_vol, breakout, leveraged_long]
   tightening_specialist:    []                  # constraints applied via §5.2 instead
@@ -4645,6 +4717,46 @@ Add dates that exercise V2-specific behavior:
 
 These build on the V1 golden test set; do not replace it.
 
+> **Note (registration fixture).** `tests/fixtures/derived/golden_dates.yaml`
+> (the unified V1+V2 registry) registers these dates with two transcription
+> corrections: `2020-08-15` is a Saturday (non-NYSE session), so the fixture uses
+> the nearest prior trading session `2020-08-14`; and `stock_picker_dispersion` is
+> asserted under the `network_fragility` field (it is a §3.4/§3.6 network-fragility
+> label, not a breadth label). All nine dates run through the LIVE V2 pipeline (the
+> V2 daily-OHLCV fixture was extended back to 2009-01-02 with real Yahoo OHLCV — incl.
+> real `^VIX` — and the placeholder PIT membership intervals start at each sector
+> ETF's real inception; see `tests/fixtures/raw/v2/PROVENANCE.md`). Five dates
+> (2020-08-14 onward) value-assert their §9.4 labels under the production config. The
+> four pre-2019 dates (2010-05-06, 2011-08-08, 2015-08-24, 2018-10-10) FAIL-CLOSED on
+> their transition_risk deep-history model-evidence windows (HMM=1260 / clustering=1260
+> / change-point=2705 sessions reach before the 2009 fixture start), so they are
+> value-asserted to RAISE (recorded in `_V2_LIVE_FIXTURE_UNSUPPORTED_GOLDEN_DATES`),
+> never silently skipped. The 2018-10-10 `bull→narrowing_breadth→bear_stress` sequence
+> — a trend_direction + breadth_state trajectory that needs no model evidence — is
+> value-asserted over the Q4-2018 axis series by
+> `test_q4_2018_bull_to_narrowing_to_bear_sequence` (driven by the hand-labeled
+> `expected_sequence` block in `golden_dates.yaml`).
+>
+> **Note (2026-06 reconciliation — "Test reason" vs the §3.5/§2C rules).** A
+> measurement pass reproduced the engine's rule features from the raw fixture (two
+> independent implementations) and confirmed the engine applies §3.5/§2C correctly
+> on every date above; the "Test reason" column is the *scenario intuition*, which in
+> two cases names a label its own rule predicate does not produce:
+> - **2020-08-15 (→2020-08-14)** — a post-COVID mega-cap *narrowing* tape is a
+>   concentration phenomenon, the opposite of `stock_picker_dispersion`, which
+>   requires LOW correlation (`avg_pairwise_corr_percentile_504d < 0.30`; measured
+>   0.66). The registered network_fragility label is `diversified_normal`.
+> - **2024-08-05** — `funding_squeeze` requires a USD funding spike
+>   (`broad_usd_index_zscore_21d > +1.5`; measured −0.017, USD-flat). The registered
+>   §2C label is `credit_stress` (the independently-firing label).
+>
+> The remaining scenario expectations are kept as documented, self-policing disputes
+> (none is an engine bug): `2021-01-27` and `2022-09-26` are boundary near-misses;
+> `2023-03-13` `credit_stress` is data-blocked (real ICE-OAS absent pre-2023-05-15);
+> and `2024-08-05` `correlation_to_one` is a spec limitation — a 504d percentile of a
+> 63d correlation cannot fire on a single-day shock (see
+> `docs/decisions/0022-correlation-to-one-percentile-cannot-detect-single-day-shock.md`).
+
 ---
 
 ## 10. V2 Coding Agent Prompt
@@ -4663,8 +4775,13 @@ V2 implementation contract:
 2. Do not invent component score formulas. Use the exact formulas in
    Section 4.2 of the V2 spec.
 
-3. Do not invent transition score weights. Use Section 4.3. If HMM is
-   not yet shipped, use the renormalized weights without HMM.
+3. Do not invent transition score weights. Use Section 4.3. Once
+   `transition_score` is enabled, HMM, cluster/GMM, and change-point evidence
+   are mandatory model-instability inputs and are never renormalized away: an
+   absent seam raises a runtime error, a missing per-session value forces
+   `insufficient_data` (§4.0). Only the optional components enumerated in
+   Section 4.3 may be omitted and renormalized after the minimum coverage gate
+   passes.
 
 4. Do not auto-label clusters. K-Means/GMM mappings require manual
    review per Section 6.2. Ship the model; do not ship auto-mapping.

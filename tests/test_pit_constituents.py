@@ -7,10 +7,12 @@ import sqlite3
 from contextlib import closing
 
 import pandas as pd
+import pytest
 
 from regime_data_fetch.pit_constituents import (
     PITConstituentFetchError,
     parse_sp500_ticker_start_end_csv,
+    read_pit_intervals,
     run_pit_constituents_fetch,
 )
 
@@ -35,9 +37,11 @@ def test_parse_sp500_ticker_start_end_csv_extracts_intervals() -> None:
     assert rows[-1].source == "fja05680/sp500"
 
 
-def test_parse_sp500_ticker_start_end_csv_applies_known_open_interval_corrections() -> (
-    None
-):
+def test_parse_sp500_ticker_start_end_csv_persists_raw_open_intervals() -> None:
+    """GNXfc: the parser must NOT bake SOURCE_END_DATE_CORRECTIONS into the persisted
+    source — correction-eligible open intervals stay open. Corrections are applied
+    solely on read (read_pit_intervals patch-on-read) so the §1D/§10 survivorship gate
+    validates a genuine SOURCE closure, not a write-time-fabricated one."""
     csv_text = "\n".join(
         [
             "ticker,start_date,end_date",
@@ -51,10 +55,38 @@ def test_parse_sp500_ticker_start_end_csv_applies_known_open_interval_correction
     rows = parse_sp500_ticker_start_end_csv(csv_text, source_url="source")
     by_ticker = {row.ticker: row for row in rows}
 
-    assert by_ticker["DAY"].end_date == dt.date(2026, 2, 3)
-    assert by_ticker["HOLX"].end_date == dt.date(2026, 4, 6)
-    assert by_ticker["CTRA"].end_date == dt.date(2026, 5, 6)
+    # Correction-eligible tickers stay OPEN (raw), not closed at their correction dates.
+    assert by_ticker["DAY"].end_date is None
+    assert by_ticker["HOLX"].end_date is None
+    assert by_ticker["CTRA"].end_date is None
     assert by_ticker["AAPL"].end_date is None
+
+
+def test_run_pit_fetch_persists_raw_so_correction_only_source_fails_gate(
+    tmp_path: Path,
+) -> None:
+    """GNXfc end-to-end: a source whose only closure candidates are
+    SOURCE_END_DATE_CORRECTIONS tickers (open in the raw feed) is persisted RAW by the
+    writer, so read_pit_intervals' survivorship gate rejects it as current-only — the
+    write path can no longer fabricate closures that fool the gate."""
+    csv_text = "\n".join(
+        [
+            "ticker,start_date,end_date",
+            "DAY,2024-02-01,",  # correction-eligible, but OPEN in the raw source
+            "AAPL,1982-11-30,",  # genuinely open
+        ]
+    )
+    out_dir = tmp_path / "out"
+    run_pit_constituents_fetch(out_dir=out_dir, csv_fetcher=lambda: csv_text)
+    parquet_path = out_dir / "pit_constituents" / "sp500_ticker_intervals.parquet"
+
+    # Persisted RAW: DAY stays open (not closed at its 2026-02-03 correction).
+    written = pd.read_parquet(parquet_path)
+    assert bool(written.loc[written["ticker"] == "DAY", "end_date"].isna().all())
+
+    # The survivorship gate therefore rejects the correction-only universe.
+    with pytest.raises(ValueError, match="source contains no closed intervals"):
+        read_pit_intervals(parquet_path)
 
 
 def test_run_pit_constituents_fetch_writes_parquet_and_report(tmp_path: Path) -> None:

@@ -484,7 +484,9 @@ def test_engine_classify_window_populates_monetary_pressure_state(
     allowed = set(MONETARY_PRESSURE_V2_RISK_RANK.keys())
     for out in populated:
         assert out.monetary_pressure_state.active_label in allowed
-        assert "monetary_pressure" not in out.structural_causal_state.model_dump()
+        assert (
+            out.structural_causal_state.monetary_pressure is out.monetary_pressure_state
+        )
 
 
 def test_engine_classify_window_raises_when_monetary_pressure_state_is_absent(

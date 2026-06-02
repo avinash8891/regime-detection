@@ -245,7 +245,17 @@ def compose_transition_score_for_session(
     cp_score = _optional_number(change_point_score)
     if cp_score is not None:
         cp_score = _clip(cp_score, 0.0, 1.0)
-    model_instability = _max_present(hmm_shift, cp_score)
+    if (
+        hmm_now is None
+        or hmm_5d is None
+        or cp_score is None
+        or cluster_id_now is None
+        or cluster_id_5d_ago is None
+    ):
+        model_instability = None
+    else:
+        cluster_flip = 1.0 if cluster_id_now != cluster_id_5d_ago else 0.0
+        model_instability = _max_present(hmm_shift, cp_score, cluster_flip)
 
     raw_components: dict[str, float | None] = {
         "trend_break": trend_break,
@@ -262,6 +272,21 @@ def compose_transition_score_for_session(
         weights=config.weights,
         minimum_component_weight_coverage=config.minimum_component_weight_coverage,
     )
+    # F-002 / §4.2 / §4.0 / §10 rule 3: model evidence is MANDATORY once the
+    # transition_score seam is enabled. A missing per-session HMM probability,
+    # change-point score, or cluster id (any of which nulls model_instability above)
+    # must force insufficient_data — it is NEVER renormalized away into a normal
+    # score. This function runs only on the V2 seam-present path; the whole-seam-
+    # absent build error is raised earlier in transition_risk_series.
+    if "model_instability" in missing:
+        return ComposedTransitionScore(
+            score=None,
+            interpretation=None,
+            components=None,
+            missing_components=missing,
+            component_weight_coverage=coverage,
+            macro_event_labels=macro_event_labels,
+        )
     if score is None or components is None:
         return ComposedTransitionScore(
             score=None,

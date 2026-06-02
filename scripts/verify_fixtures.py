@@ -287,6 +287,10 @@ def _load_hand_labeled_expectations() -> dict[str, dict[str, str]]:
     doc = yaml.safe_load(DERIVED_PATH.read_text())
     expectations: dict[str, dict[str, str]] = {}
     for row in doc.get("rows", []):
+        # expected_v2_fields rows run through the separate V2 harness; this
+        # core-axis verifier only consumes rows carrying an `expected` block.
+        if "expected" not in row:
+            continue
         expectations[row["intent_id"]] = row["expected"]
     return expectations
 

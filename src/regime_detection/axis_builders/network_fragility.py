@@ -57,7 +57,8 @@ def build_network_fragility_axis_series(
          data) return None so the timeline falls back to the v2 "unknown"
          placeholder shape.
       2. For each session date, materialize the per-day scalar rule inputs
-         (build_rule_inputs_for_date) and assess data quality
+         (build_rule_inputs_by_date — the vectorized batch reducer; F-053) and
+         assess data quality
          (assess_series_input_quality + quality_forces_unknown). Quality
          failures override the rule output with "unknown".
       3. Cross-reference V1 axes (breadth_state.active_label,

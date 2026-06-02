@@ -566,6 +566,8 @@ def _build_axis_outputs(  # pyright: ignore[reportUnusedFunction]
     required_trading_days: int,
     max_freshness_days: int,
     min_completeness: float,
+    escalation_days_by_label: dict[str, int] | None = None,
+    default_escalation_days: int = 1,
 ) -> AxisSeriesResult:
     outputs_by_date: dict[date, AxisOutput] = {}
     stable_by_date: dict[date, str] = {}
@@ -586,7 +588,9 @@ def _build_axis_outputs(  # pyright: ignore[reportUnusedFunction]
         raw_labels=raw_labels,
         risk_rank=risk_rank,
         deescalation_days_by_label=deescalation_days_by_label,
+        escalation_days_by_label=escalation_days_by_label,
         data_quality=data_quality,
+        default_escalation_days=default_escalation_days,
         default_deescalation_days=default_deescalation_days,
         max_unknown_freeze_days=max_unknown_freeze_days,
     )
