@@ -1308,6 +1308,20 @@ Modifier:
 }
 ```
 
+> **Note on the V1 `transition_risk` block (reconciles §12.1 / rule #11).** This V1
+> canonical output carries `transition_risk` as **`{state, evidence}` only** — the
+> result of the legacy reactive transition-risk state machine (V1OUT-029), with the
+> V2-only score fields (`score`, `score_components`, `primary_drivers`,
+> `triggered_rules`, `data_quality`) intentionally suppressed on the V1 path
+> (`transition_risk_series.py`). This is the **shipped** V1 wire behavior and is locked
+> by `tests/test_v1_frozen_replay.py`. When §12.1 ("removed from the V1 active
+> contract") and rule #11 ("transition_risk is V2-owned") say "V2-owned", they refer to
+> the **score-first** transition risk (the score/components/drivers machinery and its
+> use as a strategy-routing input), which V1 does NOT emit — NOT to the `{state,
+> evidence}` reactive stub above. The stub is therefore correctly present in the V1
+> output shape, not a `not_implemented_v1` placeholder: V1 genuinely produces a
+> `transition_risk.state`, it simply omits the V2 score layer. (PR #69 review F8P9J.)
+
 ### 11.1 V2-Extended Output Shape (when `config_version != "core3-v1.0.0"`)
 
 When the engine runs under a V2 config, the wire shape extends in two ways:
