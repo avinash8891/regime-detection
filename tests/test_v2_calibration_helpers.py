@@ -19,7 +19,7 @@ from regime_detection.credit_funding_rules import (
 from regime_detection.fragility_universe import (
     CROSS_ASSET_SYMBOLS as NETWORK_CROSS_ASSET_SYMBOLS,
 )
-from regime_detection.inflation_growth import (
+from regime_detection.inflation_growth_rules import (
     REQUIRED_CROSS_ASSET_KEYS as INFLATION_GROWTH_CROSS_ASSET_KEYS,
 )
 

@@ -22,7 +22,7 @@ from regime_detection.credit_funding_rules import (
     REQUIRED_CROSS_ASSET_KEYS as CREDIT_FUNDING_CROSS_ASSET_KEYS,
     REQUIRED_MACRO_KEYS as CREDIT_FUNDING_MACRO_KEYS,
 )
-from regime_detection.inflation_growth import (
+from regime_detection.inflation_growth_rules import (
     REQUIRED_CROSS_ASSET_KEYS as INFLATION_GROWTH_CROSS_ASSET_KEYS,
     REQUIRED_MACRO_KEYS as INFLATION_GROWTH_MACRO_KEYS,
 )

@@ -100,12 +100,15 @@ from regime_detection.monetary_pressure import (
     compute_monetary_pressure_features,
 )
 from regime_detection.inflation_growth import (
+    InflationGrowthFeatures,
+    compute_inflation_growth_features,
+)
+from regime_detection.inflation_growth_rules import (
     AGG_FORWARD_EPS_REVISION_KEY as _IG_AGG_FORWARD_EPS_REVISION_KEY,
     CPI_KEY as _IG_CPI_KEY,
     CPI_NOWCAST_KEY as _IG_CPI_NOWCAST_KEY,
     DBC_KEY as _IG_DBC_KEY,
     DGS10_KEY as _IG_DGS10_KEY,
-    InflationGrowthFeatures,
     PMI_KEY as _IG_PMI_KEY,
     REQUIRED_CROSS_ASSET_KEYS as _IG_CROSS_ASSET_KEYS,
     REQUIRED_MACRO_KEYS as _IG_MACRO_KEYS,
@@ -114,7 +117,6 @@ from regime_detection.inflation_growth import (
     XLP_KEY as _IG_XLP_KEY,
     XLU_KEY as _IG_XLU_KEY,
     XLY_KEY as _IG_XLY_KEY,
-    compute_inflation_growth_features,
 )
 from regime_detection.feature_store_runtime import (
     FeatureAvailability,
