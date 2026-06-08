@@ -1,0 +1,21 @@
+src/regime_detection/feature_store.py
+  s_7e147b89f819ca::t_e9cbbd28868153 94
+tests/test_volume_liquidity_v2_features.py
+  s_7e147b89f819ca::t_f483f7a932e859 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "4495410a889c80be1093fdd79015477382ca026b",
+  "prompts": {},
+  "sessions": {
+    "s_7e147b89f819ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c013e7-b3b8-439c-8ee2-73f4562e1a34",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
