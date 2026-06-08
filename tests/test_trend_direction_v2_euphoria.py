@@ -32,7 +32,7 @@ from regime_detection.trend_direction import (
     TrendDirectionFeatures,
     build_raw_outputs as build_trend_direction_raw_outputs,
 )
-from regime_detection.trend_direction_v2 import (
+from regime_detection.trend_direction import (
     TrendDirectionV2Features,
     compute_trend_v2_features,
     evaluate_euphoria,

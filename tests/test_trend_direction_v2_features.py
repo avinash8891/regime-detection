@@ -22,7 +22,7 @@ from regime_detection.config import TrendDirectionV2Config, load_default_regime_
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import build_market_context
-from regime_detection.trend_direction_v2 import (
+from regime_detection.trend_direction import (
     TrendDirectionV2Features,
     compute_trend_v2_features,
 )

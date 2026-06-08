@@ -32,7 +32,7 @@ from regime_detection.trend_direction import (
     compute_features as compute_v1_features,
     raw_label_for_day,
 )
-from regime_detection.trend_direction_v2 import (
+from regime_detection.trend_direction import (
     TrendDirectionV2Features,
     compute_trend_v2_features,
     evaluate_recovery,

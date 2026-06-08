@@ -41,7 +41,7 @@ from regime_data_fetch.sf_fed_news_sentiment import (
 )
 from regime_detection.config import NewsSentimentConfig, TrendDirectionV2Config
 from regime_detection.loaders import load_news_sentiment_series
-from regime_detection.trend_direction_v2 import compute_trend_v2_features
+from regime_detection.trend_direction import compute_trend_v2_features
 
 
 def _spy_index(periods: int = 260, start: str = "2024-01-02") -> pd.DatetimeIndex:

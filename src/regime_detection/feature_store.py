@@ -71,7 +71,7 @@ from regime_detection.trend_direction import (
     TrendDirectionFeatures,
     compute_features as compute_trend_direction_features,
 )
-from regime_detection.trend_direction_v2 import (
+from regime_detection.trend_direction import (
     TrendDirectionV2Features,
     compute_trailing_drawdown,
     compute_trend_v2_features,
