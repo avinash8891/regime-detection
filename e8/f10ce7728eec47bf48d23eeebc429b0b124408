@@ -1,0 +1,32 @@
+tests/test_rolling_ols_slope_consolidation.py
+  s_7e147b89f819ca::t_7bcbbc5720b359 73
+  s_7e147b89f819ca::t_9b188e7e93f0cd 1-72,74-262
+src/regime_detection/network_fragility_rules.py
+  s_7e147b89f819ca::t_9207084f10ee8a 49
+  s_7e147b89f819ca::t_4155dea3032edb 192-193,195-196,271-272,274-275
+src/regime_detection/_rolling_stats.py
+  s_7e147b89f819ca::t_2fe3a91e60bea0 5
+  s_7e147b89f819ca::t_0361f43d0e0a21 64-99
+src/regime_detection/inflation_growth.py
+  s_7e147b89f819ca::t_21421fb7217862 374,397,432,442
+  s_7e147b89f819ca::t_370245eef4482e 52
+src/regime_detection/credit_funding.py
+  s_7e147b89f819ca::t_fddc1608d0e1b6 323,326,345,348,354,387
+  s_7e147b89f819ca::t_4a5746394b5c23 66-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "e8f10ce7728eec47bf48d23eeebc429b0b124408",
+  "prompts": {},
+  "sessions": {
+    "s_7e147b89f819ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c013e7-b3b8-439c-8ee2-73f4562e1a34",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
