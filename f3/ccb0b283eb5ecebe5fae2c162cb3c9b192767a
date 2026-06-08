@@ -1,0 +1,31 @@
+src/regime_detection/trend_direction.py
+  s_7e147b89f819ca::t_614cad1871c3ed 9
+src/regime_detection/trend_direction_rules.py
+  s_7e147b89f819ca::t_2d44e87436bd5c 1-390
+tests/test_cohort_routing.py
+  s_7e147b89f819ca::t_64f32e579d4ab5 43
+src/regime_detection/axis_builders/trend_direction.py
+  s_7e147b89f819ca::t_0e930c8e54202e 7
+tests/test_trend_direction.py
+  s_7e147b89f819ca::t_3822cc6e31b554 12,14-17
+tests/test_trend_direction_v2_recovery_rule.py
+  s_7e147b89f819ca::t_4c1164d06bf1f6 32,34-36,39
+tests/test_trend_direction_v2_euphoria.py
+  s_7e147b89f819ca::t_4be25ece1cdd64 34-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "f3ccb0b283eb5ecebe5fae2c162cb3c9b192767a",
+  "prompts": {},
+  "sessions": {
+    "s_7e147b89f819ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c013e7-b3b8-439c-8ee2-73f4562e1a34",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
