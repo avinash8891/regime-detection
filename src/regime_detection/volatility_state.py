@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 import pandas as pd
 
+from regime_detection._rule_helpers import ev_float as _ev_float
 from regime_shared.pandas_compat import require_single_session
 
 if TYPE_CHECKING:  # avoid runtime cycle: volatility_state_v2 → config → ...
@@ -162,10 +163,6 @@ _RISK_RANK: dict[VolatilityLabel, int] = {
     "rising_vol": 2,
     "vol_crush": 3,
 }
-
-
-def _ev_float(x: float) -> float:
-    return round(float(x), 8)
 
 
 def _pct_rank_last(arr: np.ndarray) -> float:

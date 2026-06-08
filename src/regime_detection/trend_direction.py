@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from regime_detection._rolling_stats import period_return, simple_moving_average
+from regime_detection._rule_helpers import ev_float as _ev_float
 
 if TYPE_CHECKING:  # avoid runtime cycle: trend_direction_v2 → config → ...
     from regime_detection.config import TrendDirectionV2RulesConfig
@@ -54,10 +55,6 @@ class TrendDirectionFeatures:
     sma_50: pd.Series
     sma_200: pd.Series
     return_63d: pd.Series
-
-
-def _ev_float(x: float) -> float:
-    return round(float(x), 8)
 
 
 def compute_features(close: pd.Series) -> TrendDirectionFeatures:

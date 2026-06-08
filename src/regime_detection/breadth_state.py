@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from regime_detection._rule_helpers import ev_float as _ev_float
 from regime_detection.data_quality import assess_series_input_quality
 from regime_detection.models import DataQuality
 from regime_shared.pandas_compat import require_single_session
@@ -55,10 +56,6 @@ class BreadthFeatures:
     relative_breadth_sma50: pd.Series
     relative_breadth_return_20d: pd.Series
     index_distance_from_63d_high: pd.Series
-
-
-def _ev_float(x: float) -> float:
-    return round(float(x), 8)
 
 
 def compute_features(*, spy_close: pd.Series, rsp_close: pd.Series) -> BreadthFeatures:

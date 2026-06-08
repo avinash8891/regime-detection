@@ -4,15 +4,12 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
+from regime_detection._rule_helpers import any_nan as _any_nan
 from regime_detection.config import InflationGrowthRulesConfig
 from regime_detection.inflation_growth import (
     InflationGrowthLabel,
     InflationGrowthRuleInputs,
 )
-
-
-def _any_nan(*values: float) -> bool:
-    return any(np.isnan(v) for v in values)
 
 
 def _credit_is_calm(

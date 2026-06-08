@@ -56,6 +56,7 @@ import pandas as pd
 from regime_detection._rolling_stats import (
     rolling_change_zscore as _rolling_change_zscore,
 )
+from regime_detection._rule_helpers import scalar_at as _scalar_at
 from regime_detection.config import (
     MonetaryPressureV2FeaturesConfig,
     MonetaryPressureV2RulesConfig,
@@ -245,15 +246,6 @@ class MonetaryPressureRuleInputs:
     broad_usd_zscore_63d: float
     zscore_21d_2y: float
     zscore_21d_10y: float
-
-
-def _scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
-    if dt not in series.index:
-        return float("nan")
-    val = series.loc[dt]
-    if pd.isna(val):
-        return float("nan")
-    return float(val)
 
 
 def build_rule_inputs_for_date(

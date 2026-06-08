@@ -67,6 +67,10 @@ from regime_detection._rolling_stats import (
     rolling_change_zscore as _change_zscore,
     rolling_ols_slope,
 )
+from regime_detection._rule_helpers import (
+    any_nan as _any_nan,
+    scalar_at as _scalar_at,
+)
 from regime_detection._series_alignment import (
     aligned_float_values,
     optional_aligned_float_values,
@@ -483,15 +487,6 @@ class CreditFundingRuleEvaluation:
     reason: str | None = None
 
 
-def _scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
-    if dt not in series.index:
-        return float("nan")
-    val = series.loc[dt]
-    if pd.isna(val):
-        return float("nan")
-    return float(val)
-
-
 def build_rule_inputs_for_date(
     *,
     features: CreditFundingFeatures,
@@ -591,10 +586,6 @@ def build_rule_inputs_by_date(
 # ---------------------------------------------------------------------------
 # Rule predicates (§2C lines 3249-3271).
 # ---------------------------------------------------------------------------
-
-
-def _any_nan(*values: float) -> bool:
-    return any(np.isnan(v) for v in values)
 
 
 def evaluate_credit_calm(

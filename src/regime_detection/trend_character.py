@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from regime_detection._rolling_stats import period_return, simple_moving_average
+from regime_detection._rule_helpers import ev_float as _ev_float
 from regime_shared.pandas_compat import require_single_session
 
 # V2 §1A Trend Character (implementation decision #67 pin) extends the V1 5-label set.
@@ -74,10 +75,6 @@ class TrendCharacterFeatures:
     bb_width_expanding: pd.Series
     volume_above_20d_average: pd.Series
     followthrough_rate: pd.Series
-
-
-def _ev_float(x: float) -> float:
-    return round(float(x), 8)
 
 
 def _wilder_ewm(series: pd.Series, n: int) -> pd.Series:

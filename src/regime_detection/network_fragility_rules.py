@@ -47,6 +47,10 @@ import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
 from regime_detection._rolling_stats import rolling_ols_slope
+from regime_detection._rule_helpers import (
+    any_nan as _any_nan,
+    scalar_at as _scalar_at,
+)
 from regime_detection.axis_output_models import NetworkFragilityLabel
 from regime_detection.breadth_state import BreadthLabel
 from regime_detection.config import NetworkFragilityRulesConfig
@@ -160,13 +164,6 @@ class NetworkFragilityRuleEvaluation:
     label: NetworkFragilityLabel
     rule_path: str
     reason: str | None = None
-
-
-def _scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
-    """Pick the value of a vectorized reducer series at ``dt`` (NaN if absent)."""
-    if dt not in series.index:
-        return float("nan")
-    return float(series.loc[dt])
 
 
 def build_rule_inputs_for_date(
@@ -318,10 +315,6 @@ def build_rule_inputs_by_date(
 
 
 # -- Rule predicates (v2 §3.5) -------------------------------------------------
-
-
-def _any_nan(*values: float) -> bool:
-    return any(np.isnan(v) for v in values)
 
 
 def _correlation_to_one_percentile_path(

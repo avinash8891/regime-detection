@@ -50,6 +50,10 @@ from regime_detection._series_alignment import aligned_float_values
 from regime_detection.breadth_state_v2 import make_bias_warnings_frame
 from regime_detection.config import InflationGrowthRulesConfig
 from regime_detection._rolling_stats import rolling_ols_slope
+from regime_detection._rule_helpers import (
+    scalar_at as _scalar_at,
+    scalar_at_lag as _scalar_at_lag,
+)
 
 # ---------------------------------------------------------------------------
 # Spec labels (V2 §2B spec lines 2965-2975) + risk rank (V2 §2B spec lines 3109-3124).
@@ -536,27 +540,6 @@ class InflationGrowthRuleInputs:
     spy_21d_return: float
     tlt_21d_return: float
     credit_funding_active_label: str | None
-
-
-def _scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
-    if dt not in series.index:
-        return float("nan")
-    val = series.loc[dt]
-    if pd.isna(val):
-        return float("nan")
-    return float(val)
-
-
-def _scalar_at_lag(series: pd.Series, dt: pd.Timestamp, lag: int) -> float:
-    if dt not in series.index:
-        return float("nan")
-    pos = series.index.get_loc(dt)
-    if pos - lag < 0:
-        return float("nan")
-    val = series.iloc[pos - lag]
-    if pd.isna(val):
-        return float("nan")
-    return float(val)
 
 
 def build_rule_inputs_for_date(
