@@ -1,0 +1,31 @@
+tests/test_volatility_state.py
+  s_7e147b89f819ca::t_5ec6f8e3d74bff 76
+src/regime_detection/volatility_state.py
+  s_7e147b89f819ca::t_b4431b989845cd 363
+  s_7e147b89f819ca::t_630b4a183b4dc6 4,10
+  s_7e147b89f819ca::t_94c69ead518975 364-810
+src/regime_detection/feature_store.py
+  s_7e147b89f819ca::t_5ec6f8e3d74bff 90
+tests/test_volatility_state_v2_vol_crush.py
+  s_7e147b89f819ca::t_5ec6f8e3d74bff 28
+tests/test_volatility_state_v2_rising_vol_rule.py
+  s_7e147b89f819ca::t_5ec6f8e3d74bff 36
+tests/test_volatility_state_v2_features.py
+  s_7e147b89f819ca::t_5ec6f8e3d74bff 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "303fb6463973aa880b135cd175b860b656f793a8",
+  "prompts": {},
+  "sessions": {
+    "s_7e147b89f819ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c013e7-b3b8-439c-8ee2-73f4562e1a34",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
