@@ -73,7 +73,7 @@ def test_raw_label_for_day_is_single_source_of_truth_over_build_raw_outputs() ->
 
     cfg = load_default_regime_config()
     assert cfg.volatility_state_v2 is not None
-    from regime_detection.volatility_state_v2 import compute_volatility_v2_features
+    from regime_detection.volatility_state import compute_volatility_v2_features
 
     v2_features = compute_volatility_v2_features(
         open_=open_,

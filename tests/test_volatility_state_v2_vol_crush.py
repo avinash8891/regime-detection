@@ -25,7 +25,7 @@ import pytest
 
 from regime_detection.config import VolatilityV2RulesConfig
 from regime_detection.event_calendar import compute_event_window_just_passed
-from regime_detection.volatility_state_v2 import (
+from regime_detection.volatility_state import (
     VolatilityV2Features,
     evaluate_v2_volatility_label,
     evaluate_vol_crush,

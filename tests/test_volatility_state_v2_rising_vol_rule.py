@@ -33,7 +33,7 @@ from regime_detection.volatility_state import (
     raw_label_for_day,
     realized_vol as realized_vol_helper,
 )
-from regime_detection.volatility_state_v2 import (
+from regime_detection.volatility_state import (
     VolatilityV2Features,
     compute_volatility_v2_features,
     evaluate_rising_vol,
