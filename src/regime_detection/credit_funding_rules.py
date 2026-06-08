@@ -273,9 +273,7 @@ def spread_widening_rule_path(
         and inputs.hy_spread_percentile_504d >= config.hy_percentile_calm_max
     ):
         return "hy_led_elevated"
-    if getattr(config, "spread_widening_hy_only", False) and (
-        inputs.hy_spread_slope_21d > 0.0
-    ):
+    if config.spread_widening_hy_only and (inputs.hy_spread_slope_21d > 0.0):
         return "hy_only_config"
     return None
 
@@ -302,9 +300,8 @@ def evaluate_credit_recovery(
         inputs.hy_spread_slope_21d,
     ):
         return False
-    calm_max = getattr(config, "hy_percentile_calm_max", 0.50)
     return bool(
-        inputs.hy_spread_percentile_504d >= calm_max
+        inputs.hy_spread_percentile_504d >= config.hy_percentile_calm_max
         and inputs.hy_spread_slope_21d < 0.0
     )
 
