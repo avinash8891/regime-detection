@@ -58,7 +58,7 @@ from regime_detection.network_fragility import (
     rolling_drawdown_series as _rolling_drawdown_series,
     rolling_stability_series as _rolling_stability_series,
 )
-from regime_detection.volatility_state import VolatilityLabel
+from regime_detection.volatility_state_rules import VolatilityLabel
 
 # v2 §3.3 labels — the closed NetworkFragilityLabel Literal is the single source of
 # truth in axis_output_models (F-040, alongside the other axis-output label triples);

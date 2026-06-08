@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from regime_detection.volatility_state import (
+from regime_detection.volatility_state_rules import (
     _RISK_RANK as VOLATILITY_RISK_RANK,
     build_raw_outputs as build_volatility_raw_outputs,
 )

@@ -82,14 +82,12 @@ from regime_detection.clustering import (
     compute_clustering_features,
 )
 from regime_detection.hmm_state import HMMConfig, HMMFeatures, compute_hmm_features
-from regime_detection.volatility_state import realized_vol
 from regime_detection.volatility_state import (
     VolatilityFeatures,
-    compute_features as compute_volatility_features,
-)
-from regime_detection.volatility_state import (
     VolatilityV2Features,
+    compute_features as compute_volatility_features,
     compute_volatility_v2_features,
+    realized_vol,
 )
 from regime_detection.volume_liquidity import (
     VolumeLiquidityV2Features,

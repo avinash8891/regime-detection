@@ -8,10 +8,12 @@ import yaml
 
 from regime_detection.config import load_default_regime_config
 from regime_detection.volatility_state import (
-    _RISK_RANK,
     VolatilityFeatures,
-    build_raw_outputs,
     compute_features,
+)
+from regime_detection.volatility_state_rules import (
+    _RISK_RANK,
+    build_raw_outputs,
     raw_label_for_day,
 )
 

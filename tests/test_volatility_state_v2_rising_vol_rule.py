@@ -28,16 +28,16 @@ from regime_detection.config import (
 )
 from regime_detection.engine import RegimeEngine
 from regime_detection.volatility_state import (
-    build_raw_outputs as build_v1_raw_outputs,
+    VolatilityV2Features,
     compute_features as compute_v1_features,
-    raw_label_for_day,
+    compute_volatility_v2_features,
     realized_vol as realized_vol_helper,
 )
-from regime_detection.volatility_state import (
-    VolatilityV2Features,
-    compute_volatility_v2_features,
+from regime_detection.volatility_state_rules import (
+    build_raw_outputs as build_v1_raw_outputs,
     evaluate_rising_vol,
     evaluate_v2_volatility_label,
+    raw_label_for_day,
 )
 
 # v2 §1C line 147-148 — exact spec thresholds.
