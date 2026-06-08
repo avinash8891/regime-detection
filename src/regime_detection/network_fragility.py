@@ -32,6 +32,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 
 from regime_detection.fragility_universe import (
     CROSS_ASSET_SYMBOLS,
@@ -214,6 +215,49 @@ def _dispersion_ratio_series(
     spy_vol = realised_vol[spy_column]
     safe_spy = spy_vol.where(spy_vol >= spy_vol_floor)
     return mean_vol / safe_spy
+
+
+def rolling_stability_series(series: pd.Series, window: int) -> pd.Series:
+    """Vectorised coefficient-of-variation (std/mean) over a trailing window.
+
+    Used by §3.5 ``diversified_normal`` predicate to assess effective_rank
+    stability. ``ddof=0`` (population std), denominator is the rolling mean;
+    rows where the rolling mean is zero produce NaN.
+
+    Returns a Series aligned to ``series.index``; NaN until ``window`` non-NaN
+    observations are available (any NaN in the window propagates to NaN).
+    """
+    values = series.to_numpy(dtype=float)
+    out = np.full(len(values), np.nan, dtype=float)
+    if len(values) < window:
+        return pd.Series(out, index=series.index)
+
+    windows = sliding_window_view(values, window_shape=window)
+    valid = np.isfinite(windows).all(axis=1)
+    if valid.any():
+        valid_windows = windows[valid]
+        means = valid_windows.mean(axis=1)
+        stabilities = np.full(len(valid_windows), np.nan, dtype=float)
+        nonzero = means != 0.0
+        if nonzero.any():
+            stabilities[nonzero] = (
+                valid_windows[nonzero].std(axis=1, ddof=0) / means[nonzero]
+            )
+        out[window - 1 :][valid] = stabilities
+    return pd.Series(out, index=series.index)
+
+
+def rolling_drawdown_series(spy_close: pd.Series, window: int) -> pd.Series:
+    """Rolling drawdown of ``spy_close`` from its trailing ``window``-day peak.
+
+    Returns ``spy_close / peak - 1`` where ``peak`` is the rolling max with
+    ``min_periods=window``. Negative values; 0 at fresh peaks. NaN where the
+    peak window hasn't filled or where the peak is non-positive.
+    """
+    peak = spy_close.rolling(window=window, min_periods=window).max()
+    drawdown = spy_close / peak - 1.0
+    drawdown = drawdown.where(peak > 0)
+    return drawdown.astype(float)
 
 
 def compute_features(

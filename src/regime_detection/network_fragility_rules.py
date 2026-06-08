@@ -44,7 +44,6 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-from numpy.lib.stride_tricks import sliding_window_view
 
 from regime_detection._rolling_stats import rolling_ols_slope
 from regime_detection._rule_helpers import (
@@ -54,7 +53,11 @@ from regime_detection._rule_helpers import (
 from regime_detection.axis_output_models import NetworkFragilityLabel
 from regime_detection.breadth_state import BreadthLabel
 from regime_detection.config import NetworkFragilityRulesConfig
-from regime_detection.network_fragility import NetworkFragilityFeatures
+from regime_detection.network_fragility import (
+    NetworkFragilityFeatures,
+    rolling_drawdown_series as _rolling_drawdown_series,
+    rolling_stability_series as _rolling_stability_series,
+)
 from regime_detection.volatility_state import VolatilityLabel
 
 # v2 §3.3 labels — the closed NetworkFragilityLabel Literal is the single source of
@@ -226,34 +229,6 @@ def build_rule_inputs_for_date(
         drawdown_21d=_scalar_at(drawdown, dt),
         vix_percentile_252d=float(vix_percentile_252d.loc[dt]),
     )
-
-
-def _rolling_stability_series(series: pd.Series, window: int) -> pd.Series:
-    values = series.to_numpy(dtype=float)
-    out = np.full(len(values), np.nan, dtype=float)
-    if len(values) < window:
-        return pd.Series(out, index=series.index)
-
-    windows = sliding_window_view(values, window_shape=window)
-    valid = np.isfinite(windows).all(axis=1)
-    if valid.any():
-        valid_windows = windows[valid]
-        means = valid_windows.mean(axis=1)
-        stabilities = np.full(len(valid_windows), np.nan, dtype=float)
-        nonzero = means != 0.0
-        if nonzero.any():
-            stabilities[nonzero] = (
-                valid_windows[nonzero].std(axis=1, ddof=0) / means[nonzero]
-            )
-        out[window - 1 :][valid] = stabilities
-    return pd.Series(out, index=series.index)
-
-
-def _rolling_drawdown_series(spy_close: pd.Series, window: int) -> pd.Series:
-    peak = spy_close.rolling(window=window, min_periods=window).max()
-    drawdown = spy_close / peak - 1.0
-    drawdown = drawdown.where(peak > 0)
-    return drawdown.astype(float)
 
 
 def build_rule_inputs_by_date(
