@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection.breadth_state_v2 import (
+from regime_detection.breadth_state import (
     BreadthV2Features,
     _normalize_interval_dates,
     compute_breadth_v2_features,

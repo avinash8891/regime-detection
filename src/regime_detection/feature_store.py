@@ -12,7 +12,7 @@ from regime_detection.breadth_state import (
     BreadthFeatures,
     compute_features as compute_breadth_features,
 )
-from regime_detection.breadth_state_v2 import (
+from regime_detection.breadth_state import (
     BreadthV2Features,
     compute_breadth_v2_features,
 )
