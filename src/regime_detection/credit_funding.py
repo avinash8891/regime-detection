@@ -63,7 +63,10 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from regime_detection._rolling_stats import rolling_change_zscore as _change_zscore
+from regime_detection._rolling_stats import (
+    rolling_change_zscore as _change_zscore,
+    rolling_ols_slope,
+)
 from regime_detection._series_alignment import (
     aligned_float_values,
     optional_aligned_float_values,
@@ -244,44 +247,6 @@ class CreditFundingFeatures:
 
 
 # ---------------------------------------------------------------------------
-# Rolling helpers — `_rolling_ols_slope` lives here because the per-§2C
-# slope helper differs from `network_fragility_rules._trailing_slope`
-# (vectorised rolling form vs per-day scalar). The z-score helper is
-# shared with §2A — imported from `_rolling_stats` (single home for
-# shared helpers).
-# ---------------------------------------------------------------------------
-
-
-def _rolling_ols_slope(series: pd.Series, *, window: int) -> pd.Series:
-    """Rolling OLS slope of ``series`` vs a unit trading-day index.
-
-    Closed-form OLS slope: ``cov(x, y) / var(x)`` where x = [0, 1, ..., window-1].
-    Returns NaN until ``window`` non-NaN observations are available (any NaN in
-    the window propagates to NaN).
-
-    Mirrors the per-day ``_trailing_slope`` helper in network_fragility_rules
-    (which uses ``np.polyfit``); both produce numerically identical slopes on
-    finite input. The rolling vectorised form is preferred here because §2C
-    computes slopes on the full series rather than a single per-day scalar.
-    """
-    if window < 2:
-        raise ValueError(f"window must be >= 2; got {window}")
-    series = series.astype(float)
-    x = np.arange(window, dtype=float)
-    x_mean = x.mean()
-    x_centered = x - x_mean
-    x_var = float((x_centered**2).sum())  # constant
-
-    def _slope(window_arr: np.ndarray) -> float:
-        if np.isnan(window_arr).any():
-            return float("nan")
-        y_mean = window_arr.mean()
-        return float(((x_centered) * (window_arr - y_mean)).sum() / x_var)
-
-    return series.rolling(window=window, min_periods=window).apply(_slope, raw=True)
-
-
-# ---------------------------------------------------------------------------
 # Feature compute (§2C lines 3208-3243).
 # ---------------------------------------------------------------------------
 
@@ -355,10 +320,10 @@ def compute_credit_funding_features(
     )
 
     # §2C lines 3222-3223: 21d OLS slope.
-    hy_oas_slope_21d = _rolling_ols_slope(hy_oas_63d, window=slope_21d).rename(
+    hy_oas_slope_21d = rolling_ols_slope(hy_oas_63d, window=slope_21d).rename(
         "hy_oas_slope_21d"
     )
-    ig_oas_slope_21d = _rolling_ols_slope(ig_oas_63d, window=slope_21d).rename(
+    ig_oas_slope_21d = rolling_ols_slope(ig_oas_63d, window=slope_21d).rename(
         "ig_oas_slope_21d"
     )
 
@@ -377,16 +342,16 @@ def compute_credit_funding_features(
         .rank(pct=True)
         .rename("hy_tr_differential_percentile_504d")
     )
-    hy_tr_differential_slope_21d = _rolling_ols_slope(
+    hy_tr_differential_slope_21d = rolling_ols_slope(
         hy_tr_differential_63d, window=slope_21d
     ).rename("hy_tr_differential_slope_21d")
-    ig_tr_differential_slope_21d = _rolling_ols_slope(
+    ig_tr_differential_slope_21d = rolling_ols_slope(
         ig_tr_differential_63d, window=slope_21d
     ).rename("ig_tr_differential_slope_21d")
 
     # §2C lines 3229-3230: bank-index relative strength.
     kre_spy_ratio = (kre / spy.where(spy > 0)).rename("kre_spy_ratio")
-    kre_spy_slope_63d = _rolling_ols_slope(kre_spy_ratio, window=slope_63d).rename(
+    kre_spy_slope_63d = rolling_ols_slope(kre_spy_ratio, window=slope_63d).rename(
         "kre_spy_slope_63d"
     )
 
@@ -419,7 +384,7 @@ def compute_credit_funding_features(
         sofr_iorb_spread = spliced.rename("sofr_iorb_spread")
     else:
         sofr_iorb_spread = sofr_iorb_raw.rename("sofr_iorb_spread")
-    sofr_iorb_slope_21d = _rolling_ols_slope(sofr_iorb_spread, window=slope_21d).rename(
+    sofr_iorb_slope_21d = rolling_ols_slope(sofr_iorb_spread, window=slope_21d).rename(
         "sofr_iorb_slope_21d"
     )
 

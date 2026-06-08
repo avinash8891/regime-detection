@@ -49,7 +49,7 @@ import pandas as pd
 from regime_detection._series_alignment import aligned_float_values
 from regime_detection.breadth_state_v2 import make_bias_warnings_frame
 from regime_detection.config import InflationGrowthRulesConfig
-from regime_detection.credit_funding import _rolling_ols_slope
+from regime_detection._rolling_stats import rolling_ols_slope
 
 # ---------------------------------------------------------------------------
 # Spec labels (V2 §2B spec lines 2965-2975) + risk rank (V2 §2B spec lines 3109-3124).
@@ -371,7 +371,7 @@ def compute_inflation_growth_features(
         cpi, config.cpi_lookback_6m_sessions
     ).rename("cpi_6m_change_pct")
     # V2 §2B spec lines 3049 / 3065 — 21d OLS slope of cpi_6m_change_pct (rule operand).
-    cpi_6m_change_pct_slope_21d = _rolling_ols_slope(
+    cpi_6m_change_pct_slope_21d = rolling_ols_slope(
         cpi_6m_change_pct, window=config.cpi_slope_lookback_sessions
     ).rename("cpi_6m_change_pct_slope_21d")
 
@@ -394,7 +394,7 @@ def compute_inflation_growth_features(
 
     # PMI (V2 §2B spec lines 3013-3017). 21d slope on the forward-filled daily series.
     pmi_manufacturing_series = pmi.rename("pmi_manufacturing")
-    pmi_manufacturing_slope_21d = _rolling_ols_slope(
+    pmi_manufacturing_slope_21d = rolling_ols_slope(
         pmi_manufacturing_series, window=config.pmi_slope_lookback_sessions
     ).rename("pmi_manufacturing_slope_21d")
 
@@ -429,7 +429,7 @@ def compute_inflation_growth_features(
     ).rename("commodity_return_63d")
 
     # Treasury yield slope (V2 §2B spec line 3037).
-    treasury_10y_yield_slope_21d = _rolling_ols_slope(
+    treasury_10y_yield_slope_21d = rolling_ols_slope(
         dgs10_s, window=config.treasury_slope_lookback_sessions
     ).rename("treasury_10y_yield_slope_21d")
 
@@ -439,7 +439,7 @@ def compute_inflation_growth_features(
     cyclical_defensive_ratio = (
         cyclical_sum / defensive_sum.where(defensive_sum != 0)
     ).rename("cyclical_defensive_ratio")
-    cyclical_defensive_slope_21d = _rolling_ols_slope(
+    cyclical_defensive_slope_21d = rolling_ols_slope(
         cyclical_defensive_ratio,
         window=config.cyclical_defensive_slope_lookback_sessions,
     ).rename("cyclical_defensive_slope_21d")
