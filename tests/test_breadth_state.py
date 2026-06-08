@@ -8,8 +8,10 @@ import yaml
 
 from regime_detection.breadth_state import (
     BreadthFeatures,
-    build_raw_outputs,
     compute_features,
+)
+from regime_detection.breadth_state_rules import (
+    build_raw_outputs,
     raw_label_for_day,
 )
 

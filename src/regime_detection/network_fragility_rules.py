@@ -51,7 +51,7 @@ from regime_detection._rule_helpers import (
     scalar_at as _scalar_at,
 )
 from regime_detection.axis_output_models import NetworkFragilityLabel
-from regime_detection.breadth_state import BreadthLabel
+from regime_detection.breadth_state_rules import BreadthLabel
 from regime_detection.config import NetworkFragilityRulesConfig
 from regime_detection.network_fragility import (
     NetworkFragilityFeatures,

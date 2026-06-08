@@ -30,7 +30,7 @@ from pydantic import ValidationError
 
 # Real V2 axis label types — imported here so the test file fails fast
 # (NameError, not toy-string compile) if the production enums move.
-from regime_detection.breadth_state import BreadthLabel  # noqa: F401
+from regime_detection.breadth_state_rules import BreadthLabel  # noqa: F401
 from regime_detection.config import (
     CohortRoutingConfig,
     load_default_regime_config,

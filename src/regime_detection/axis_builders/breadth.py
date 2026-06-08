@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 
 from regime_detection.axis_builders.per_label import build_per_label_axis_outputs
-from regime_detection.breadth_state import (
+from regime_detection.breadth_state_rules import (
     _RISK_RANK as BREADTH_RISK_RANK,
     _data_quality_for_asof as breadth_data_quality_for_asof,
     build_raw_outputs as build_breadth_raw_outputs,
