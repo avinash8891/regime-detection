@@ -28,10 +28,12 @@ from regime_detection.credit_funding import (
     CREDIT_SPREAD_SOURCE,
     CREDIT_SPREAD_SOURCE_CODE,
     CREDIT_SPREAD_SOURCE_URL,
+    compute_credit_funding_features,
+)
+from regime_detection.credit_funding_rules import (
     CreditFundingRuleInputs,
     build_rule_inputs_by_date,
     build_rule_inputs_for_date,
-    compute_credit_funding_features,
     deleveraging_rule_path,
     evaluate_credit_calm,
     evaluate_credit_stress,

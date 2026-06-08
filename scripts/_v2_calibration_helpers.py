@@ -22,7 +22,7 @@ from regime_data_fetch.manifest_inputs import (
     get_manifest_input_spec,
     resolve_runner_input_paths,
 )
-from regime_detection.credit_funding import (
+from regime_detection.credit_funding_rules import (
     REQUIRED_CROSS_ASSET_KEYS as CREDIT_FUNDING_CROSS_ASSET_KEYS,
 )
 from regime_detection.comparison import axis_reporting_label

@@ -18,7 +18,7 @@ from regime_detection.config import (
     load_default_regime_config,
     load_regime_config,
 )
-from regime_detection.credit_funding import (
+from regime_detection.credit_funding_rules import (
     REQUIRED_CROSS_ASSET_KEYS as CREDIT_FUNDING_CROSS_ASSET_KEYS,
     REQUIRED_MACRO_KEYS as CREDIT_FUNDING_MACRO_KEYS,
 )
