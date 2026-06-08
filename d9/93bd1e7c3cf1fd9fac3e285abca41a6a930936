@@ -1,0 +1,27 @@
+src/regime_detection/trend_character_rules.py
+  s_7e147b89f819ca::t_8de4117a0bcadf 1-186
+src/regime_detection/axis_builders/trend_character.py
+  s_7e147b89f819ca::t_2a21feb067c8aa 7
+tests/test_trend_character.py
+  s_7e147b89f819ca::t_289adabb1ae883 17-19
+tests/test_trend_character_v2_labels.py
+  s_7e147b89f819ca::t_6499cf1aa2dc7b 20-23
+tests/test_cohort_routing.py
+  s_7e147b89f819ca::t_7280d7ec3bb6dc 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "d993bd1e7c3cf1fd9fac3e285abca41a6a930936",
+  "prompts": {},
+  "sessions": {
+    "s_7e147b89f819ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c013e7-b3b8-439c-8ee2-73f4562e1a34",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
