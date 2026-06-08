@@ -28,7 +28,7 @@ from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import build_market_context
 from regime_detection.timeline import build_regime_timeline
-from regime_detection.volume_liquidity_v2 import (
+from regime_detection.volume_liquidity import (
     VolumeLiquidityV2Features,
     compute_volume_liquidity_v2_features,
 )

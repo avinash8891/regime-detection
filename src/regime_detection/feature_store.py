@@ -91,7 +91,7 @@ from regime_detection.volatility_state_v2 import (
     VolatilityV2Features,
     compute_volatility_v2_features,
 )
-from regime_detection.volume_liquidity_v2 import (
+from regime_detection.volume_liquidity import (
     VolumeLiquidityV2Features,
     compute_volume_liquidity_v2_features,
 )
