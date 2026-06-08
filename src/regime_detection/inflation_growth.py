@@ -47,7 +47,7 @@ import numpy as np
 import pandas as pd
 
 from regime_detection._series_alignment import aligned_float_values
-from regime_detection.breadth_state_v2 import make_bias_warnings_frame
+from regime_shared.pit_provenance import make_bias_warnings_frame
 from regime_detection.config import InflationGrowthRulesConfig
 from regime_detection._rolling_stats import rolling_ols_slope
 from regime_detection._rule_helpers import (

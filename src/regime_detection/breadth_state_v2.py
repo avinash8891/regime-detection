@@ -46,7 +46,6 @@ Implementation choices that resolve ambiguities:
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -59,6 +58,7 @@ from regime_shared.pit_provenance import (
     BIAS_WARNING as _PIT_BIAS_WARNING_CODE,
     SOURCE_NAME as _PIT_BIAS_SOURCE,
     SOURCE_URL as _PIT_BIAS_SOURCE_URL,
+    make_bias_warnings_frame as make_bias_warnings_frame,
 )
 
 # PIT feature names in spec order (v2 §1D lines 328-368).
@@ -123,35 +123,9 @@ class BreadthV2Features:
         return pd.DataFrame({name: getattr(self, name) for name in self.feature_names})
 
 
-_BIAS_WARNING_COLUMNS = ("warning_code", "feature_name", "source", "source_url")
 _AVAILABLE_SECTOR_BREADTH_WARNING_CODE = "available_sector_breadth_proxy"
 _AVAILABLE_SECTOR_BREADTH_SOURCE = "sector_etf_available_denominator_backtest_proxy"
 _AVAILABLE_SECTOR_BREADTH_SOURCE_URL = "docs/regime_engine_v2_spec.md#sector-breadth"
-
-
-def make_bias_warnings_frame(rows: Iterable[Mapping[str, str]]) -> pd.DataFrame:
-    """Build the canonical 4-column bias-warnings frame.
-
-    Each row must have exactly the keys: warning_code, feature_name,
-    source, source_url. Raises ValueError on key mismatch (missing or extra).
-    Empty input returns a 4-column DataFrame with 0 rows.
-    """
-    expected = set(_BIAS_WARNING_COLUMNS)
-    materialized = []
-    for idx, row in enumerate(rows):
-        got = set(row)
-        if got != expected:
-            missing = expected - got
-            extra = got - expected
-            raise ValueError(
-                f"bias_warnings row {idx} key mismatch: missing={sorted(missing)}, extra={sorted(extra)}"
-            )
-        materialized.append({k: row[k] for k in _BIAS_WARNING_COLUMNS})
-    if not materialized:
-        return pd.DataFrame(
-            {col: pd.Series(dtype=object) for col in _BIAS_WARNING_COLUMNS}
-        )
-    return pd.DataFrame(materialized, columns=list(_BIAS_WARNING_COLUMNS))
 
 
 def _available_sector_proxy_bias_warning() -> dict[str, str]:
