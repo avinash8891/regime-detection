@@ -40,7 +40,7 @@ from regime_detection.engine import RegimeEngine
 from regime_detection.models import AgentRouting, RegimeOutput  # noqa: F401
 from regime_detection.network_fragility_rules import NetworkFragilityLabel  # noqa: F401
 from regime_detection.trend_character import TrendCharacterLabel  # noqa: F401
-from regime_detection.trend_direction import TrendDirectionLabel  # noqa: F401
+from regime_detection.trend_direction_rules import TrendDirectionLabel  # noqa: F401
 from regime_detection.volatility_state_rules import VolatilityLabel  # noqa: F401
 
 logger = logging.getLogger(__name__)

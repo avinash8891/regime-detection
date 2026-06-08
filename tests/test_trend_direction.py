@@ -8,13 +8,15 @@ import yaml
 
 from regime_detection.config import load_default_regime_config
 from regime_detection.trend_direction import (
-    _RISK_RANK,
     TrendDirectionFeatures,
-    build_raw_outputs,
+    TrendDirectionV2Features,
     compute_features,
+)
+from regime_detection.trend_direction_rules import (
+    _RISK_RANK,
+    build_raw_outputs,
     raw_label_for_day,
 )
-from regime_detection.trend_direction import TrendDirectionV2Features
 
 
 def test_trend_direction_risk_rank_matches_spec_3_6() -> None:
