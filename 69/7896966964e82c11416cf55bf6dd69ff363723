@@ -1,0 +1,25 @@
+src/regime_detection/breadth_state_v2.py
+  s_7e147b89f819ca::t_7a3aeb23f5ce55 61
+src/regime_detection/inflation_growth.py
+  s_7e147b89f819ca::t_6df32b44b7c7e4 50
+src/regime_shared/pit_provenance.py
+  s_7e147b89f819ca::t_fbfba64f61eef0 1-7,10-13,21-54
+src/regime_detection/credit_funding.py
+  s_7e147b89f819ca::t_2e2f04f4faeabe 78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "697896966964e82c11416cf55bf6dd69ff363723",
+  "prompts": {},
+  "sessions": {
+    "s_7e147b89f819ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c013e7-b3b8-439c-8ee2-73f4562e1a34",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
