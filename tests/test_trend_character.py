@@ -13,8 +13,10 @@ from regime_detection.trend_character import (
     _compute_adx_14,
     _compute_breakout_20d_or_50d,
     _compute_followthrough_rate,
-    build_raw_outputs,
     compute_features,
+)
+from regime_detection.trend_character_rules import (
+    build_raw_outputs,
     raw_label_for_day,
 )
 

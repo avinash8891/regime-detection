@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from regime_detection.trend_character import (
+from regime_detection.trend_character_rules import (
     _RISK_RANK as TREND_CHARACTER_RISK_RANK,
     build_raw_outputs as build_trend_character_raw_outputs,
 )

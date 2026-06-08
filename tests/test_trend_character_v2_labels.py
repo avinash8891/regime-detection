@@ -16,11 +16,13 @@ import pandas as pd
 
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.trend_character import (
-    _RISK_RANK,
     TrendCharacterFeatures,
+    compute_features,
+)
+from regime_detection.trend_character_rules import (
+    _RISK_RANK,
     TrendCharacterLabel,
     build_raw_outputs,
-    compute_features,
     raw_label_for_day,
 )
 
