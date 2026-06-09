@@ -23,6 +23,11 @@ for _envkey in (
 ):
     os.environ.setdefault(_envkey, "1")
 
+# Unit tests intentionally exercise the packaged config through RegimeEngine().
+# Production callers must pass an explicit config path unless they set this
+# opt-in env var.
+os.environ.setdefault("REGIME_DETECTION_ALLOW_DEFAULT_CONFIG", "1")
+
 import importlib.util
 import pickle
 import sys
@@ -273,6 +278,8 @@ def _fast_v2_test_config():
                     "n_states": 2,
                     "training_window_days": 100,
                     "random_seeds": (42, 7, 13),
+                    "model_version": "hmm_2state_test_v1.0",
+                    "state_label_map": {0: "test_low_risk", 1: "test_high_risk"},
                 }
             ),
             "clustering": engine.config.clustering.model_copy(
@@ -385,6 +392,43 @@ def _macro_series_from_v2_fixture(as_of: date) -> dict[str, pd.Series]:
         "pmi_manufacturing"
     )
     return series_by_key
+
+
+def _synthetic_v2_evidence(*, start: date, as_of: date) -> dict[str, object]:
+    start_ts = pd.Timestamp(start)
+    as_of_ts = pd.Timestamp(as_of)
+    session_index = pd.date_range(start=start_ts, end=as_of_ts, freq="B")
+    if session_index.empty:
+        session_index = pd.DatetimeIndex([as_of_ts])
+    aaii_publications = pd.date_range(end=as_of_ts, periods=8, freq="7D")
+    cpi_release_dates = pd.date_range(end=as_of_ts, periods=12, freq="30D")
+    return {
+        "aaii_sentiment": pd.DataFrame(
+            {
+                "publication_date": aaii_publications,
+                "bull_bear_spread_8w_ma": [10.0] * len(aaii_publications),
+            }
+        ),
+        "news_sentiment": pd.Series(
+            [0.1] * len(session_index), index=session_index, name="news_sentiment"
+        ),
+        "central_bank_text_releases": pd.DataFrame(
+            {
+                "release_date": [as_of_ts.date()],
+                "hawkish_count": [1],
+                "dovish_count": [0],
+                "total_tokens": [1000],
+                "net_score": [0.1],
+                "source": ["synthetic_fixture"],
+            }
+        ),
+        "cpi_first_release": pd.Series(
+            [300.0 + idx for idx in range(len(cpi_release_dates))],
+            index=cpi_release_dates,
+            name="cpi_first_release",
+            dtype="float64",
+        ),
+    }
 
 
 def _v2_macro_fixture_covers(as_of: date) -> bool:
@@ -576,15 +620,18 @@ def v2_classify_kwargs_for_asof(
     v2_constituent_ohlcv_by_symbol: dict[str, pd.DataFrame],
 ):
     def _build(as_of: date) -> dict[str, object]:
+        market_data = v2_market_df_for_asof(as_of)
+        start = min(market_data["date"])
         return {
             "config": _fast_v2_test_config(),
-            "market_data": v2_market_df_for_asof(as_of),
+            "market_data": market_data,
             "event_calendar": event_calendar_df,
             "sector_etf_closes": v2_sector_etf_closes,
             "cross_asset_closes": v2_cross_asset_closes,
             "macro_series": v2_macro_series_by_key,
             "pit_constituent_intervals": v2_pit_constituent_intervals,
             "constituent_ohlcv": v2_constituent_ohlcv_by_symbol,
+            **_synthetic_v2_evidence(start=start, as_of=as_of),
         }
 
     return _build
@@ -642,6 +689,7 @@ def synthetic_v2_kwargs_for_market_data(event_calendar_df: pd.DataFrame):
             "macro_series": macro_series,
             "pit_constituent_intervals": pit_intervals,
             "constituent_ohlcv": constituent_ohlcv,
+            **_synthetic_v2_evidence(start=start, as_of=as_of),
         }
 
     return _build
@@ -751,6 +799,10 @@ def _classify_all_golden_rows(
             macro_series=kwargs["macro_series"],
             pit_constituent_intervals=kwargs["pit_constituent_intervals"],
             constituent_ohlcv=kwargs["constituent_ohlcv"],
+            aaii_sentiment=kwargs["aaii_sentiment"],
+            news_sentiment=kwargs["news_sentiment"],
+            central_bank_text_releases=kwargs["central_bank_text_releases"],
+            cpi_first_release=kwargs["cpi_first_release"],
         )
         by_date = {out.as_of_date: out for out in timeline.outputs}
         missing = [d for d in v2_dates if d not in by_date]
@@ -834,9 +886,11 @@ def _build_real_v2_classify_window(
     monkeypatch in ``pytest_configure`` cut the build cost from ~90s to
     ~37s — small enough that the cross-worker setup-wait pays off.
     """
+    market_data = v2_market_df_for_asof(as_of)
+    evidence = _synthetic_v2_evidence(start=min(market_data["date"]), as_of=as_of)
     return RegimeEngine().classify_window(
         end_date=as_of,
-        market_data=v2_market_df_for_asof(as_of),
+        market_data=market_data,
         lookback_days=1,
         config=_fast_v2_test_config(),
         event_calendar=load_event_calendar(_EVENT_CALENDAR_PATH),
@@ -845,6 +899,10 @@ def _build_real_v2_classify_window(
         macro_series=v2_macro_series_by_key,
         pit_constituent_intervals=v2_pit_constituent_intervals,
         constituent_ohlcv=v2_constituent_ohlcv_by_symbol,
+        aaii_sentiment=evidence["aaii_sentiment"],
+        news_sentiment=evidence["news_sentiment"],
+        central_bank_text_releases=evidence["central_bank_text_releases"],
+        cpi_first_release=evidence["cpi_first_release"],
     )
 
 

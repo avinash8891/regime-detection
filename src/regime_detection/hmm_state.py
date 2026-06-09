@@ -149,7 +149,7 @@ def _fit_single_seed(
         # Fitted parameters for the §6.1 calibration-drift monitor (F-025).
         # means_ are in the per-window standardized space; the caller
         # de-standardizes before comparing checkpoints. getattr keeps the
-        # monitor fail-open if a fitter does not expose the parameters.
+        # drift metric skip-safe if a fitter does not expose the parameters.
         "means": None if non_monotonic else getattr(model, "means_", None),
         "transmat": None if non_monotonic else getattr(model, "transmat_", None),
     }
@@ -172,13 +172,11 @@ def compute_hmm_features(
     checkpoint's forward segment. Sessions with any NaN input are masked
     to NaN in the output (cold-start + missing-data safe).
 
-    Returns ``None`` when:
+    Raises when:
       - any required input is ``None``
       - the joined non-NaN inputs have fewer than ``training_window_days``
         rows
-      - the HMM fit fails (e.g. singular covariance, non-convergence):
-        return None (evidence absent) rather than crash the whole
-        classify call (fail-open seam).
+      - the HMM fit fails for every checkpoint / seed.
 
     Permutation invariance: ``top_state_prob = posterior.max(axis=1)``
     is invariant to state-index permutation. The
@@ -192,14 +190,17 @@ def compute_hmm_features(
         "volume_zscore_20d": volume_zscore_20d,
         "avg_pairwise_corr_63d": avg_pairwise_corr_63d,
     }
-    if any(series is None for series in inputs.values()):
-        return None
+    missing_inputs = [name for name, series in inputs.items() if series is None]
+    if missing_inputs:
+        raise RuntimeError(f"HMM missing required inputs: {missing_inputs}")
 
     # mypy/pyright: filtered above; safe to narrow.
     frame = pd.DataFrame({k: v for k, v in inputs.items()}).dropna(how="any")
     n_train = config.training_window_days
     if len(frame) < n_train:
-        return None
+        raise RuntimeError(
+            f"HMM insufficient history: need {n_train} rows, got {len(frame)}"
+        )
 
     state_prob_frame = pd.DataFrame(
         float("nan"),
@@ -332,7 +333,7 @@ def compute_hmm_features(
             # §6.1 drift monitor (F-025): compare de-standardized,
             # aligned state means to the previous checkpoint.
             # Transition probabilities are scale-invariant.
-            # Fail-open: skip silently if a fitter did not expose params.
+            # Skip only the advisory drift metric if a fitter did not expose params.
             if raw_means is not None and best["transmat"] is not None:
                 if previous_raw_means is not None and previous_transmat is not None:
                     latest_drift = compute_hmm_parameter_drift(
@@ -366,11 +367,13 @@ def compute_hmm_features(
     if latest_fit is None:
         _LOGGER.warning(
             "GaussianHMM produced no PIT monotonic fit across %d seed(s); "
-            "HMM seam returns None. skipped=%s",
+            "HMM seam fails loudly. skipped=%s",
             len(config.random_seeds),
             all_skipped[:5],
         )
-        return None
+        raise RuntimeError(
+            "HMM fit failed: no PIT monotonic fit produced model evidence"
+        )
 
     # Re-align to the canonical SPY index (return_1d carries it). Sessions
     # dropped by .dropna() get NaN both in the state_probabilities frame

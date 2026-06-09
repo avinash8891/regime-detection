@@ -110,20 +110,20 @@ def _computed_default_clustering() -> ClusteringFeatures:
 # ---------------------------------------------------------------------------
 
 
-def test_compute_clustering_features_returns_none_when_any_input_is_none() -> None:
+def test_compute_clustering_features_raises_when_any_input_is_none() -> None:
     inputs = _synthetic_inputs()
     cfg = _default_clustering_config()
     for missing in inputs:
         call_kwargs = {k: (None if k == missing else v) for k, v in inputs.items()}
-        result = compute_clustering_features(config=cfg, **call_kwargs)
-        assert result is None, f"missing {missing} → expected None"
+        with pytest.raises(RuntimeError, match="GMM missing required inputs"):
+            compute_clustering_features(config=cfg, **call_kwargs)
 
 
-def test_compute_clustering_features_returns_none_when_insufficient_history() -> None:
+def test_compute_clustering_features_raises_when_insufficient_history() -> None:
     inputs = _synthetic_inputs(n_sessions=100)
     cfg = _default_clustering_config(training_window_days=1260)
-    result = compute_clustering_features(config=cfg, **inputs)
-    assert result is None
+    with pytest.raises(RuntimeError, match="GMM insufficient history"):
+        compute_clustering_features(config=cfg, **inputs)
 
 
 def test_compute_clustering_features_succeeds_on_synthetic_inputs(
@@ -295,7 +295,7 @@ def test_cluster_ids_are_stable_across_pit_refit_boundary() -> None:
     ), f"Expected 3 distinct cluster IDs, got {dominant_ids}"
 
 
-def test_compute_clustering_returns_none_on_singular_covariance() -> None:
+def test_compute_clustering_raises_on_singular_covariance() -> None:
     """Constant zero-variance inputs force a singular covariance failure."""
     index = pd.bdate_range("2010-01-04", periods=1500)
     constant_series = pd.Series(np.zeros(1500), index=index)
@@ -309,8 +309,8 @@ def test_compute_clustering_returns_none_on_singular_covariance() -> None:
         "pct_above_50dma": constant_series.copy(),
     }
     cfg = _default_clustering_config()
-    result = compute_clustering_features(config=cfg, **inputs)
-    assert result is None
+    with pytest.raises(RuntimeError, match="GMM fit failed"):
+        compute_clustering_features(config=cfg, **inputs)
 
 
 # ---------------------------------------------------------------------------

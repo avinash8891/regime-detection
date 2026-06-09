@@ -106,7 +106,7 @@ def _computed_default_hmm() -> HMMFeatures:
 # ---------------------------------------------------------------------------
 
 
-def test_compute_hmm_features_returns_none_when_any_input_is_none() -> None:
+def test_compute_hmm_features_raises_when_any_input_is_none() -> None:
     inputs = _synthetic_inputs()
     cfg = _default_hmm_config()
     for missing in (
@@ -117,15 +117,15 @@ def test_compute_hmm_features_returns_none_when_any_input_is_none() -> None:
         "avg_pairwise_corr_63d",
     ):
         call_kwargs = {k: (None if k == missing else v) for k, v in inputs.items()}
-        result = compute_hmm_features(config=cfg, **call_kwargs)
-        assert result is None, f"missing {missing} → expected None"
+        with pytest.raises(RuntimeError, match="HMM missing required inputs"):
+            compute_hmm_features(config=cfg, **call_kwargs)
 
 
-def test_compute_hmm_features_returns_none_when_insufficient_history() -> None:
+def test_compute_hmm_features_raises_when_insufficient_history() -> None:
     inputs = _synthetic_inputs(n_sessions=100)
     cfg = _default_hmm_config(training_window_days=1260)
-    result = compute_hmm_features(config=cfg, **inputs)
-    assert result is None
+    with pytest.raises(RuntimeError, match="HMM insufficient history"):
+        compute_hmm_features(config=cfg, **inputs)
 
 
 def test_compute_hmm_features_succeeds_on_synthetic_inputs_with_full_history(
@@ -170,7 +170,7 @@ def test_state_probabilities_sum_to_one_per_session(
     np.testing.assert_allclose(row_sums.to_numpy(), 1.0, atol=1e-6)
 
 
-def test_compute_hmm_features_returns_none_when_hmm_fit_fails() -> None:
+def test_compute_hmm_features_raises_when_hmm_fit_fails() -> None:
     """Constant (zero-variance) inputs force a singular covariance failure."""
     index = pd.bdate_range("2010-01-04", periods=1500)
     constant_series = pd.Series(np.zeros(1500), index=index)
@@ -182,8 +182,8 @@ def test_compute_hmm_features_returns_none_when_hmm_fit_fails() -> None:
         "avg_pairwise_corr_63d": constant_series.copy(),
     }
     cfg = _default_hmm_config()
-    result = compute_hmm_features(config=cfg, **inputs)
-    assert result is None
+    with pytest.raises(RuntimeError, match="HMM fit failed"):
+        compute_hmm_features(config=cfg, **inputs)
 
 
 def test_compute_hmm_features_raises_on_programming_bug(
@@ -202,7 +202,7 @@ def test_compute_hmm_features_raises_on_programming_bug(
         compute_hmm_features(config=cfg, **inputs)
 
 
-def test_compute_hmm_features_returns_none_when_hmm_fit_is_non_monotonic(
+def test_compute_hmm_features_raises_when_hmm_fit_is_non_monotonic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     inputs = _synthetic_inputs(n_sessions=1500)
@@ -227,7 +227,8 @@ def test_compute_hmm_features_returns_none_when_hmm_fit_is_non_monotonic(
 
     monkeypatch.setattr("regime_detection.hmm_state.GaussianHMM", FakeGaussianHMM)
 
-    assert compute_hmm_features(config=cfg, **inputs) is None
+    with pytest.raises(RuntimeError, match="HMM fit failed"):
+        compute_hmm_features(config=cfg, **inputs)
 
 
 def test_strict_convergence_monitor_does_not_treat_non_monotonic_fit_as_converged() -> (

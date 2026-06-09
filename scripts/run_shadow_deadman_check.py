@@ -112,6 +112,30 @@ def run_deadman_check(
                     "alert": alert,
                     "qualification": qualification,
                 }
+            if not bool(qualification.get("qualifies")):
+                blocking_reasons = qualification.get("blocking_reasons") or [
+                    "qualification_blocked"
+                ]
+                reason = str(blocking_reasons[0])
+                alert = (
+                    "Shadow qualification window broken by "
+                    f"{reason} for previous NYSE session "
+                    f"{expected_as_of_date.isoformat()}"
+                )
+                insert_incident(
+                    conn=conn,
+                    incident_date=check_date,
+                    description=alert,
+                    resolution=None,
+                    breaks_qualification=True,
+                )
+                return {
+                    "status": reason,
+                    "check_date": check_date.isoformat(),
+                    "expected_as_of_date": expected_as_of_date.isoformat(),
+                    "alert": alert,
+                    "qualification": qualification,
+                }
             return {
                 "status": "ok",
                 "check_date": check_date.isoformat(),

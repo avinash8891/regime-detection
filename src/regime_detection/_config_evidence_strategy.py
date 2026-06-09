@@ -110,13 +110,9 @@ class TransitionScoreConfig(StrictBaseModel):
     # adding this field does not perturb existing scores or fixtures.
     scales: TransitionComponentScales = Field(default_factory=TransitionComponentScales)
 
-    # Optional seed for the public-state debounce. When None (default), the
-    # first session's raw state is accepted immediately — matching the
-    # historical behavior and existing golden fixtures. When set, the
-    # debounce starts with this state, so any first-session promotion to a
-    # non-matching state must clear its configured confirmation window
-    # before becoming public. Useful for live streaming, where there is no
-    # warm-up history to bootstrap from.
+    # Required seed for the public-state debounce. A process restart without a
+    # seed accepts the first raw state immediately and can publish a mid-ranked
+    # state before its confirmation window clears.
     initial_active_state: str | None = None
 
     @model_validator(mode="after")
@@ -144,13 +140,14 @@ class TransitionScoreConfig(StrictBaseModel):
                     "transition_score.bands lower bounds must be strictly increasing in order "
                     f"{required}; got {prev}={prev_lo}, {nxt}={nxt_lo}"
                 )
-        if self.initial_active_state is not None:
-            if self.initial_active_state not in self.state_confirmation_days:
-                raise ValueError(
-                    "transition_score.initial_active_state must appear in "
-                    f"state_confirmation_days; got {self.initial_active_state!r}, "
-                    f"known states: {sorted(self.state_confirmation_days)}"
-                )
+        if self.initial_active_state is None:
+            raise ValueError("transition_score.initial_active_state is required")
+        if self.initial_active_state not in self.state_confirmation_days:
+            raise ValueError(
+                "transition_score.initial_active_state must appear in "
+                f"state_confirmation_days; got {self.initial_active_state!r}, "
+                f"known states: {sorted(self.state_confirmation_days)}"
+            )
         return self
 
 

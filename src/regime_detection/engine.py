@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import date
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -165,7 +166,8 @@ V2_REQUEST_INPUT_CONTRACTS: tuple[V2RequestInputContract, ...] = (
         required_inputs=tuple(
             f"cross_asset_closes.{key}" for key in INFLATION_GROWTH_CROSS_ASSET_KEYS
         )
-        + tuple(f"macro_series.{key}" for key in INFLATION_GROWTH_MACRO_KEYS),
+        + tuple(f"macro_series.{key}" for key in INFLATION_GROWTH_MACRO_KEYS)
+        + ("cpi_first_release",),
         rationale="inflation/growth consumes macro, commodity, rates, and sector-pair inputs",
     ),
     V2RequestInputContract(
@@ -194,18 +196,25 @@ V2_REQUEST_INPUT_CONTRACTS: tuple[V2RequestInputContract, ...] = (
         rationale="change-point evidence consumes realized volatility from SPY close",
     ),
     V2RequestInputContract(
+        section="sentiment_score",
+        config_path="RegimeConfig.sentiment_score",
+        policy="required",
+        required_inputs=("aaii_sentiment",),
+        rationale="AAII sentiment score is a configured V2 euphoria input",
+    ),
+    V2RequestInputContract(
         section="central_bank_text",
         config_path="RegimeConfig.central_bank_text",
-        policy="optional_evidence",
-        required_inputs=(),
-        rationale="central-bank text is evidence-only and may be absent",
+        policy="required",
+        required_inputs=("central_bank_text_releases",),
+        rationale="central-bank text evidence is configured and must be present",
     ),
     V2RequestInputContract(
         section="news_sentiment",
         config_path="RegimeConfig.news_sentiment",
-        policy="optional_evidence",
-        required_inputs=(),
-        rationale="news sentiment is evidence-only and may be absent",
+        policy="required",
+        required_inputs=("news_sentiment",),
+        rationale="news sentiment evidence is configured and must be present",
     ),
 )
 
@@ -274,8 +283,6 @@ def _validate_v2_request_input_contracts(
     for contract in V2_REQUEST_INPUT_CONTRACTS:
         if getattr(cfg, contract.section) is None:
             continue
-        if contract.policy == "optional_evidence":
-            continue
         missing = tuple(
             required
             for required in contract.required_inputs
@@ -308,6 +315,20 @@ def _request_input_is_present(
         return _market_data_has_non_null_spy_volume(request.market_data, cfg)
     if required_input == "spy_ohlcv.close":
         return _market_data_has_non_null_spy_close(request.market_data, cfg)
+    if required_input == "aaii_sentiment":
+        return request.aaii_sentiment is not None and not request.aaii_sentiment.empty
+    if required_input == "central_bank_text_releases":
+        return (
+            request.central_bank_text_releases is not None
+            and not request.central_bank_text_releases.empty
+        )
+    if required_input == "news_sentiment":
+        return request.news_sentiment is not None and not request.news_sentiment.empty
+    if required_input == "cpi_first_release":
+        return (
+            request.cpi_first_release is not None
+            and not request.cpi_first_release.empty
+        )
     return getattr(cfg, required_input, None) is not None
 
 
@@ -400,6 +421,12 @@ def _regime_output_to_series_row(output: RegimeOutput) -> dict[str, object]:
 class RegimeEngine:
     def __init__(self, config_path: str | Path | None = None) -> None:
         if config_path is None:
+            if os.environ.get("REGIME_DETECTION_ALLOW_DEFAULT_CONFIG") != "1":
+                raise RuntimeError(
+                    "RegimeEngine config_path is required. Set "
+                    "REGIME_DETECTION_ALLOW_DEFAULT_CONFIG=1 only for tests or "
+                    "explicit local diagnostics."
+                )
             self._config = load_default_regime_config()
         else:
             self._config = load_regime_config(Path(config_path))

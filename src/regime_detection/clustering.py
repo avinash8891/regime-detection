@@ -2,7 +2,7 @@
 
 Library reuse: ``sklearn.mixture.GaussianMixture`` provides fit +
 ``predict_proba`` + per-cluster Mahalanobis distance via the stored
-``precisions_`` array. We own the input plumbing, fail-open guards, and
+``precisions_`` array. We own the input plumbing, fail-loud guards, and
 FeatureStore wiring. NO hand-rolled EM / k-means++ / covariance
 regularization.
 
@@ -133,12 +133,11 @@ def compute_clustering_features(
     cluster IDs + probabilities + Mahalanobis distance to the assigned
     centroid, aligned to the canonical (``return_21d``) index.
 
-    Returns ``None`` when:
+    Raises when:
       - any required input is ``None``,
       - the joined non-NaN inputs have fewer than
         ``training_window_days`` rows,
-      - the GMM fit/predict fails (singular covariance, non-convergence) —
-        fail-open per AGENTS error policy.
+      - no GMM checkpoint produces model evidence.
 
     Permutation invariance: cluster IDs are arbitrary integers. The
     Mahalanobis distance is permutation-invariant by construction (it is
@@ -156,13 +155,16 @@ def compute_clustering_features(
         "avg_pairwise_corr_63d": avg_pairwise_corr_63d,
         "pct_above_50dma": pct_above_50dma,
     }
-    if any(series is None for series in inputs.values()):
-        return None
+    missing_inputs = [name for name, series in inputs.items() if series is None]
+    if missing_inputs:
+        raise RuntimeError(f"GMM missing required inputs: {missing_inputs}")
 
     frame = pd.DataFrame({k: v for k, v in inputs.items()}).dropna(how="any")
     n_train = config.training_window_days
     if len(frame) < n_train:
-        return None
+        raise RuntimeError(
+            f"GMM insufficient history: need {n_train} rows, got {len(frame)}"
+        )
 
     proba_frame = pd.DataFrame(
         float("nan"),
@@ -228,7 +230,7 @@ def compute_clustering_features(
         distance_series.loc[idx] = distances
         successful_fit = True
     if not successful_fit:
-        return None
+        raise RuntimeError("GMM fit failed: no checkpoint produced model evidence")
 
     canonical_index = return_21d.index  # type: ignore[union-attr]
     proba_frame = proba_frame.reindex(canonical_index)

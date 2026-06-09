@@ -453,9 +453,9 @@ def test_load_central_bank_text_score_integrates_fomc_and_powell_frames() -> Non
     assert set(out["source"]) == {"fomc_minutes", "powell_speech"}
 
 
-def test_load_central_bank_text_score_empty_inputs_returns_empty_frame() -> None:
-    out = load_central_bank_text_score()
-    assert out.empty
+def test_load_central_bank_text_score_empty_inputs_raises() -> None:
+    with pytest.raises(ValueError, match="central_bank_text source is required"):
+        load_central_bank_text_score()
 
 
 def test_load_central_bank_text_score_respects_max_release_age() -> None:

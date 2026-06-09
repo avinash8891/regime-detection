@@ -26,11 +26,11 @@ def apply_transition_state_debounce(
     initial_active_state: str | None = None,
 ) -> dict[date, TransitionRiskOutput]:
     outputs: dict[date, TransitionRiskOutput] = {}
-    # Default (initial_active_state=None) preserves the historical
-    # backfill behavior where the first session's raw state is accepted
-    # immediately. Setting initial_active_state seeds the debounce so that
-    # the first session must also clear its configured confirmation window
-    # — useful for live streaming, where no prior session can bootstrap.
+    if initial_active_state is None:
+        raise RuntimeError(
+            "transition_score.initial_active_state is required for restart-safe "
+            "transition state debounce"
+        )
     if (
         initial_active_state is not None
         and initial_active_state not in state_confirmation_days

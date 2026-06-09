@@ -238,23 +238,21 @@ def _build_sentiment_score_series(
     exposes an under-warmed value from week 1, which would let euphoria fire on
     only 1-3 readings (F-006) — so the under-4-reading window is masked here.
 
-    Note on the Optional contract: the FeatureSpec resolver in
-    `_resolve_sentiment_score` gates the None/empty/missing-column cases
-    before calling this helper, so the orchestrator path always passes
-    valid input. The Optional return is preserved here for direct external
-    callers (e.g. unit tests) that exercise the no-AAII path.
+    The FeatureSpec resolver in `_resolve_sentiment_score` gates the
+    None/empty/missing-column cases before calling this helper. Direct callers
+    get the same fail-loud contract instead of a silent ``None`` seam.
     """
     if aaii_sentiment is None:
-        return None
+        raise ValueError("aaii_sentiment is required")
     if aaii_sentiment.empty:
-        return None
+        raise ValueError("aaii_sentiment must not be empty")
     if "bull_bear_spread_8w_ma" not in aaii_sentiment.columns:
-        return None
+        raise ValueError("aaii_sentiment missing bull_bear_spread_8w_ma")
     publication_column = (
         "publication_date" if "publication_date" in aaii_sentiment.columns else "date"
     )
     if publication_column not in aaii_sentiment.columns:
-        return None
+        raise ValueError("aaii_sentiment missing publication_date_or_date")
     sorted_aaii = (
         # kind="mergesort" is a STABLE sort: rows sharing a publication_date keep their
         # source order, so the keep="last" dedupe below deterministically retains the
@@ -740,6 +738,15 @@ def _resolve_credit_funding(
     )
     missing.extend(cross_missing)
     missing.extend(macro_missing)
+    if (
+        state.inflation_growth_config is not None
+        and state.inflation_growth_config.rules.use_first_release_cpi_when_available
+        and (
+            state.context.cpi_first_release is None
+            or state.context.cpi_first_release.empty
+        )
+    ):
+        missing.append("cpi_first_release")
     if missing:
         return _Unavailable(missing_inputs=tuple(missing))
     cross_asset_closes = _require_build_input(
@@ -921,11 +928,15 @@ def _resolve_monetary(
         )
     macro_series = _require_build_input(state.context.macro_series, "macro_series")
     cb_text_score_series: pd.Series | None = None
-    if (
-        state.central_bank_text_config is not None
-        and state.context.central_bank_text_releases is not None
-        and not state.context.central_bank_text_releases.empty
-    ):
+    if state.central_bank_text_config is not None:
+        if (
+            state.context.central_bank_text_releases is None
+            or state.context.central_bank_text_releases.empty
+        ):
+            return _Unavailable(
+                missing_inputs=("central_bank_text_releases",),
+                policy_override="raise",
+            )
         cb_text_score_series = to_daily_score_series(
             state.context.central_bank_text_releases,
             session_index=_as_datetime_index(state.spy_close.index),

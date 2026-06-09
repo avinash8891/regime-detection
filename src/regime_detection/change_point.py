@@ -69,7 +69,7 @@ def compute_change_point_features(
     """Run BOCPD over as-of ``realized_vol_21d`` history and return a
     per-session evidence triple aligned to the input index.
 
-    Returns ``None`` when:
+    Raises when:
       - ``realized_vol_21d`` is ``None``,
       - non-NaN history is shorter than ``training_window_days``,
       - the training window has zero variance (degenerate input —
@@ -106,11 +106,14 @@ def compute_change_point_features(
     forward-only.
     """
     if realized_vol_21d is None:
-        return None
+        raise RuntimeError("BOCPD missing required input: realized_vol_21d")
 
     clean = realized_vol_21d.dropna()
     if len(clean) < config.training_window_days:
-        return None
+        raise RuntimeError(
+            "BOCPD insufficient history: "
+            f"need {config.training_window_days} rows, got {len(clean)}"
+        )
 
     train_series = clean
     # Round trailing window to a deterministic precision so 1-ULP
@@ -122,7 +125,7 @@ def compute_change_point_features(
     _ROUND_DECIMALS = 12
     data = np.round(train_series.to_numpy(dtype=float), decimals=_ROUND_DECIMALS)
 
-    # Fail-open guard on degenerate (zero-variance) input — Student-T
+    # Fail-loud guard on degenerate (zero-variance) input — Student-T
     # posterior is singular when the data has no spread. The std floor
     # is intentionally aligned with the rounding precision above:
     # a series with true std below ~1 * 10^-_ROUND_DECIMALS collapses
@@ -130,21 +133,20 @@ def compute_change_point_features(
     # A series with std in (10^-_ROUND_DECIMALS, ~10 * 10^-_ROUND_DECIMALS)
     # survives this guard but typically has only 1-2 distinct rounded
     # values, which drives the Student-T predictive near-singular and
-    # triggers the bare-except branch below (also returning None). Both
-    # paths preserve fail-open semantics.
+    # triggers the exception branch below.
     _STD_FLOOR = 10**-_ROUND_DECIMALS
     if not (data.std() > _STD_FLOOR):
-        return None
+        raise RuntimeError("BOCPD degenerate input: realized_vol_21d has no variance")
 
     try:
         posterior_arr = _bocpd_posterior_changepoint_prob(data=data, config=config)
     except (ArithmeticError, RuntimeError, ValueError) as exc:
         _LOGGER.warning(
             "BOCPD online_changepoint_detection failed; "
-            "change_point seam returns None: %s",
+            "change_point seam fails loudly: %s",
             exc,
         )
-        return None
+        raise RuntimeError("BOCPD fit failed") from exc
 
     posterior_series = pd.Series(
         posterior_arr,

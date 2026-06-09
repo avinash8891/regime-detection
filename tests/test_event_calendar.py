@@ -654,10 +654,22 @@ def test_build_event_calendar_series_matches_point_classifier_for_holiday_shifte
 ) -> None:
     cfg = load_default_regime_config()
     end_date = date(2022, 4, 14)
+    events = pd.DataFrame(
+        [
+            {
+                "date": date(2021, 1, 8),
+                "market": "US",
+                "type": "NFP",
+                "importance": "high",
+                "publication_date": date(2021, 1, 8),
+            }
+        ]
+    )
     context = build_market_context(
         end_date=end_date,
         market_data=market_df_for_asof(end_date),
         config=cfg,
+        event_calendar=events,
     )
     context = slice_context_to_recent_sessions(context=context, required_sessions=10)
     outputs = build_event_calendar_series(context)
@@ -665,7 +677,7 @@ def test_build_event_calendar_series_matches_point_classifier_for_holiday_shifte
     for day in context.sessions:
         expected = classify_event_calendar(
             as_of_date=day,
-            event_calendar=None,
+            event_calendar=events,
             config=cfg,
         )
         assert outputs[day].model_dump() == expected.model_dump()

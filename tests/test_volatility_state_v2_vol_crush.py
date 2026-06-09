@@ -318,16 +318,15 @@ def test_event_window_just_passed_fires_on_trailing_3_sessions() -> None:
     assert not result.loc[pd.Timestamp("2024-02-08")]
 
 
-def test_event_window_just_passed_all_false_when_no_calendar() -> None:
-    """No event calendar → all-False (vol_crush then cannot fire)."""
+def test_event_window_just_passed_raises_when_no_calendar() -> None:
+    """No event calendar is a broken dependency, not an all-False signal."""
     sessions = tuple(pd.bdate_range(start="2024-01-29", end="2024-02-12").date)
-    result = compute_event_window_just_passed(
-        normalized_event_calendar=None,
-        sessions=sessions,
-        trailing_sessions=3,
-    )
-    assert not result.any()
-    assert len(result) == len(sessions)
+    with pytest.raises(ValueError, match="event_calendar is required"):
+        compute_event_window_just_passed(
+            normalized_event_calendar=None,
+            sessions=sessions,
+            trailing_sessions=3,
+        )
 
 
 def test_event_window_just_passed_respects_publication_date() -> None:

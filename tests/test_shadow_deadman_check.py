@@ -20,7 +20,9 @@ def _load_module(name: str, rel_path: str):
     return mod
 
 
-def _record_shadow_run(out_root: Path, as_of_date: date) -> None:
+def _record_shadow_run(
+    out_root: Path, as_of_date: date, *, status: str = "success"
+) -> None:
     storage = _load_module("shadow_storage", "src/regime_detection/shadow_storage.py")
     paths = storage.ensure_shadow_layout(out_root)
     with storage.open_shadow_db(paths["db"]) as conn:
@@ -37,8 +39,8 @@ def _record_shadow_run(out_root: Path, as_of_date: date) -> None:
                 as_of_date.isoformat(),
                 "regime-engine-vtest",
                 "core3-test",
-                "success",
-                None,
+                status,
+                None if status == "success" else f"{status} fixture",
                 str(out_root / "input_archives" / as_of_date.isoformat()),
                 str(out_root / "outputs" / f"{as_of_date.isoformat()}.json"),
                 None,
@@ -70,6 +72,38 @@ def test_deadman_check_passes_when_previous_session_has_run(
             "SELECT incident_date, description FROM incidents"
         ).fetchall()
     assert incidents == []
+
+
+def test_deadman_check_fails_when_previous_session_run_is_not_success(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monitor = _load_module(
+        "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
+    )
+    out_root = tmp_path / "shadow_run"
+    _record_shadow_run(out_root, date(2023, 12, 14), status="in_progress")
+
+    result = monitor.run_deadman_check(
+        output_root=out_root,
+        check_date=date(2023, 12, 15),
+    )
+
+    assert result["status"] == "non_success_run"
+    assert result["qualification"]["qualifies"] is False
+    assert "non_success_run" in result["qualification"]["blocking_reasons"]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_shadow_deadman_check.py",
+            "--output-root",
+            str(out_root),
+            "--check-date",
+            "2023-12-15",
+        ],
+    )
+    assert monitor.main() == 1
 
 
 def test_deadman_check_alerts_and_records_incident_when_previous_session_missing(

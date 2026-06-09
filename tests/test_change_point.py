@@ -72,18 +72,18 @@ def _synthetic_two_regime_realized_vol(
 # ---------------------------------------------------------------------------
 
 
-def test_compute_change_point_features_returns_none_when_input_is_none() -> None:
+def test_compute_change_point_features_raises_when_input_is_none() -> None:
     cfg = _default_change_point_config()
-    result = compute_change_point_features(realized_vol_21d=None, config=cfg)
-    assert result is None
+    with pytest.raises(RuntimeError, match="BOCPD missing required input"):
+        compute_change_point_features(realized_vol_21d=None, config=cfg)
 
 
-def test_compute_change_point_features_returns_none_when_insufficient_history() -> None:
+def test_compute_change_point_features_raises_when_insufficient_history() -> None:
     index = pd.bdate_range("2020-01-02", periods=100)
     short = pd.Series(np.linspace(0.10, 0.20, 100), index=index)
     cfg = _default_change_point_config(training_window_days=1260)
-    result = compute_change_point_features(realized_vol_21d=short, config=cfg)
-    assert result is None
+    with pytest.raises(RuntimeError, match="BOCPD insufficient history"):
+        compute_change_point_features(realized_vol_21d=short, config=cfg)
 
 
 def test_compute_change_point_features_succeeds_on_synthetic_two_regime_data() -> None:
@@ -214,17 +214,17 @@ def test_method_field_is_BOCPD() -> None:
     assert result.method == "BOCPD"
 
 
-def test_compute_change_point_features_returns_none_on_zero_variance_input() -> None:
+def test_compute_change_point_features_raises_on_zero_variance_input() -> None:
     """Constant-vol input is degenerate for the Student-T predictive —
-    fail-open per the module's documented contract."""
+    fail loudly per the module's documented contract."""
     index = pd.bdate_range("2010-01-04", periods=1500)
     constant = pd.Series(np.full(1500, 0.12), index=index)
     cfg = _default_change_point_config(training_window_days=1260)
-    result = compute_change_point_features(realized_vol_21d=constant, config=cfg)
-    assert result is None
+    with pytest.raises(RuntimeError, match="BOCPD degenerate input"):
+        compute_change_point_features(realized_vol_21d=constant, config=cfg)
 
 
-def test_compute_change_point_features_returns_none_on_numeric_instability(
+def test_compute_change_point_features_raises_on_numeric_instability(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import regime_detection.change_point as change_point
@@ -246,12 +246,11 @@ def test_compute_change_point_features_returns_none_on_numeric_instability(
         raise_floating_point_error,
     )
 
-    result = compute_change_point_features(realized_vol_21d=series, config=cfg)
+    with pytest.raises(RuntimeError, match="BOCPD fit failed"):
+        compute_change_point_features(realized_vol_21d=series, config=cfg)
 
-    assert result is None
 
-
-def test_compute_change_point_features_returns_none_when_bocpd_dependency_changes_exception_type(
+def test_compute_change_point_features_raises_when_bocpd_dependency_changes_exception_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import regime_detection.change_point as change_point
@@ -271,9 +270,8 @@ def test_compute_change_point_features_returns_none_when_bocpd_dependency_change
         raise_value_error,
     )
 
-    result = compute_change_point_features(realized_vol_21d=series, config=cfg)
-
-    assert result is None
+    with pytest.raises(RuntimeError, match="BOCPD fit failed"):
+        compute_change_point_features(realized_vol_21d=series, config=cfg)
 
 
 def test_bocpd_adapter_rejects_unexpected_posterior_matrix_shape(

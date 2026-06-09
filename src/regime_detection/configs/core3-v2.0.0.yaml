@@ -182,6 +182,9 @@ trend_direction_v2:
     recovery_drawdown_threshold: -0.15  # v2 §1A line 116
     recovery_return_threshold: 0.10     # v2 §1A line 117
 
+sentiment_score:
+  max_staleness_sessions: 40
+
 # v2 §1C — Layer 1 V2 Volatility features (implementation phase + 2.6 + ADR 0005).
 # atr_ratio / gap_frequency_20d / intraday_range_percentile_252d from OHLC;
 # the `vol_crush` IV features (implied_vol_30d, implied_vol_5d_change,
@@ -293,6 +296,7 @@ transition_score:
     bear_stress: 1
     crisis: 1
     insufficient_data: 1
+  initial_active_state: stable
 
 # v2 §2A — Layer 2A Monetary/Liquidity V2. Feature seam (implementation phase) AND
 # axis classifier are both shipped. Five z-score features per §2A line 896

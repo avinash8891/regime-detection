@@ -451,15 +451,14 @@ def test_profile_engine_requires_event_calendar_when_missing(tmp_path: Path) -> 
         )
 
 
-def test_profile_engine_allows_missing_event_calendar_for_debug(
+def test_profile_engine_rejects_missing_event_calendar_even_for_debug(
     tmp_path: Path,
 ) -> None:
-    actual = profile_engine._load_event_calendar(
-        tmp_path / "missing-events.yaml",
-        allow_missing_event_calendar=True,
-    )
-
-    assert actual is None
+    with pytest.raises(FileNotFoundError, match="event_calendar"):
+        profile_engine._load_event_calendar(
+            tmp_path / "missing-events.yaml",
+            allow_missing_event_calendar=True,
+        )
 
 
 def test_profile_engine_loads_news_sentiment_when_present(tmp_path: Path) -> None:
