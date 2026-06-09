@@ -738,15 +738,6 @@ def _resolve_credit_funding(
     )
     missing.extend(cross_missing)
     missing.extend(macro_missing)
-    if (
-        state.inflation_growth_config is not None
-        and state.inflation_growth_config.rules.use_first_release_cpi_when_available
-        and (
-            state.context.cpi_first_release is None
-            or state.context.cpi_first_release.empty
-        )
-    ):
-        missing.append("cpi_first_release")
     if missing:
         return _Unavailable(missing_inputs=tuple(missing))
     cross_asset_closes = _require_build_input(

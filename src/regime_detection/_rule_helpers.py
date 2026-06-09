@@ -49,6 +49,10 @@ def scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
     if dt not in series.index:
         return float("nan")
     val = series.loc[dt]
+    # Duplicate index labels make .loc[dt] return a Series/DataFrame; the
+    # per-day rule contract requires one scalar value.
+    if not np.isscalar(val):
+        return float("nan")
     if pd.isna(val):
         return float("nan")
     return float(val)

@@ -179,6 +179,25 @@ def test_core_axis_builders_force_unknown_when_required_input_window_is_missing(
     assert output.data_quality.status in {"insufficient_data", "stale_data"}
 
 
+def test_trend_character_builder_does_not_quality_gate_optional_volume(
+    market_df_for_asof,
+) -> None:
+    context = _build_context(date(2023, 12, 14), market_df_for_asof)
+    broken_context = _with_tail_nan(
+        context,
+        column="volume",
+        series_name=None,
+        count=63,
+    )
+    store = build_feature_store(broken_context)
+
+    result = build_trend_character_axis_series(broken_context, store)
+
+    output = result.outputs_by_date[context.end_date]
+    assert output.raw_label != "unknown"
+    assert output.data_quality.status == "ok"
+
+
 def test_breadth_builder_keeps_etf_proxy_when_pit_inputs_are_missing(
     v2_market_df_for_asof,
     v2_close_series_by_symbol,

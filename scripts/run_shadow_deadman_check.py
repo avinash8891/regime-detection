@@ -66,6 +66,13 @@ def _interior_session_gaps(
     return [session for session in expected if session not in recorded_set]
 
 
+def _should_insert_blocking_incident(reason: str) -> bool:
+    return reason not in {
+        "qualification_breaking_incident",
+        "insufficient_consecutive_sessions",
+    }
+
+
 def run_deadman_check(
     *,
     output_root: Path,
@@ -122,13 +129,14 @@ def run_deadman_check(
                     f"{reason} for previous NYSE session "
                     f"{expected_as_of_date.isoformat()}"
                 )
-                insert_incident(
-                    conn=conn,
-                    incident_date=check_date,
-                    description=alert,
-                    resolution=None,
-                    breaks_qualification=True,
-                )
+                if _should_insert_blocking_incident(reason):
+                    insert_incident(
+                        conn=conn,
+                        incident_date=check_date,
+                        description=alert,
+                        resolution=None,
+                        breaks_qualification=True,
+                    )
                 return {
                     "status": reason,
                     "check_date": check_date.isoformat(),

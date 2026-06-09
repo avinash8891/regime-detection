@@ -60,7 +60,6 @@ def build_trend_character_axis_series(
             close,
             context.spy_ohlcv["high"],
             context.spy_ohlcv["low"],
-            context.spy_ohlcv["volume"],
         ],
         required_trading_days=TREND_CHARACTER_REQUIRED_TRADING_DAYS,
         max_freshness_days=context.config.data_quality.max_freshness_days,

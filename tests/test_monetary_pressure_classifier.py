@@ -242,7 +242,7 @@ def test_rate_shock_outranks_tightening_pressure_when_both_match():
     assert label == "rate_shock"
 
 
-def test_nan_inputs_fall_through_to_neutral():
+def test_nan_inputs_fail_closed_to_unknown():
     label = evaluate_rules(
         inputs=_inputs(
             zscore_2y_63d=float("nan"),
@@ -253,8 +253,7 @@ def test_nan_inputs_fall_through_to_neutral():
         ),
         config=_rules(),
     )
-    # All-NaN doesn't trigger any > / < comparison; falls to neutral.
-    assert label == "neutral_monetary"
+    assert label == "unknown"
 
 
 # =============================================================================

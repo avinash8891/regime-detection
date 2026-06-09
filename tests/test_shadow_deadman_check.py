@@ -212,6 +212,43 @@ def test_deadman_check_flags_interior_gap_and_exits_nonzero(
     assert monitor.main() == 1
 
 
+def test_deadman_check_does_not_insert_incident_for_existing_incident_block(
+    tmp_path: Path,
+) -> None:
+    monitor = _load_module(
+        "run_shadow_deadman_check", "scripts/run_shadow_deadman_check.py"
+    )
+    storage = _load_module("shadow_storage", "src/regime_detection/shadow_storage.py")
+    out_root = tmp_path / "shadow_run"
+    schedule = nyse_calendar().schedule(
+        start_date=date(2023, 1, 3),
+        end_date=date(2024, 3, 31),
+    )
+    sessions = list(schedule.index.date)[:252]
+    for session in sessions:
+        _record_shadow_run(out_root, session)
+
+    paths = storage.ensure_shadow_layout(out_root)
+    with storage.open_shadow_db(paths["db"]) as conn:
+        storage.insert_incident(
+            conn=conn,
+            incident_date=sessions[-2],
+            description="pre-existing qualification breaker",
+            resolution=None,
+            breaks_qualification=True,
+        )
+
+    result = monitor.run_deadman_check(
+        output_root=out_root,
+        check_date=sessions[-1] + timedelta(days=1),
+    )
+
+    assert result["status"] == "qualification_breaking_incident"
+    with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
+        incidents = conn.execute("SELECT description FROM incidents").fetchall()
+    assert incidents == [("pre-existing qualification breaker",)]
+
+
 def test_deadman_check_uses_previous_friday_for_weekend_check(
     tmp_path: Path,
 ) -> None:

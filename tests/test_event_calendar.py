@@ -67,6 +67,19 @@ def _empty_hf_central_bank_parquet_bytes(tmp_path: Path) -> bytes:
     return parquet_path.read_bytes()
 
 
+def test_event_calendar_empty_table_returns_normal_calendar() -> None:
+    empty_events = pd.DataFrame(columns=["date", "market", "type", "importance"])
+
+    out = classify_event_calendar(
+        as_of_date=date(2024, 3, 5),
+        event_calendar=empty_events,
+        config=load_default_regime_config(),
+    )
+
+    assert out.primary_label == "normal_calendar"
+    assert out.matching_labels == ("normal_calendar",)
+
+
 def test_event_calendar_reporting_builds_candidate_records_and_group_reports(
     tmp_path: Path,
 ) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,6 +19,14 @@ class _ToyState:
 
     inputs: dict[str, int] = field(default_factory=dict)
     outputs: dict[str, int] = field(default_factory=dict)
+    context: object | None = None
+
+
+def _v2_state(**kwargs) -> _ToyState:
+    return _ToyState(
+        **kwargs,
+        context=SimpleNamespace(config=SimpleNamespace(config_version="core3-v2.0.0")),
+    )
 
 
 def _make_spec(
@@ -71,7 +80,7 @@ def test_resolve_returns_kwargs_then_build_runs_and_store_writes() -> None:
 def test_unavailable_with_missing_inputs_raises_missing_required_inputs_reason() -> (
     None
 ):
-    state = _ToyState()
+    state = _v2_state()
     specs = (_make_spec("beta", required=("x", "y"), missing=("y",)),)
 
     with pytest.raises(
@@ -86,7 +95,7 @@ def test_unavailable_with_missing_inputs_raises_missing_required_inputs_reason()
 
 
 def test_unavailable_with_empty_missing_raises_not_configured_reason() -> None:
-    state = _ToyState()
+    state = _v2_state()
     specs = (_make_spec("gamma", required=("config",), missing=()),)
 
     with pytest.raises(
@@ -146,7 +155,7 @@ def test_spec_with_report_false_runs_but_omits_availability_entry() -> None:
 
 def test_spec_with_report_false_still_raises_when_unavailable() -> None:
     """Internal specs cannot hide missing required inputs under fail-loud mode."""
-    state = _ToyState()
+    state = _v2_state()
     specs = (
         FeatureSpec(
             name="internal_missing",
@@ -172,7 +181,7 @@ def test_spec_with_report_false_still_raises_when_unavailable() -> None:
 
 def test_spec_with_build_returning_none_raises() -> None:
     """When inputs resolve but build returns None, the orchestrator fails loud."""
-    state = _ToyState(inputs={"x": 5})
+    state = _v2_state(inputs={"x": 5})
     none_returning_build_spec: FeatureSpec[int | None, _ToyState] = FeatureSpec(
         name="sometimes_none",
         policy="none",
@@ -200,7 +209,7 @@ def test_spec_with_build_returning_none_raises() -> None:
 
 def test_spec_with_build_returning_none_and_report_false_raises() -> None:
     """report=False affects observability, not fail-loud validation."""
-    state = _ToyState(inputs={"x": 5})
+    state = _v2_state(inputs={"x": 5})
     internal_none_spec: FeatureSpec[int | None, _ToyState] = FeatureSpec(
         name="internal_none",
         policy="none",
@@ -220,3 +229,19 @@ def test_spec_with_build_returning_none_and_report_false_raises() -> None:
     ):
         _run_feature_specs((internal_none_spec,), state)
     assert state.outputs == {}
+
+
+def test_unknown_config_state_reports_unavailable_instead_of_raising() -> None:
+    state = _ToyState()
+    specs = (_make_spec("legacy_optional", required=("x",), missing=("x",)),)
+
+    report = _run_feature_specs(specs, state)
+
+    assert report["legacy_optional"] == FeatureAvailability(
+        feature="legacy_optional",
+        available=False,
+        policy="raise",
+        reason="missing_required_inputs",
+        required_inputs=("x",),
+        missing_inputs=("x",),
+    )

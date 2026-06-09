@@ -149,8 +149,8 @@ def compute_event_calendar_outputs(
     label_bits = {label: 1 << idx for idx, label in enumerate(_PRECEDENCE)}
     match_masks = [0] * len(sessions_tuple)
 
-    if normalized_event_calendar is None or normalized_event_calendar.empty:
-        raise ValueError("event_calendar is required and must not be empty")
+    if normalized_event_calendar is None:
+        raise ValueError("event_calendar is required and must not be None")
     event_rows = (
         []
         if normalized_event_calendar.empty

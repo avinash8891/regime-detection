@@ -149,4 +149,4 @@ def _state_uses_v2_config(state: object) -> bool:
     context = getattr(state, "context", None)
     config = getattr(context, "config", None)
     config_version = getattr(config, "config_version", None)
-    return config_version != "core3-v1.0.0"
+    return config_version == "core3-v2.0.0"

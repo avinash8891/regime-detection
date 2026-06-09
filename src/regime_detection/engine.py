@@ -325,6 +325,11 @@ def _request_input_is_present(
     if required_input == "news_sentiment":
         return request.news_sentiment is not None and not request.news_sentiment.empty
     if required_input == "cpi_first_release":
+        if (
+            cfg.inflation_growth is not None
+            and not cfg.inflation_growth.rules.use_first_release_cpi_when_available
+        ):
+            return True
         return (
             request.cpi_first_release is not None
             and not request.cpi_first_release.empty

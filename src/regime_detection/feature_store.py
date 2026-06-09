@@ -182,6 +182,11 @@ def build_feature_store(
     # helpers so classifier changes do not hide inside the decomposition.
     spy_ohlcv = context.spy_ohlcv
     spy_close = series_column(spy_ohlcv, "close")
+    effective_sentiment_score_config = (
+        sentiment_score_config
+        if sentiment_score_config is not None
+        else context.config.sentiment_score
+    )
     build_state = FeatureStoreBuildState(
         context=context,
         spy_ohlcv=spy_ohlcv,
@@ -196,7 +201,7 @@ def build_feature_store(
         inflation_growth_config=inflation_growth_config,
         central_bank_text_config=central_bank_text_config,
         news_sentiment_config=news_sentiment_config,
-        sentiment_score_config=sentiment_score_config,
+        sentiment_score_config=effective_sentiment_score_config,
     )
     availability = _run_feature_specs(FEATURE_SPECS, build_state)
 

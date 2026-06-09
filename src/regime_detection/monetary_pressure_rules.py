@@ -24,10 +24,8 @@ Rules (verbatim §2A lines 2881-2892):
 Precedence (implementation decision(c)):
   rate_shock > tightening_pressure > easing_pressure > neutral_monetary > unknown
 
-NaN-safe: ``<`` / ``>`` on NaN evaluates False in Python, so a NaN input
-naturally falsifies the predicate and the precedence falls through to
-``neutral_monetary``. The data-quality gate above ``evaluate_rules`` catches
-the cold-start case and maps to ``unknown``.
+NaN-safe: a missing rule input returns ``unknown`` instead of falling through
+to ``neutral_monetary``.
 """
 
 from __future__ import annotations
@@ -37,6 +35,7 @@ from typing import Literal
 
 import pandas as pd
 
+from regime_detection._rule_helpers import any_nan as _any_nan
 from regime_detection._rule_helpers import scalar_at as _scalar_at
 from regime_detection.config import MonetaryPressureV2RulesConfig
 from regime_detection.monetary_pressure import MonetaryPressureV2Features
@@ -109,11 +108,17 @@ def evaluate_rules(
     Precedence (implementation decision(c)):
       rate_shock > tightening_pressure > easing_pressure > neutral_monetary
 
-    NaN inputs naturally falsify each ``<`` / ``>`` comparison; the walker
-    then falls through to ``neutral_monetary``. The data-quality gate in
-    the classifier maps that to ``unknown`` when required inputs are
-    insufficient.
+    Missing inputs fail closed to ``unknown`` instead of silently emitting
+    ``neutral_monetary`` on incomplete rule evidence.
     """
+    if _any_nan(
+        inputs.zscore_2y_63d,
+        inputs.zscore_10y_63d,
+        inputs.broad_usd_zscore_63d,
+        inputs.zscore_21d_2y,
+        inputs.zscore_21d_10y,
+    ):
+        return "unknown"
     # rate_shock — abs(21d-change z) > +2.0 on either tenor (highest precedence).
     if (
         abs(inputs.zscore_21d_2y) > config.rate_shock_zscore_threshold

@@ -13,7 +13,12 @@ import pytest
 
 from regime_detection.axis_series import build_axis_series_bundle
 from regime_detection.config import load_default_regime_config, load_regime_config
-from regime_detection.engine import ClassifyRequest, RegimeEngine
+from regime_detection.engine import (
+    ClassifyRequest,
+    RegimeEngine,
+    _build_classify_request,
+    _validate_v2_request_input_contracts,
+)
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import (
     MarketContext,
@@ -399,6 +404,43 @@ def test_classify_window_uses_lookback_days_not_fixed_calendar_span(
         )
     message = str(excinfo.value)
     assert "ClassifyRequest missing configured V2 inputs" in message
+
+
+def test_v2_request_validation_honors_revised_cpi_fallback(
+    v2_classify_kwargs_for_asof,
+) -> None:
+    kwargs = v2_classify_kwargs_for_asof(date(2023, 12, 14))
+    config = kwargs["config"]
+    assert config.inflation_growth is not None
+    config = config.model_copy(
+        update={
+            "inflation_growth": config.inflation_growth.model_copy(
+                update={
+                    "rules": config.inflation_growth.rules.model_copy(
+                        update={"use_first_release_cpi_when_available": False}
+                    )
+                }
+            )
+        }
+    )
+    request = _build_classify_request(
+        end_date=date(2023, 12, 14),
+        market_data=kwargs["market_data"],
+        lookback_days=1,
+        event_calendar=kwargs["event_calendar"],
+        config=config,
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=None,
+    )
+
+    _validate_v2_request_input_contracts(request, config)
 
 
 def test_market_context_builds_normalized_series_once(shared_timeline_pipeline) -> None:
