@@ -22,14 +22,14 @@ from regime_data_fetch.manifest_inputs import (
     get_manifest_input_spec,
     resolve_runner_input_paths,
 )
-from regime_detection.credit_funding import (
+from regime_detection.credit_funding_rules import (
     REQUIRED_CROSS_ASSET_KEYS as CREDIT_FUNDING_CROSS_ASSET_KEYS,
 )
 from regime_detection.comparison import axis_reporting_label
 from regime_detection.fragility_universe import (
     CROSS_ASSET_SYMBOLS,
 )
-from regime_detection.inflation_growth import (
+from regime_detection.inflation_growth_rules import (
     REQUIRED_CROSS_ASSET_KEYS as INFLATION_GROWTH_CROSS_ASSET_KEYS,
 )
 from regime_detection.loaders import (

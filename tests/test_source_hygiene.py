@@ -13,10 +13,13 @@ FORBIDDEN_SOURCE_PATTERNS = re.compile(
     r"source-data audit[^\n]*M[0-9]|Log #[0-9]"
 )
 V1_CONTRACT_GUARD_PATHS = (
-    Path("src/regime_detection/trend_direction.py"),
-    Path("src/regime_detection/trend_character.py"),
-    Path("src/regime_detection/volatility_state.py"),
-    Path("src/regime_detection/breadth_state.py"),
+    # trend_direction, trend_character, volatility_state, breadth_state were
+    # previously guarded as V1-only contract paths. After the axis classifier
+    # refactor merged V1+V2 into one module per axis (per CLAUDE.md framing
+    # "V1 and V2 are phases of one engine, not two systems"), those modules
+    # now formally own V2 features and were removed from the guard list. The
+    # remaining paths are genuinely V1-only contract surfaces: the wire shim,
+    # the V1-fixed event calendar feed, and the V1 strategy adapter.
     Path("src/regime_detection/event_calendar.py"),
     Path("src/regime_detection/strategy_response.py"),
     Path("src/regime_detection/legacy_v1_wire.py"),
@@ -30,12 +33,7 @@ FORBIDDEN_V1_CONTRACT_SCAFFOLDING_PATTERNS = re.compile(
     r")\b",
     re.IGNORECASE,
 )
-V1_CONTRACT_EXTENSION_ALLOWLIST: dict[Path, tuple[str, ...]] = {
-    Path("src/regime_detection/trend_direction.py"): (
-        '"efficiency_ratio_20d": _ev_float(features.efficiency_ratio_20d.loc[dt]),',
-        '"hurst_250d": _ev_float(features.hurst_250d.loc[dt]),',
-    ),
-}
+V1_CONTRACT_EXTENSION_ALLOWLIST: dict[Path, tuple[str, ...]] = {}
 
 # F-023: §12.4 requires a check that fails on V2 scaffolding/imports (HMM/clustering/
 # change-point libraries) in V1 code. The pattern guard above covers only 7 enumerated
@@ -139,10 +137,12 @@ def test_inflation_growth_axis_builder_does_not_reconstruct_rule_inputs() -> Non
 
 
 def test_bulk_rule_input_builders_do_not_scalar_loc_per_session() -> None:
+    # After the Pattern A split (features vs classify), build_rule_inputs_by_date
+    # lives in the *_rules.py file, not the features file.
     offenders: list[str] = []
     for path in (
-        Path("src/regime_detection/credit_funding.py"),
-        Path("src/regime_detection/inflation_growth.py"),
+        Path("src/regime_detection/credit_funding_rules.py"),
+        Path("src/regime_detection/inflation_growth_rules.py"),
     ):
         tree = ast.parse(path.read_text())
         functions = {

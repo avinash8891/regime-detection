@@ -28,7 +28,7 @@ from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import build_market_context
 from regime_detection.timeline import build_regime_timeline
 from regime_detection.volatility_state import wilders_atr
-from regime_detection.volatility_state_v2 import (
+from regime_detection.volatility_state import (
     VolatilityV2Features,
     compute_volatility_v2_features,
 )

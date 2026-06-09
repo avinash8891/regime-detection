@@ -18,7 +18,7 @@ from regime_detection.models import (
     MonetaryPressureEvidencePayload,
     MonetaryPressureV2Output,
 )
-from regime_detection.monetary_pressure import (
+from regime_detection.monetary_pressure_rules import (
     MONETARY_PRESSURE_V2_RISK_RANK,
     MonetaryPressureV2Label,
     build_rule_inputs_for_date as build_monetary_pressure_rule_inputs_for_date,

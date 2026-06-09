@@ -12,7 +12,7 @@ from regime_detection.breadth_state import (
     BreadthFeatures,
     compute_features as compute_breadth_features,
 )
-from regime_detection.breadth_state_v2 import (
+from regime_detection.breadth_state import (
     BreadthV2Features,
     compute_breadth_v2_features,
 )
@@ -38,21 +38,23 @@ from regime_detection.config import (
 )
 from regime_detection.credit_funding import (
     CreditFundingFeatures,
-    HYG_KEY as _CF_HYG_KEY,
-    LQD_KEY as _CF_LQD_KEY,
-    REQUIRED_CROSS_ASSET_KEYS as _CF_CROSS_ASSET_KEYS,
-    REQUIRED_MACRO_KEYS as _CF_MACRO_KEYS,
-    TLT_KEY as _CF_TLT_KEY,
-    KRE_KEY as _CF_KRE_KEY,
-    SOFR_KEY as _CF_SOFR_KEY,
-    IORB_KEY as _CF_IORB_KEY,
-    FEDFUNDS_KEY as _CF_FEDFUNDS_KEY,
-    IOER_LEGACY_KEY as _CF_IOER_LEGACY_KEY,
-    NFCI_KEY as _CF_NFCI_KEY,
+    compute_credit_funding_features,
+)
+from regime_detection.credit_funding_rules import (
     BROAD_USD_INDEX_KEY as _CF_BROAD_USD_KEY,
+    FEDFUNDS_KEY as _CF_FEDFUNDS_KEY,
+    HYG_KEY as _CF_HYG_KEY,
     HY_OAS_KEY as _CF_HY_OAS_KEY,
     IG_OAS_KEY as _CF_IG_OAS_KEY,
-    compute_credit_funding_features,
+    IOER_LEGACY_KEY as _CF_IOER_LEGACY_KEY,
+    IORB_KEY as _CF_IORB_KEY,
+    KRE_KEY as _CF_KRE_KEY,
+    LQD_KEY as _CF_LQD_KEY,
+    NFCI_KEY as _CF_NFCI_KEY,
+    REQUIRED_CROSS_ASSET_KEYS as _CF_CROSS_ASSET_KEYS,
+    REQUIRED_MACRO_KEYS as _CF_MACRO_KEYS,
+    SOFR_KEY as _CF_SOFR_KEY,
+    TLT_KEY as _CF_TLT_KEY,
 )
 from regime_detection.event_calendar import compute_event_window_just_passed
 from regime_detection.fragility_universe import SECTOR_ETFS
@@ -69,7 +71,7 @@ from regime_detection.trend_direction import (
     TrendDirectionFeatures,
     compute_features as compute_trend_direction_features,
 )
-from regime_detection.trend_direction_v2 import (
+from regime_detection.trend_direction import (
     TrendDirectionV2Features,
     compute_trailing_drawdown,
     compute_trend_v2_features,
@@ -80,16 +82,14 @@ from regime_detection.clustering import (
     compute_clustering_features,
 )
 from regime_detection.hmm_state import HMMConfig, HMMFeatures, compute_hmm_features
-from regime_detection.volatility_state import realized_vol
 from regime_detection.volatility_state import (
     VolatilityFeatures,
-    compute_features as compute_volatility_features,
-)
-from regime_detection.volatility_state_v2 import (
     VolatilityV2Features,
+    compute_features as compute_volatility_features,
     compute_volatility_v2_features,
+    realized_vol,
 )
-from regime_detection.volume_liquidity_v2 import (
+from regime_detection.volume_liquidity import (
     VolumeLiquidityV2Features,
     compute_volume_liquidity_v2_features,
 )
@@ -98,12 +98,15 @@ from regime_detection.monetary_pressure import (
     compute_monetary_pressure_features,
 )
 from regime_detection.inflation_growth import (
+    InflationGrowthFeatures,
+    compute_inflation_growth_features,
+)
+from regime_detection.inflation_growth_rules import (
     AGG_FORWARD_EPS_REVISION_KEY as _IG_AGG_FORWARD_EPS_REVISION_KEY,
     CPI_KEY as _IG_CPI_KEY,
     CPI_NOWCAST_KEY as _IG_CPI_NOWCAST_KEY,
     DBC_KEY as _IG_DBC_KEY,
     DGS10_KEY as _IG_DGS10_KEY,
-    InflationGrowthFeatures,
     PMI_KEY as _IG_PMI_KEY,
     REQUIRED_CROSS_ASSET_KEYS as _IG_CROSS_ASSET_KEYS,
     REQUIRED_MACRO_KEYS as _IG_MACRO_KEYS,
@@ -112,7 +115,6 @@ from regime_detection.inflation_growth import (
     XLP_KEY as _IG_XLP_KEY,
     XLU_KEY as _IG_XLU_KEY,
     XLY_KEY as _IG_XLY_KEY,
-    compute_inflation_growth_features,
 )
 from regime_detection.feature_store_runtime import (
     FeatureAvailability,

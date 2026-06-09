@@ -44,13 +44,21 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-from numpy.lib.stride_tricks import sliding_window_view
 
+from regime_detection._rolling_stats import rolling_ols_slope
+from regime_detection._rule_helpers import (
+    any_nan as _any_nan,
+    scalar_at as _scalar_at,
+)
 from regime_detection.axis_output_models import NetworkFragilityLabel
-from regime_detection.breadth_state import BreadthLabel
+from regime_detection.breadth_state_rules import BreadthLabel
 from regime_detection.config import NetworkFragilityRulesConfig
-from regime_detection.network_fragility import NetworkFragilityFeatures
-from regime_detection.volatility_state import VolatilityLabel
+from regime_detection.network_fragility import (
+    NetworkFragilityFeatures,
+    rolling_drawdown_series as _rolling_drawdown_series,
+    rolling_stability_series as _rolling_stability_series,
+)
+from regime_detection.volatility_state_rules import VolatilityLabel
 
 # v2 §3.3 labels — the closed NetworkFragilityLabel Literal is the single source of
 # truth in axis_output_models (F-040, alongside the other axis-output label triples);
@@ -161,13 +169,6 @@ class NetworkFragilityRuleEvaluation:
     reason: str | None = None
 
 
-def _scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
-    """Pick the value of a vectorized reducer series at ``dt`` (NaN if absent)."""
-    if dt not in series.index:
-        return float("nan")
-    return float(series.loc[dt])
-
-
 def build_rule_inputs_for_date(
     *,
     features: NetworkFragilityFeatures,
@@ -188,11 +189,11 @@ def build_rule_inputs_for_date(
     fixed by §3.5 text (21d).
     """
     index = features.avg_pairwise_corr_63d.index
-    avg_corr_slope = _rolling_ols_slope_series(
-        features.avg_pairwise_corr_63d, _SPEC_SLOPE_WINDOW_DAYS
+    avg_corr_slope = rolling_ols_slope(
+        features.avg_pairwise_corr_63d, window=_SPEC_SLOPE_WINDOW_DAYS
     )
-    largest_eig_slope = _rolling_ols_slope_series(
-        features.largest_eigenvalue_share, _SPEC_SLOPE_WINDOW_DAYS
+    largest_eig_slope = rolling_ols_slope(
+        features.largest_eigenvalue_share, window=_SPEC_SLOPE_WINDOW_DAYS
     )
     eff_rank_stability = _rolling_stability_series(
         features.effective_rank, _SPEC_STABILITY_WINDOW_DAYS
@@ -230,54 +231,6 @@ def build_rule_inputs_for_date(
     )
 
 
-def _rolling_ols_slope_series(series: pd.Series, window: int) -> pd.Series:
-    values = series.to_numpy(dtype=float)
-    out = np.full(len(values), np.nan, dtype=float)
-    if len(values) < window:
-        return pd.Series(out, index=series.index)
-
-    windows = sliding_window_view(values, window_shape=window)
-    valid = np.isfinite(windows).all(axis=1)
-    if valid.any():
-        x = np.arange(window, dtype=float)
-        x_sum = float(x.sum())
-        x_sq_sum = float(np.square(x).sum())
-        denom = window * x_sq_sum - x_sum * x_sum
-        valid_windows = windows[valid]
-        y_sum = valid_windows.sum(axis=1)
-        xy_sum = valid_windows @ x
-        out[window - 1 :][valid] = (window * xy_sum - x_sum * y_sum) / denom
-    return pd.Series(out, index=series.index)
-
-
-def _rolling_stability_series(series: pd.Series, window: int) -> pd.Series:
-    values = series.to_numpy(dtype=float)
-    out = np.full(len(values), np.nan, dtype=float)
-    if len(values) < window:
-        return pd.Series(out, index=series.index)
-
-    windows = sliding_window_view(values, window_shape=window)
-    valid = np.isfinite(windows).all(axis=1)
-    if valid.any():
-        valid_windows = windows[valid]
-        means = valid_windows.mean(axis=1)
-        stabilities = np.full(len(valid_windows), np.nan, dtype=float)
-        nonzero = means != 0.0
-        if nonzero.any():
-            stabilities[nonzero] = (
-                valid_windows[nonzero].std(axis=1, ddof=0) / means[nonzero]
-            )
-        out[window - 1 :][valid] = stabilities
-    return pd.Series(out, index=series.index)
-
-
-def _rolling_drawdown_series(spy_close: pd.Series, window: int) -> pd.Series:
-    peak = spy_close.rolling(window=window, min_periods=window).max()
-    drawdown = spy_close / peak - 1.0
-    drawdown = drawdown.where(peak > 0)
-    return drawdown.astype(float)
-
-
 def build_rule_inputs_by_date(
     *,
     features: NetworkFragilityFeatures,
@@ -287,11 +240,11 @@ def build_rule_inputs_by_date(
     realized_vol_21d: pd.Series | None = None,
 ) -> dict[pd.Timestamp, NetworkFragilityRuleInputs]:
     index = features.avg_pairwise_corr_63d.index
-    avg_corr_slope = _rolling_ols_slope_series(
-        features.avg_pairwise_corr_63d, _SPEC_SLOPE_WINDOW_DAYS
+    avg_corr_slope = rolling_ols_slope(
+        features.avg_pairwise_corr_63d, window=_SPEC_SLOPE_WINDOW_DAYS
     )
-    largest_eig_slope = _rolling_ols_slope_series(
-        features.largest_eigenvalue_share, _SPEC_SLOPE_WINDOW_DAYS
+    largest_eig_slope = rolling_ols_slope(
+        features.largest_eigenvalue_share, window=_SPEC_SLOPE_WINDOW_DAYS
     )
     eff_rank_stability = _rolling_stability_series(
         features.effective_rank, _SPEC_STABILITY_WINDOW_DAYS
@@ -337,10 +290,6 @@ def build_rule_inputs_by_date(
 
 
 # -- Rule predicates (v2 §3.5) -------------------------------------------------
-
-
-def _any_nan(*values: float) -> bool:
-    return any(np.isnan(v) for v in values)
 
 
 def _correlation_to_one_percentile_path(

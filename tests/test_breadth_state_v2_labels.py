@@ -19,10 +19,10 @@ import pandas as pd
 import pytest
 import yaml
 
-from regime_detection.breadth_state import (
-    BreadthFeatures,
-    BreadthLabel,
+from regime_detection.breadth_state import BreadthFeatures
+from regime_detection.breadth_state_rules import (
     _RISK_RANK,
+    BreadthLabel,
     _evaluate_breadth_thrust,
     _evaluate_broadening_breadth,
     _evaluate_narrowing_breadth,

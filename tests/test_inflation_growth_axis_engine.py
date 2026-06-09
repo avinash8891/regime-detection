@@ -34,12 +34,14 @@ from regime_detection.fragility_universe import (
 )
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.inflation_growth import (
-    INFLATION_GROWTH_RISK_RANK,
     INFLATION_SURPRISE_NOWCAST_BIAS_WARNING_CODE,
     InflationGrowthFeatures,
-    InflationGrowthRuleInputs,
     compute_inflation_growth_features,
     compute_inflation_surprise_zscore,
+)
+from regime_detection.inflation_growth_rules import (
+    INFLATION_GROWTH_RISK_RANK,
+    InflationGrowthRuleInputs,
 )
 from regime_detection.market_context import build_market_context
 

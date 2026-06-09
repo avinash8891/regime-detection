@@ -34,8 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-import numpy as np
-
+from regime_detection._rule_helpers import is_nan as _is_nan
 from regime_detection.config import VolumeLiquidityRulesConfig
 
 # v2 §1E lines 399-405 labels (full Literal).
@@ -92,10 +91,6 @@ class VolumeLiquidityRuleEvaluation:
     label: VolumeLiquidityLabel
     rule_path: str
     reason: str | None = None
-
-
-def _is_nan(value: float) -> bool:
-    return bool(np.isnan(value))
 
 
 def _gap_history_unavailable(inputs: VolumeLiquidityRuleInputs) -> bool:

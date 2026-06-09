@@ -7,9 +7,11 @@ import numpy as np
 import pandas as pd
 
 from regime_detection.credit_funding import (
-    CREDIT_FUNDING_RISK_RANK,
     CREDIT_SPREAD_PROXY_BIAS_WARNING_CODE,
     CREDIT_SPREAD_SOURCE_CODE,
+)
+from regime_detection.credit_funding_rules import (
+    CREDIT_FUNDING_RISK_RANK,
     CreditFundingLabel,
     FEDFUNDS_KEY,
     HYG_KEY,

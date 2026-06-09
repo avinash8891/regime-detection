@@ -28,15 +28,15 @@ from regime_detection.config import (
 )
 from regime_detection.engine import RegimeEngine
 from regime_detection.trend_direction import (
-    build_raw_outputs as build_v1_raw_outputs,
-    compute_features as compute_v1_features,
-    raw_label_for_day,
-)
-from regime_detection.trend_direction_v2 import (
     TrendDirectionV2Features,
+    compute_features as compute_v1_features,
     compute_trend_v2_features,
+)
+from regime_detection.trend_direction_rules import (
+    build_raw_outputs as build_v1_raw_outputs,
     evaluate_recovery,
     evaluate_v2_trend_label,
+    raw_label_for_day,
 )
 
 # v2 §1A line 116-117 — exact spec thresholds.

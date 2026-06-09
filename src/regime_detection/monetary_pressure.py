@@ -1,88 +1,26 @@
-"""v2 §2A Layer 2A Monetary / Liquidity V2 features + axis classifier rules.
+"""v2 §2A Layer 2A Monetary / Liquidity axis — feature compute.
 
-Feature slice (4.1) ships the line-896 yield z-score template; the
-classifier slice (this file) extends it with the three additional
-features pinned in implementation decision(a) and the §2A rule engine:
+Five z-score series:
+  - yield_change_zscore_2y_63d
+  - yield_change_zscore_10y_63d
+  - broad_usd_index_zscore_63d
+  - yield_change_zscore_21d_2y
+  - yield_change_zscore_21d_10y
 
-  Features (implementation decision(a) — mechanical generalizations of the line-896 template):
-    - yield_change_zscore_2y_63d      (existing)
-    - yield_change_zscore_10y_63d     (existing)
-    - broad_usd_index_zscore_63d      (NEW, 63d-change z-score on USD index)
-    - yield_change_zscore_21d_2y      (NEW, 21d-change z-score on DGS2)
-    - yield_change_zscore_21d_10y     (NEW, 21d-change z-score on DGS10)
-
-  Labels (implementation decision(b)):
-    {tightening_pressure, easing_pressure, rate_shock, neutral_monetary, unknown}
-
-  Precedence (implementation decision(c)):
-    rate_shock > tightening_pressure > easing_pressure > neutral_monetary > unknown
-
-  Risk rank (implementation decision(d)):
-    {neutral_monetary: 0, easing_pressure: 1, unknown: 1,
-     tightening_pressure: 2, rate_shock: 3}
-
-  Per-label hysteresis (implementation decision(e); carried on the yaml):
-    {rate_shock: 5, tightening_pressure: 3, easing_pressure: 2,
-     neutral_monetary: 0, unknown: 0}
-
-Rules (verbatim §2A lines 2881-2892):
-
-  tightening_pressure:
-    yield_change_zscore_2y_63d > +1.5
-    OR yield_change_zscore_10y_63d > +1.5
-    OR broad_usd_index_zscore_63d > +1.5
-
-  easing_pressure:
-    yield_change_zscore_2y_63d < -1.5
-    OR yield_change_zscore_10y_63d < -1.5
-
-  rate_shock:
-    abs(yield_change_zscore_21d_2y) > 2.0
-    OR abs(yield_change_zscore_21d_10y) > 2.0
-
-NaN-safe: ``<`` / ``>`` on NaN evaluates False in Python, so a NaN
-input naturally falsifies the predicate and the precedence falls
-through to ``neutral_monetary``. The data-quality gate above
-``evaluate_rules`` catches the cold-start case and maps to ``unknown``.
+The classify layer (labels, risk rank, rule inputs, precedence walker)
+lives in ``monetary_pressure_rules.py``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 import pandas as pd
 
 from regime_detection._rolling_stats import (
     rolling_change_zscore as _rolling_change_zscore,
 )
-from regime_detection.config import (
-    MonetaryPressureV2FeaturesConfig,
-    MonetaryPressureV2RulesConfig,
-)
-
-# ---------------------------------------------------------------------------
-# Label set + risk rank (implementation decision(b)/(d)).
-# ---------------------------------------------------------------------------
-
-
-MonetaryPressureV2Label = Literal[
-    "tightening_pressure",
-    "easing_pressure",
-    "rate_shock",
-    "neutral_monetary",
-    "unknown",
-]
-
-
-# v2 §2A risk rank per implementation decision(d). Pinned constant (NOT a tunable).
-MONETARY_PRESSURE_V2_RISK_RANK: dict[MonetaryPressureV2Label, int] = {
-    "neutral_monetary": 0,
-    "easing_pressure": 1,
-    "unknown": 1,
-    "tightening_pressure": 2,
-    "rate_shock": 3,
-}
+from regime_detection.config import MonetaryPressureV2FeaturesConfig
 
 
 @dataclass(frozen=True)
@@ -225,83 +163,3 @@ def compute_monetary_pressure_features(
         yield_change_zscore_21d_10y=z_21d_10y,
         central_bank_text_score=aligned_cb_score,
     )
-
-
-# ---------------------------------------------------------------------------
-# Rule predicates (§2A lines 2881-2892, implementation decision(b)/(c)).
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class MonetaryPressureRuleInputs:
-    """Per-day scalar inputs the §2A rule engine consumes.
-
-    Materialized by ``build_rule_inputs_for_date`` from
-    ``MonetaryPressureV2Features`` at one as-of date.
-    """
-
-    zscore_2y_63d: float
-    zscore_10y_63d: float
-    broad_usd_zscore_63d: float
-    zscore_21d_2y: float
-    zscore_21d_10y: float
-
-
-def _scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
-    if dt not in series.index:
-        return float("nan")
-    val = series.loc[dt]
-    if pd.isna(val):
-        return float("nan")
-    return float(val)
-
-
-def build_rule_inputs_for_date(
-    *,
-    features: MonetaryPressureV2Features,
-    dt: pd.Timestamp,
-) -> MonetaryPressureRuleInputs:
-    return MonetaryPressureRuleInputs(
-        zscore_2y_63d=_scalar_at(features.yield_change_zscore_2y_63d, dt),
-        zscore_10y_63d=_scalar_at(features.yield_change_zscore_10y_63d, dt),
-        broad_usd_zscore_63d=_scalar_at(features.broad_usd_index_zscore_63d, dt),
-        zscore_21d_2y=_scalar_at(features.yield_change_zscore_21d_2y, dt),
-        zscore_21d_10y=_scalar_at(features.yield_change_zscore_21d_10y, dt),
-    )
-
-
-def evaluate_rules(
-    *,
-    inputs: MonetaryPressureRuleInputs,
-    config: MonetaryPressureV2RulesConfig,
-) -> MonetaryPressureV2Label:
-    """Walk §2A precedence and return the first matching label.
-
-    Precedence (implementation decision(c)):
-      rate_shock > tightening_pressure > easing_pressure > neutral_monetary
-
-    NaN inputs naturally falsify each ``<`` / ``>`` comparison; the walker
-    then falls through to ``neutral_monetary``. The data-quality gate in
-    the classifier maps that to ``unknown`` when required inputs are
-    insufficient.
-    """
-    # rate_shock — abs(21d-change z) > +2.0 on either tenor (highest precedence).
-    if (
-        abs(inputs.zscore_21d_2y) > config.rate_shock_zscore_threshold
-        or abs(inputs.zscore_21d_10y) > config.rate_shock_zscore_threshold
-    ):
-        return "rate_shock"
-    # tightening_pressure — OR across the three 63d-change signals.
-    if (
-        inputs.zscore_2y_63d > config.tightening_pressure_zscore_threshold
-        or inputs.zscore_10y_63d > config.tightening_pressure_zscore_threshold
-        or inputs.broad_usd_zscore_63d > config.tightening_pressure_zscore_threshold
-    ):
-        return "tightening_pressure"
-    # easing_pressure — OR on the two 63d-change yield signals.
-    if (
-        inputs.zscore_2y_63d < config.easing_pressure_zscore_threshold
-        or inputs.zscore_10y_63d < config.easing_pressure_zscore_threshold
-    ):
-        return "easing_pressure"
-    return "neutral_monetary"

@@ -13,13 +13,13 @@ from scripts._v2_calibration_helpers import (
     load_macro_series,
     load_market_data,
 )
-from regime_detection.credit_funding import (
+from regime_detection.credit_funding_rules import (
     REQUIRED_CROSS_ASSET_KEYS as CREDIT_FUNDING_CROSS_ASSET_KEYS,
 )
 from regime_detection.fragility_universe import (
     CROSS_ASSET_SYMBOLS as NETWORK_CROSS_ASSET_SYMBOLS,
 )
-from regime_detection.inflation_growth import (
+from regime_detection.inflation_growth_rules import (
     REQUIRED_CROSS_ASSET_KEYS as INFLATION_GROWTH_CROSS_ASSET_KEYS,
 )
 

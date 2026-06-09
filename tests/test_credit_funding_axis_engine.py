@@ -34,10 +34,12 @@ from regime_detection.config import (
     load_default_regime_config,
 )
 from regime_detection.credit_funding import (
-    CREDIT_FUNDING_RISK_RANK,
     CreditFundingFeatures,
-    CreditFundingRuleInputs,
     compute_credit_funding_features,
+)
+from regime_detection.credit_funding_rules import (
+    CREDIT_FUNDING_RISK_RANK,
+    CreditFundingRuleInputs,
     evaluate_rules_with_evidence,
 )
 from regime_detection.engine import RegimeEngine

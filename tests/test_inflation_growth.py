@@ -21,10 +21,12 @@ from regime_detection.config import (
     load_default_regime_config,
 )
 from regime_detection.inflation_growth import (
+    compute_inflation_growth_features,
+)
+from regime_detection.inflation_growth_rules import (
     InflationGrowthRuleInputs,
     build_rule_inputs_by_date,
     build_rule_inputs_for_date,
-    compute_inflation_growth_features,
     evaluate_disinflation,
     evaluate_earnings_contraction,
     evaluate_earnings_expansion,

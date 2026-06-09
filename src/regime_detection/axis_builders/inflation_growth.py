@@ -14,7 +14,7 @@ from regime_detection.feature_store import FeatureStore
 from regime_detection.axis_builders.staleness import (
     staleness_for_source,
 )
-from regime_detection.inflation_growth import (
+from regime_detection.inflation_growth_rules import (
     CPI_KEY,
     DGS10_KEY,
     INFLATION_GROWTH_RISK_RANK,

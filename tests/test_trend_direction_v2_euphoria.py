@@ -28,13 +28,13 @@ from regime_detection.config import (
 )
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.trend_direction import (
-    _RISK_RANK,
     TrendDirectionFeatures,
-    build_raw_outputs as build_trend_direction_raw_outputs,
-)
-from regime_detection.trend_direction_v2 import (
     TrendDirectionV2Features,
     compute_trend_v2_features,
+)
+from regime_detection.trend_direction_rules import (
+    _RISK_RANK,
+    build_raw_outputs as build_trend_direction_raw_outputs,
     evaluate_euphoria,
     evaluate_v2_trend_label,
 )
