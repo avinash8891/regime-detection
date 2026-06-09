@@ -1,0 +1,39 @@
+src/regime_detection/feature_store.py
+  s_3579a11c274b3d::t_2f7c516c83879a 178
+  s_3579a11c274b3d::t_afd30a41fcd7fa 17
+  s_3579a11c274b3d::t_c0546189de2389 199
+tests/test_sentiment_staleness.py
+  s_3579a11c274b3d::t_77d401083efff0 67-69,72-74,77-79,99-101,124-126,129-131,138,153-155,158-160,163-165
+  s_3579a11c274b3d::t_d32e6beb2ea13e 1-66,70-71,75-76,80-98,102-123,127-128,132-137,139-152,156-157,161-162,166-175
+src/regime_detection/config.py
+  s_3579a11c274b3d::t_84dda017cb8147 233
+  s_3579a11c274b3d::t_cc5aa4f6ef44b5 164-166
+  s_3579a11c274b3d::t_18f5bf6a324cfb 122
+  s_3579a11c274b3d::t_da1d27e28906cb 46
+  s_3579a11c274b3d::t_166529cd0e28dd 220
+  s_3579a11c274b3d::t_42643e1b9c446b 92
+src/regime_detection/_feature_specs.py
+  s_3579a11c274b3d::t_0ee0c5d32a5926 45
+  s_3579a11c274b3d::t_ab200a2eae9e14 222
+  s_3579a11c274b3d::t_5652e3ffd77de1 434
+  s_3579a11c274b3d::t_a05eeea96bc3ca 167
+  s_3579a11c274b3d::t_17cd6fbe66992b 295-331
+src/regime_detection/_config_layer2.py
+  s_3579a11c274b3d::t_1b8920a5353160 251-265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "8bf580d35e9827b2fc2409ab123b1224f9c6f733",
+  "prompts": {},
+  "sessions": {
+    "s_3579a11c274b3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4ff0dba7-5695-4f37-858c-5161163327a0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
