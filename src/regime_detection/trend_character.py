@@ -171,16 +171,14 @@ def _compute_followthrough_rate(
         if np.all(close_arr[b + 1 : end + 1] > level):
             held[b] = True
 
-    # Vectorized lookup: index every breakout, precompute a cumulative sum of
-    # held breakouts, then for each session t fetch the most-recent
-    # window_count breakouts strictly before t via bisect_right and the
-    # held_count via two cumulative-sum reads.
+    # PIT-safe lookup: a breakout b is only "resolved" (its held status is
+    # known without lookahead) once session b + hold_sessions has been
+    # observed, i.e. at time t >= b + hold_sessions.  We use
+    # bisect_right(..., t - hold_sessions) so that only resolved breakouts
+    # contribute to the rate at session t.
     #
     # The lookback bound is enforced by a single check on the oldest element
-    # of the window — older breakouts than `t - lookback_sessions` were
-    # unreachable in the original backward walk, so requiring
-    # breakout_idx[k - window_count] >= t - lookback_sessions reproduces the
-    # original semantics exactly.
+    # of the window — older breakouts than t - lookback_sessions are excluded.
     out = np.full(n, np.nan, dtype=float)
     breakout_idx = np.flatnonzero(~np.isnan(breakout_level))
     if breakout_idx.size >= window_count:
@@ -190,7 +188,8 @@ def _compute_followthrough_rate(
         np.cumsum(held_at_breakouts, out=held_cum[1:])
         breakout_idx_list = breakout_idx.tolist()
         for t in range(n):
-            k = bisect_right(breakout_idx_list, t - 1)
+            # Only count breakouts whose hold window is fully elapsed by t.
+            k = bisect_right(breakout_idx_list, t - hold_sessions)
             if k < window_count:
                 continue
             j = k - window_count
