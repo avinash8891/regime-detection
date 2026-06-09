@@ -1068,3 +1068,9 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         store=lambda s, v: setattr(s, "change_point", v),
     ),
 )
+
+FeatureStoreBuildState = _FeatureStoreBuildState
+FEATURE_SPECS = _FEATURE_SPECS
+as_datetime_index = _as_datetime_index
+require_feature = _require_feature
+series_column = _series_column

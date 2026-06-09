@@ -331,6 +331,57 @@ def _market_data_has_non_null_spy_close(
     return not close.empty and not bool(close.isna().all())
 
 
+def _build_classify_request(
+    *,
+    end_date: date,
+    market_data: pd.DataFrame,
+    lookback_days: int,
+    vix_data: pd.DataFrame | None = None,
+    event_calendar: pd.DataFrame | None = None,
+    config: RegimeConfig | None = None,
+    sector_etf_closes: dict[str, pd.Series] | None = None,
+    cross_asset_closes: dict[str, pd.Series] | None = None,
+    macro_series: dict[str, pd.Series] | None = None,
+    pit_constituent_intervals: pd.DataFrame | None = None,
+    constituent_ohlcv: dict[str, pd.DataFrame] | None = None,
+    aaii_sentiment: pd.DataFrame | None = None,
+    implied_vol_30d: pd.Series | None = None,
+    central_bank_text_releases: pd.DataFrame | None = None,
+    cpi_first_release: pd.Series | None = None,
+    news_sentiment: pd.Series | None = None,
+    request_source: ClassifyRequestSource = "direct",
+    manifest_resolved_inputs: ManifestInputNames | None = None,
+    manifest_cli_overrides: ManifestInputNames | None = None,
+) -> ClassifyRequest:
+    """Single construction point for ClassifyRequest from keyword arguments.
+
+    ``classify`` and ``classify_window`` forward their params here so that
+    adding a new ``ClassifyRequest`` field only requires updating this function
+    plus the two public-method signatures — not the construction block in each.
+    """
+    return ClassifyRequest(
+        end_date=end_date,
+        market_data=market_data,
+        lookback_days=lookback_days,
+        vix_data=vix_data,
+        event_calendar=event_calendar,
+        config=config,
+        sector_etf_closes=sector_etf_closes,
+        cross_asset_closes=cross_asset_closes,
+        macro_series=macro_series,
+        pit_constituent_intervals=pit_constituent_intervals,
+        constituent_ohlcv=constituent_ohlcv,
+        aaii_sentiment=aaii_sentiment,
+        implied_vol_30d=implied_vol_30d,
+        central_bank_text_releases=central_bank_text_releases,
+        cpi_first_release=cpi_first_release,
+        news_sentiment=news_sentiment,
+        request_source=request_source,
+        manifest_resolved_inputs=manifest_resolved_inputs or frozenset(),
+        manifest_cli_overrides=manifest_cli_overrides or frozenset(),
+    )
+
+
 def _regime_output_to_series_row(output: RegimeOutput) -> dict[str, object]:
     """Flatten one ``RegimeOutput`` to a ``classify_series`` DataFrame row."""
     return {
@@ -379,7 +430,7 @@ class RegimeEngine:
         manifest_cli_overrides: ManifestInputNames | None = None,
     ) -> RegimeOutput:
         timeline = self.classify_request(
-            ClassifyRequest(
+            _build_classify_request(
                 end_date=as_of_date,
                 market_data=market_data,
                 lookback_days=1,
@@ -397,8 +448,8 @@ class RegimeEngine:
                 cpi_first_release=cpi_first_release,
                 news_sentiment=news_sentiment,
                 request_source=request_source,
-                manifest_resolved_inputs=manifest_resolved_inputs or frozenset(),
-                manifest_cli_overrides=manifest_cli_overrides or frozenset(),
+                manifest_resolved_inputs=manifest_resolved_inputs,
+                manifest_cli_overrides=manifest_cli_overrides,
             )
         )
         return timeline.outputs[-1]
@@ -546,7 +597,7 @@ class RegimeEngine:
         manifest_cli_overrides: ManifestInputNames | None = None,
     ) -> RegimeTimeline:
         return self.classify_request(
-            ClassifyRequest(
+            _build_classify_request(
                 end_date=end_date,
                 market_data=market_data,
                 lookback_days=lookback_days,
@@ -564,7 +615,7 @@ class RegimeEngine:
                 cpi_first_release=cpi_first_release,
                 news_sentiment=news_sentiment,
                 request_source=request_source,
-                manifest_resolved_inputs=manifest_resolved_inputs or frozenset(),
-                manifest_cli_overrides=manifest_cli_overrides or frozenset(),
+                manifest_resolved_inputs=manifest_resolved_inputs,
+                manifest_cli_overrides=manifest_cli_overrides,
             )
         )

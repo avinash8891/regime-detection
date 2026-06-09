@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib.resources
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypedDict
 
 import yaml
 from pydantic import model_validator
@@ -95,6 +95,7 @@ __all__ = [
     "TrendCharacterV2Config",
     "TrendDirectionV2Config",
     "TrendDirectionV2RulesConfig",
+    "V2FeatureBuildConfigs",
     "VolatilityV2Config",
     "VolatilityV2RulesConfig",
     "VolumeLiquidityConfig",
@@ -103,6 +104,19 @@ __all__ = [
     "load_default_regime_config",
     "load_regime_config",
 ]
+
+
+class V2FeatureBuildConfigs(TypedDict):
+    network_fragility_config: NetworkFragilityConfig | None
+    trend_direction_v2_config: TrendDirectionV2Config | None
+    volatility_state_v2_config: VolatilityV2Config | None
+    breadth_state_v2_config: BreadthV2Config | None
+    volume_liquidity_v2_config: VolumeLiquidityV2Config | None
+    monetary_pressure_v2_config: MonetaryPressureV2FeaturesConfig | None
+    credit_funding_config: CreditFundingConfig | None
+    inflation_growth_config: InflationGrowthConfig | None
+    central_bank_text_config: CentralBankTextConfig | None
+    news_sentiment_config: NewsSentimentConfig | None
 
 
 class RegimeConfig(StrictBaseModel):
@@ -170,6 +184,41 @@ class RegimeConfig(StrictBaseModel):
                 "liquidity_gap_behavior consumes volatility-v2 gap/range percentiles"
             )
         return self
+
+    def v2_feature_build_configs(self) -> V2FeatureBuildConfigs:
+        """Return V2 feature config kwargs for ``build_feature_store``.
+
+        All 10 V2 optional seam configs are returned as a single dict
+        suitable for ``**``-unpacking into ``build_feature_store``.  When
+        ``config_version`` is ``core3-v1.0.0`` every value is ``None`` so
+        V1 byte-identity is preserved without the caller having to re-derive
+        the version gate.
+        """
+        if self.config_version == "core3-v1.0.0":
+            return {
+                "network_fragility_config": None,
+                "trend_direction_v2_config": None,
+                "volatility_state_v2_config": None,
+                "breadth_state_v2_config": None,
+                "volume_liquidity_v2_config": None,
+                "monetary_pressure_v2_config": None,
+                "credit_funding_config": None,
+                "inflation_growth_config": None,
+                "central_bank_text_config": None,
+                "news_sentiment_config": None,
+            }
+        return {
+            "network_fragility_config": self.network_fragility,
+            "trend_direction_v2_config": self.trend_direction_v2,
+            "volatility_state_v2_config": self.volatility_state_v2,
+            "breadth_state_v2_config": self.breadth_state_v2,
+            "volume_liquidity_v2_config": self.volume_liquidity_v2,
+            "monetary_pressure_v2_config": self.monetary_pressure_v2,
+            "credit_funding_config": self.credit_funding,
+            "inflation_growth_config": self.inflation_growth,
+            "central_bank_text_config": self.central_bank_text,
+            "news_sentiment_config": self.news_sentiment,
+        }
 
 
 def load_regime_config(path: str | Path) -> RegimeConfig:

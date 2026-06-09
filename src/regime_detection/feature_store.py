@@ -36,12 +36,15 @@ from regime_detection.feature_store_runtime import (
     _run_feature_specs,
 )
 from regime_detection._feature_specs import (
-    _FeatureStoreBuildState,
-    _FEATURE_SPECS,
-    _as_datetime_index,
-    _require_feature,
-    _series_column,
+    FEATURE_SPECS,
+    FeatureStoreBuildState,
+    as_datetime_index,
+    require_feature,
+    series_column,
 )
+
+_FeatureStoreBuildState = FeatureStoreBuildState
+_FEATURE_SPECS = FEATURE_SPECS
 
 __all__ = [
     "BreadthV2Features",
@@ -176,8 +179,8 @@ def build_feature_store(
     # refactor. Keep feature wiring and fixture replay frozen while extracting
     # helpers so classifier changes do not hide inside the decomposition.
     spy_ohlcv = context.spy_ohlcv
-    spy_close = _series_column(spy_ohlcv, "close")
-    build_state = _FeatureStoreBuildState(
+    spy_close = series_column(spy_ohlcv, "close")
+    build_state = FeatureStoreBuildState(
         context=context,
         spy_ohlcv=spy_ohlcv,
         spy_close=spy_close,
@@ -192,20 +195,16 @@ def build_feature_store(
         central_bank_text_config=central_bank_text_config,
         news_sentiment_config=news_sentiment_config,
     )
-    availability = _run_feature_specs(_FEATURE_SPECS, build_state)
+    availability = _run_feature_specs(FEATURE_SPECS, build_state)
 
     return FeatureStore(
-        spy_index=_as_datetime_index(spy_ohlcv.index),
+        spy_index=as_datetime_index(spy_ohlcv.index),
         availability=availability,
-        trend_direction=_require_feature(
-            build_state.trend_direction, "trend_direction"
-        ),
-        trend_character=_require_feature(
-            build_state.trend_character, "trend_character"
-        ),
-        volatility=_require_feature(build_state.volatility, "volatility"),
-        breadth=_require_feature(build_state.breadth, "breadth"),
-        sma_50=_require_feature(build_state.sma_50, "sma_50"),
+        trend_direction=require_feature(build_state.trend_direction, "trend_direction"),
+        trend_character=require_feature(build_state.trend_character, "trend_character"),
+        volatility=require_feature(build_state.volatility, "volatility"),
+        breadth=require_feature(build_state.breadth, "breadth"),
+        sma_50=require_feature(build_state.sma_50, "sma_50"),
         network_fragility=build_state.network_fragility,
         trend_direction_v2=build_state.trend_direction_v2,
         volatility_state_v2=build_state.volatility_state_v2,

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -19,21 +21,18 @@ from regime_detection.transition_risk import (
     TransitionRuleFlags,
     compose_transition_risk_output,
 )
+from regime_detection.transition_risk_history import (
+    TransitionRiskHistory,
+    apply_transition_state_debounce,
+    build_transition_risk_history,
+)
 from regime_detection.transition_score import (
     ComposedTransitionScore,
     compose_transition_score_for_session,
 )
 
 EVENT_CALENDAR_LABELS = EVENT_CALENDAR_LABEL_SET
-
-
-@dataclass(frozen=True)
-class TransitionRiskHistory:
-    stable_changed_by_date: dict[date, bool]
-    days_since_axis_switch_by_date: dict[date, int | None]
-    axis_switch_count_by_date: dict[date, int]
-    recent_axis_switch_count_by_date: dict[date, int]
-    prior_bear_by_date: dict[date, bool]
+_apply_transition_state_debounce = apply_transition_state_debounce
 
 
 @dataclass(frozen=True)
@@ -139,7 +138,7 @@ def build_transition_risk_series(
             output_sessions=requested_output_sessions,
         )
 
-    missing = []
+    missing: list[str] = []
     if volatility_v2 is None:
         missing.append("feature_store.volatility_state_v2")
     if breadth_v2 is None:
@@ -160,6 +159,11 @@ def build_transition_risk_series(
         raise RuntimeError(
             "transition_risk requires score inputs; missing: " + ", ".join(missing)
         )
+    assert volatility_v2 is not None
+    assert breadth_v2 is not None
+    assert breadth_v2.pct_above_50dma is not None
+    assert network_fragility is not None
+    assert trend_v2 is not None
 
     transition_score_inputs_by_date = _build_transition_score_inputs_by_date(
         sessions=sessions,
@@ -272,7 +276,10 @@ def _build_legacy_transition_score_inputs_by_date(
             pct_above_50dma=float("nan"),
             avg_pairwise_corr_percentile_504d=float("nan"),
             drawdown_252d=float("nan"),
-            event_calendar_labels=event_calendar[day].matching_labels,
+            event_calendar_labels=cast(
+                tuple[EventCalendarLabel, ...],
+                event_calendar[day].matching_labels,
+            ),
             spy_close=_optional_float(close_values[i]),
             spy_sma_50=_optional_float(sma50_values[i]),
         )
@@ -294,8 +301,8 @@ def _build_transition_score_inputs_by_date(
     event_calendar: dict[date, EventCalendarOutput],
     close: pd.Series,
     sma_50: pd.Series,
-    credit_funding_effective: dict[date, object] | None = None,
-    volume_liquidity_state: dict[date, object] | None = None,
+    credit_funding_effective: Mapping[date, object] | None = None,
+    volume_liquidity_state: Mapping[date, object] | None = None,
     volume_zscore_20d: pd.Series | None = None,
     gap_frequency_percentile_252d: pd.Series | None = None,
     intraday_range_percentile_252d: pd.Series | None = None,
@@ -407,7 +414,10 @@ def _build_transition_score_inputs_by_date(
             pct_above_50dma=float(pct50[i]),
             avg_pairwise_corr_percentile_504d=float(corr[i]),
             drawdown_252d=float(dd252[i]),
-            event_calendar_labels=event_calendar[day].matching_labels,
+            event_calendar_labels=cast(
+                tuple[EventCalendarLabel, ...],
+                event_calendar[day].matching_labels,
+            ),
             spy_close=_optional_float(close_values[i]),
             spy_sma_50=_optional_float(sma50_values[i]),
             largest_eigenvalue_share_percentile_504d=_optional_float(largest[i]),
@@ -431,18 +441,26 @@ def _optional_float(value: object) -> float | None:
     # Guard pd.NA first: float(pd.NA) raises TypeError because NAType is
     # not a real number. Numpy NaN is fine — float(nan) returns nan and
     # pd.isna(nan) is True. Mirrors _optional_int's pd.isna-first shape.
-    if pd.isna(value):
+    if value is None or value is pd.NA:
         return None
-    return float(value)
+    parsed = float(cast(float | int | str, value))
+    if np.isnan(parsed):
+        return None
+    return parsed
 
 
 def _optional_int(value: object) -> int | None:
-    if pd.isna(value):
+    if value is None or value is pd.NA:
         return None
-    return int(value)
+    parsed = float(cast(float | int | str, value))
+    if np.isnan(parsed):
+        return None
+    return int(parsed)
 
 
-def _active_label_for_day(outputs: dict[date, object] | None, day: date) -> str | None:
+def _active_label_for_day(
+    outputs: Mapping[date, object] | None, day: date
+) -> str | None:
     if outputs is None:
         return None
     output = outputs.get(day)
@@ -504,12 +522,20 @@ def build_transition_risk_outputs_by_date(
     recovery_attempt = trend_character_active.eq("recovery_attempt") | (
         prior_bear
         & close.gt(sma_50)
-        & breadth_state_active.isin(["recovery_breadth", "healthy_breadth"])
+        & breadth_state_active.isin(  # pyright: ignore[reportUnknownMemberType]
+            ("recovery_breadth", "healthy_breadth")
+        )
     )
     volatility_crisis = volatility_state_active.eq("crisis_vol")
-    volatility_high_or_crisis = volatility_state_active.isin(["high_vol", "crisis_vol"])
-    breadth_stressed = breadth_state_active.isin(
-        ["weak_breadth", "narrowing_breadth", "divergent_fragile", "unknown"]
+    volatility_high_or_crisis = (
+        volatility_state_active.isin(  # pyright: ignore[reportUnknownMemberType]
+            ("high_vol", "crisis_vol")
+        )
+    )
+    breadth_stressed = (
+        breadth_state_active.isin(  # pyright: ignore[reportUnknownMemberType]
+            ("weak_breadth", "narrowing_breadth", "divergent_fragile", "unknown")
+        )
     )
     post_switch_cooldown = (
         days_since_axis_switch.notna()
@@ -663,162 +689,12 @@ def build_transition_risk_outputs_by_date(
                 }
             )
         raw_outputs[day] = output
-    return _apply_transition_state_debounce(
+    return apply_transition_state_debounce(
         sessions=sessions,
         raw_outputs=raw_outputs,
         state_confirmation_days=state_confirmation_days
         or selection_config.state_confirmation_days,
         initial_active_state=initial_active_state,
-    )
-
-
-def _apply_transition_state_debounce(
-    *,
-    sessions: list[date],
-    raw_outputs: dict[date, TransitionRiskOutput],
-    state_confirmation_days: dict[str, int],
-    initial_active_state: str | None = None,
-) -> dict[date, TransitionRiskOutput]:
-    outputs: dict[date, TransitionRiskOutput] = {}
-    # Default (initial_active_state=None) preserves the historical
-    # backfill behavior where the first session's raw state is accepted
-    # immediately. Setting initial_active_state seeds the debounce so that
-    # the first session must also clear its configured confirmation window
-    # — useful for live streaming, where no prior session can bootstrap.
-    if (
-        initial_active_state is not None
-        and initial_active_state not in state_confirmation_days
-    ):
-        raise ValueError(
-            f"initial_active_state {initial_active_state!r} not present in "
-            f"state_confirmation_days {sorted(state_confirmation_days)}"
-        )
-    active_state: str | None = initial_active_state
-    pending_state: str | None = None
-    pending_count = 0
-
-    for day in sessions:
-        raw = raw_outputs[day]
-        required = state_confirmation_days.get(raw.state)
-        if required is None:
-            raise ValueError(
-                f"transition_score.state_confirmation_days missing state {raw.state!r}"
-            )
-        if required < 1:
-            raise ValueError(
-                "transition_score.state_confirmation_days values must be >= 1"
-            )
-
-        if active_state is None or raw.state == active_state:
-            active_state = raw.state
-            pending_state = None
-            pending_count = 0
-            outputs[day] = raw
-            continue
-
-        if raw.state != pending_state:
-            pending_state = raw.state
-            pending_count = 1
-        else:
-            pending_count += 1
-
-        if pending_count >= required:
-            active_state = raw.state
-            pending_state = None
-            pending_count = 0
-            outputs[day] = raw
-            continue
-
-        rules = [*raw.triggered_rules, "state_confirmation_pending"]
-        outputs[day] = raw.model_copy(
-            update={
-                "state": active_state,
-                "triggered_rules": rules,
-                "evidence": raw.evidence.model_copy(update={"triggered_rules": rules}),
-            }
-        )
-    return outputs
-
-
-def build_transition_risk_history(
-    *,
-    sessions: list[date],
-    trend_direction_stable_by_date: dict[date, str],
-    trend_character_stable_by_date: dict[date, str],
-    volatility_stable_by_date: dict[date, str],
-    breadth_stable_by_date: dict[date, str],
-) -> TransitionRiskHistory:
-    index = pd.Index(sessions)
-    stable_frame = pd.DataFrame(
-        {
-            "trend_direction": [
-                trend_direction_stable_by_date[day] for day in sessions
-            ],
-            "trend_character": [
-                trend_character_stable_by_date[day] for day in sessions
-            ],
-            "volatility": [volatility_stable_by_date[day] for day in sessions],
-            "breadth": [breadth_stable_by_date[day] for day in sessions],
-        },
-        index=index,
-    )
-
-    axis_changed = stable_frame.ne(stable_frame.shift(1))
-    axis_switch_count = axis_changed.sum(axis=1).astype("int64")
-    stable_changed = axis_switch_count.gt(0)
-    if not stable_changed.empty:
-        stable_changed.iloc[0] = False
-        axis_switch_count.iloc[0] = 0
-
-    position = pd.Series(range(len(sessions)), index=index, dtype="int64")
-    last_switch_position = pd.Series(
-        position.where(stable_changed, -1).cummax().to_numpy(),
-        index=index,
-        dtype="int64",
-    )
-    delta = position - last_switch_position
-    within_60_sessions = last_switch_position.ge(0) & last_switch_position.ge(
-        position - 59
-    )
-    days_since_axis_switch = delta.where(within_60_sessions)
-
-    # v1 §9.4 recovery_attempt clause: "trend_direction.stable_label was bear
-    # at any point in the prior 60 NYSE trading days (excluding as_of_date)".
-    # `.shift(1)` drops today from the lookback so the recovery rule only fires
-    # when the bear print is in the PAST — preventing recovery_attempt from
-    # firing while today's stable_label is still bear (a transition-window
-    # edge case during hysteresis lag).
-    prior_bear = (
-        stable_frame["trend_direction"]
-        .eq("bear")
-        .shift(1)
-        .rolling(window=60, min_periods=1)
-        .max()
-        .fillna(False)
-        .astype(bool)
-    )
-
-    stable_changed_by_date = {day: bool(value) for day, value in stable_changed.items()}
-    axis_switch_count_by_date = {
-        day: int(value) for day, value in axis_switch_count.items()
-    }
-    recent_axis_switch_count = (
-        axis_switch_count.rolling(window=5, min_periods=1).sum().astype("int64")
-    )
-    recent_axis_switch_count_by_date = {
-        day: int(value) for day, value in recent_axis_switch_count.items()
-    }
-    days_since_axis_switch_by_date = {
-        day: None if pd.isna(value) else int(value)
-        for day, value in days_since_axis_switch.items()
-    }
-    prior_bear_by_date = {day: bool(value) for day, value in prior_bear.items()}
-    return TransitionRiskHistory(
-        stable_changed_by_date=stable_changed_by_date,
-        days_since_axis_switch_by_date=days_since_axis_switch_by_date,
-        axis_switch_count_by_date=axis_switch_count_by_date,
-        recent_axis_switch_count_by_date=recent_axis_switch_count_by_date,
-        prior_bear_by_date=prior_bear_by_date,
     )
 
 
@@ -831,7 +707,12 @@ def _strict_lookup_by_sessions(
     source = series.copy()
     source.index = pd.to_datetime(source.index)
     try:
-        positions = source.index.get_indexer(session_index)
+        positions = cast(
+            np.ndarray,
+            source.index.get_indexer(  # pyright: ignore[reportUnknownMemberType]
+                session_index
+            ),
+        )
     except (TypeError, ValueError) as exc:
         raise ValueError(
             f"{series_name} index is not exactly aligned to NYSE sessions used by transition-risk computation."

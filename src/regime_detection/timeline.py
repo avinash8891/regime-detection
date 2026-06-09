@@ -637,29 +637,9 @@ def build_regime_timeline(
         context=context,
         required_sessions=required_sessions,
     )
-    is_v2 = cfg.config_version != "core3-v1.0.0"
-    network_fragility_config = cfg.network_fragility if is_v2 else None
-    trend_direction_v2_config = cfg.trend_direction_v2 if is_v2 else None
-    volatility_state_v2_config = cfg.volatility_state_v2 if is_v2 else None
-    breadth_state_v2_config = cfg.breadth_state_v2 if is_v2 else None
-    volume_liquidity_v2_config = cfg.volume_liquidity_v2 if is_v2 else None
-    monetary_pressure_v2_config = cfg.monetary_pressure_v2 if is_v2 else None
-    credit_funding_config = cfg.credit_funding if is_v2 else None
-    inflation_growth_config = cfg.inflation_growth if is_v2 else None
-    central_bank_text_config = cfg.central_bank_text if is_v2 else None
-    news_sentiment_config = cfg.news_sentiment if is_v2 else None
     feature_store = build_feature_store(
         working_context,
-        network_fragility_config=network_fragility_config,
-        trend_direction_v2_config=trend_direction_v2_config,
-        volatility_state_v2_config=volatility_state_v2_config,
-        breadth_state_v2_config=breadth_state_v2_config,
-        volume_liquidity_v2_config=volume_liquidity_v2_config,
-        monetary_pressure_v2_config=monetary_pressure_v2_config,
-        credit_funding_config=credit_funding_config,
-        inflation_growth_config=inflation_growth_config,
-        central_bank_text_config=central_bank_text_config,
-        news_sentiment_config=news_sentiment_config,
+        **cfg.v2_feature_build_configs(),
     )
     axis_bundle = build_axis_series_bundle(
         context=working_context, feature_store=feature_store
