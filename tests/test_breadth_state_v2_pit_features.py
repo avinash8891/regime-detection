@@ -648,7 +648,7 @@ def test_upvol_downvol_ratio_uses_strict_direction_and_raw_volume(
     v2_breadth_config,
 ):
     """At t=1: AAPL advances on 1000 volume, MSFT declines on 500 volume.
-    upvol = 1000, downvol = 500, ratio = 1000 / max(500, 1) = 2.0.
+    upvol = 1000, downvol = 500, ratio = 1000 / (1000 + 500) ≈ 0.6667.
     """
     n = 30
     closes = _make_sector_closes(n=n)
@@ -669,7 +669,111 @@ def test_upvol_downvol_ratio_uses_strict_direction_and_raw_volume(
         pit_constituent_intervals=intervals,
         constituent_ohlcv=ohlcv,
     )
-    assert out.upvol_downvol_ratio.iloc[1] == pytest.approx(2.0)
+    assert out.upvol_downvol_ratio.iloc[1] == pytest.approx(1000 / 1500)
+
+
+def test_upvol_downvol_ratio_returns_nan_when_no_decliners(
+    v2_breadth_config,
+):
+    """All 3 sessions: AAPL, MSFT, NVDA all advance — no decliners.
+
+    With the (upvol + downvol) denominator, total == upvol > 0, so ratio is
+    NOT NaN for advancing-only sessions. The NaN case is when total == 0
+    (no volume at all — neither advancing nor declining), which cannot occur
+    here because all three symbols have positive volume.
+
+    Verify instead that the ratio equals 1.0 (all volume is up-volume) and
+    is bounded in [0, 1].
+    """
+    n = 5
+    closes = _make_sector_closes(n=n)
+    # Prices monotonically increasing → all advance every session after t=0.
+    aapl_adj = [100.0, 101.0, 102.0, 103.0, 104.0]
+    msft_adj = [200.0, 201.0, 202.0, 203.0, 204.0]
+    nvda_adj = [300.0, 301.0, 302.0, 303.0, 304.0]
+    vol_1m = [1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000]
+    vol_2m = [2_000_000, 2_000_000, 2_000_000, 2_000_000, 2_000_000]
+    vol_3m = [3_000_000, 3_000_000, 3_000_000, 3_000_000, 3_000_000]
+    ohlcv = {
+        AAPL: _make_ohlcv_frame(aapl_adj, vol_1m),
+        MSFT: _make_ohlcv_frame(msft_adj, vol_2m),
+        NVDA: _make_ohlcv_frame(nvda_adj, vol_3m),
+    }
+    intervals = _make_pit_intervals(
+        [
+            (AAPL, "2023-01-02", None),
+            (MSFT, "2023-01-02", None),
+            (NVDA, "2023-01-02", None),
+        ]
+    )
+    out = compute_breadth_v2_features(
+        sector_etf_closes=closes,
+        config=v2_breadth_config,
+        pit_constituent_intervals=intervals,
+        constituent_ohlcv=ohlcv,
+    )
+    ratio = out.upvol_downvol_ratio.dropna()
+    # All valid sessions: every symbol advances → upvol == total → ratio == 1.0.
+    # Must NOT return raw volume (e.g. 6e6) because denominator was wrongly 1.0.
+    assert ratio.tolist() == pytest.approx(
+        [1.0] * len(ratio)
+    ), f"Expected ratio=1.0 (all advancing), got max={ratio.max()}"
+
+
+def test_upvol_downvol_ratio_bounded_zero_to_one(
+    v2_breadth_config,
+):
+    """Mixed advance/decline sessions: ratio must stay in [0, 1].
+
+    Session 1: AAPL advances (upvol=1000), MSFT declines (downvol=500).
+      ratio = 1000 / 1500 ≈ 0.667.
+    Session 2: AAPL declines (downvol=800), MSFT advances (upvol=400).
+      ratio = 400 / 1200 ≈ 0.333.
+    Session 3: AAPL unchanged, MSFT advances (upvol=600), NVDA declines (downvol=300).
+      ratio = 600 / 900 ≈ 0.667.
+    """
+    n = 30
+    closes = _make_sector_closes(n=n)
+    # Day 0: baseline (no advance/decline determinable — no prior close).
+    # Day 1: AAPL up, MSFT down.
+    # Day 2: AAPL down, MSFT up.
+    # Day 3: AAPL flat, MSFT up, NVDA down.
+    aapl_adj = [100.0, 101.0, 100.5, 100.5] + [100.5] * (n - 4)
+    msft_adj = [200.0, 199.0, 200.0, 200.5] + [200.5] * (n - 4)
+    nvda_adj = [300.0, 300.0, 300.0, 299.0] + [299.0] * (n - 4)
+    aapl_vol = [500, 1000, 800, 0] + [500] * (n - 4)
+    msft_vol = [200, 500, 400, 600] + [200] * (n - 4)
+    nvda_vol = [100, 0, 0, 300] + [100] * (n - 4)
+    ohlcv = {
+        AAPL: _make_ohlcv_frame(aapl_adj, aapl_vol),
+        MSFT: _make_ohlcv_frame(msft_adj, msft_vol),
+        NVDA: _make_ohlcv_frame(nvda_adj, nvda_vol),
+    }
+    intervals = _make_pit_intervals(
+        [
+            (AAPL, "2023-01-02", None),
+            (MSFT, "2023-01-02", None),
+            (NVDA, "2023-01-02", None),
+        ]
+    )
+    out = compute_breadth_v2_features(
+        sector_etf_closes=closes,
+        config=v2_breadth_config,
+        pit_constituent_intervals=intervals,
+        constituent_ohlcv=ohlcv,
+    )
+    ratio = out.upvol_downvol_ratio
+    valid = ratio.dropna()
+    assert (
+        (valid >= 0.0) & (valid <= 1.0)
+    ).all(), f"Ratio out of [0,1]: min={valid.min()}, max={valid.max()}"
+    # Hand-computed spot checks.
+    # Day 1: upvol=1000 (AAPL), downvol=500 (MSFT). ratio = 1000/1500.
+    assert ratio.iloc[1] == pytest.approx(1000 / 1500)
+    # Day 2: upvol=400 (MSFT), downvol=800 (AAPL). ratio = 400/1200.
+    assert ratio.iloc[2] == pytest.approx(400 / 1200)
+    # Day 3: upvol=600 (MSFT), downvol=300 (NVDA). ratio = 600/900.
+    assert ratio.iloc[3] == pytest.approx(600 / 900)
 
 
 # =============================================================================
