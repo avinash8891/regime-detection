@@ -209,9 +209,9 @@ class TestRollingOlsSlopeConsolidation:
         assert np.array_equal(new_nan, old_nan), "NaN positions diverge"
         finite = ~new_nan
         max_diff = np.abs(new_arr[finite] - old_arr[finite]).max()
-        assert max_diff <= 1e-14, (
-            f"Centered-form bodies diverge beyond ULP noise: max_diff={max_diff}"
-        )
+        assert (
+            max_diff <= 1e-14
+        ), f"Centered-form bodies diverge beyond ULP noise: max_diff={max_diff}"
 
     @pytest.mark.parametrize("window", _PRODUCTION_WINDOWS)
     def test_shared_helper_within_tolerance_of_uncentered_form(
