@@ -63,9 +63,10 @@ def build_volume_liquidity_axis_series(
     return_1d_series = feature_store.volatility.return_1d
     volume_zscore_series = volume_features.volume_zscore_20d
 
-    # documented implementation decision: optional §1C volatility_state_v2 percentiles feed
-    # `liquidity_gap_behavior` when available. When absent, rules see NaN
-    # and fall through per V1 §2.7 cold-start semantics.
+    # documented implementation decision: optional §1C volatility_state_v2 inputs feed
+    # `liquidity_gap_behavior` when available. Percentile history is not a hard
+    # quality-gate input because the rule layer owns the raw gap/range cold-start
+    # fallback while those percentiles warm up.
     volatility_v2 = feature_store.volatility_state_v2
     gap_freq_pct_series: pd.Series | None = None
     gap_freq_series: pd.Series | None = None
@@ -81,8 +82,6 @@ def build_volume_liquidity_axis_series(
         volume_zscore_series,
         return_1d_series,
     ]
-    if gap_freq_pct_series is not None and intraday_pct_series is not None:
-        required_inputs.extend([gap_freq_pct_series, intraday_pct_series])
     required_trading_days = VOLUME_LIQUIDITY_REQUIRED_TRADING_DAYS
     max_freshness_days = context.config.data_quality.max_freshness_days
     min_completeness = context.config.data_quality.min_completeness
@@ -175,7 +174,7 @@ def build_volume_liquidity_axis_series(
     return build_per_label_axis_outputs(
         sessions=context.sessions,
         raw_labels=raw_labels,
-        risk_rank=VOLUME_LIQUIDITY_RISK_RANK,
+        risk_rank=cast(dict[str, int], VOLUME_LIQUIDITY_RISK_RANK),
         deescalation_days_by_label=volume_liquidity_config.deescalation_days_by_label,
         default_deescalation_days=volume_liquidity_config.default_deescalation_days,
         max_unknown_freeze_days=volume_liquidity_config.max_unknown_freeze_days,

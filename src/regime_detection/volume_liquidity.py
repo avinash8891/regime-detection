@@ -3,7 +3,7 @@
 Scope-restricted feature module: ships only the volume z-score feature. The
 ``gap_frequency_20d`` and ``intraday_range_percentile_252d`` features
 that §1E references already live in
-``regime_detection.volatility_state_v2`` and are consumed
+``regime_detection.volatility_state`` and are consumed
 from that seam by the §1E axis classifier — they are NOT
 recomputed here. The §1E feature-placement decision is documented here
 for the feature-store layout decision.
@@ -52,7 +52,7 @@ class VolumeLiquidityV2Features:
     NOTE: §1E also names ``gap_frequency_20d`` and
     ``intraday_range_percentile_252d`` in its feature list (lines
     396-397), but those are already computed in
-    ``regime_detection.volatility_state_v2.VolatilityV2Features``.
+    ``regime_detection.volatility_state.VolatilityV2Features``.
     The §1E axis classifier reads them from the
     ``FeatureStore.volatility_state_v2`` seam rather than recomputing
     them here.

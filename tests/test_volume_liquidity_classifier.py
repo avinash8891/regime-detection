@@ -247,11 +247,11 @@ def test_classifier_forces_unknown_when_volume_zscore_is_all_nan():
         assert out[day].active_label == "unknown"
 
 
-def test_classifier_forces_unknown_when_liquidity_gap_percentile_inputs_are_nan():
+def test_classifier_marks_rule_unknown_when_gap_percentiles_are_nan_without_raw_stress():
     """The live liquidity_gap_behavior predicate consumes both volatility-v2
-    percentile inputs, so an initialized volatility seam with missing
-    percentile values must fail the input-quality gate instead of silently
-    falling through to normal_volume.
+    percentile inputs, so missing percentile values and non-stressed raw
+    gap/range inputs must fall through to rule-level unknown without failing
+    the volume/return data-quality gate.
     """
     index = _bdate_index()
     market_data = _synthetic_spy_market_data(index=index)
@@ -289,12 +289,55 @@ def test_classifier_forces_unknown_when_liquidity_gap_percentile_inputs_are_nan(
     )
 
     out = build_volume_liquidity_axis_series(context, broken_store)
-    last_100 = list(context.sessions)[-100:]
-    for day in last_100:
-        assert out[day].raw_label == "unknown"
-        assert out[day].stable_label == "unknown"
-        assert out[day].active_label == "unknown"
-        assert out[day].data_quality.status == "stale_data"
+    last_day = context.sessions[-1]
+
+    assert out[last_day].raw_label == "unknown"
+    assert out[last_day].stable_label == "unknown"
+    assert out[last_day].active_label == "unknown"
+    assert out[last_day].data_quality.status == "ok"
+
+
+def test_classifier_allows_liquidity_gap_cold_start_fallback_before_percentiles_warm():
+    """Raw gap/range stress must reach the rule layer while 252d percentile
+    history is still unavailable."""
+    index = _bdate_index()
+    market_data = _synthetic_spy_market_data(index=index)
+    config = RegimeEngine().config
+    context = build_market_context(
+        end_date=_LAST_SESSION.date(),
+        market_data=market_data,
+        config=config,
+    )
+    store = build_feature_store(
+        context,
+        volume_liquidity_v2_config=context.config.volume_liquidity_v2,
+        volatility_state_v2_config=context.config.volatility_state_v2,
+    )
+    volatility_v2 = store.volatility_state_v2
+    assert volatility_v2 is not None
+    nan_series = pd.Series(
+        np.nan, index=volatility_v2.gap_frequency_percentile_252d.index
+    )
+    stressed_gap_series = pd.Series(0.50, index=volatility_v2.gap_frequency_20d.index)
+    stressed_range_series = pd.Series(0.05, index=volatility_v2.intraday_range.index)
+    cold_start_volatility_v2 = volatility_v2.__class__(
+        **{
+            **volatility_v2.__dict__,
+            "gap_frequency_20d": stressed_gap_series,
+            "gap_frequency_percentile_252d": nan_series,
+            "intraday_range": stressed_range_series,
+            "intraday_range_percentile_252d": nan_series,
+        }
+    )
+    cold_start_store = store.model_copy(
+        update={"volatility_state_v2": cold_start_volatility_v2}
+    )
+
+    out = build_volume_liquidity_axis_series(context, cold_start_store)
+    last_day = context.sessions[-1]
+
+    assert out[last_day].raw_label == "liquidity_gap_behavior"
+    assert out[last_day].evidence.rule_path == "cold_start_fallback"
 
 
 def test_classifier_applies_per_label_hysteresis_so_single_day_panic_flip_does_not_propagate():

@@ -177,12 +177,17 @@ class RegimeConfig(StrictBaseModel):
         if (
             self.config_version == "core3-v2.0.0"
             and self.volume_liquidity_state is not None
-            and self.volatility_state_v2 is None
         ):
-            raise ValueError(
-                "volume_liquidity_state requires volatility_state_v2 because "
-                "liquidity_gap_behavior consumes volatility-v2 gap/range percentiles"
-            )
+            if self.volume_liquidity_v2 is None:
+                raise ValueError(
+                    "volume_liquidity_state requires volume_liquidity_v2 because "
+                    "the volume/liquidity axis consumes volume z-score features"
+                )
+            if self.volatility_state_v2 is None:
+                raise ValueError(
+                    "volume_liquidity_state requires volatility_state_v2 because "
+                    "liquidity_gap_behavior consumes volatility-v2 gap/range percentiles"
+                )
         return self
 
     def v2_feature_build_configs(self) -> V2FeatureBuildConfigs:
