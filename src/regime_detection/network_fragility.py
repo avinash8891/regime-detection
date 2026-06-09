@@ -244,7 +244,7 @@ def rolling_stability_series(series: pd.Series, window: int) -> pd.Series:
             stabilities[nonzero] = (
                 valid_windows[nonzero].std(axis=1, ddof=0) / means[nonzero]
             )
-        out[window - 1 :][valid] = stabilities
+        out[window - 1 + np.flatnonzero(valid)] = stabilities
     return pd.Series(out, index=series.index)
 
 

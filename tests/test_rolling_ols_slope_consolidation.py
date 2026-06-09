@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection._rolling_stats import rolling_ols_slope
+from regime_detection._rolling_stats import rolling_ols_slope, rolling_stability
 
 pytestmark = pytest.mark.unit
 
@@ -265,3 +265,17 @@ class TestRollingOlsSlopeConsolidation:
             "Centered form is canonical; uncentered form must be deleted, "
             "but production behavior must agree on these series."
         )
+
+
+def test_rolling_stability_writes_valid_windows_to_output_positions() -> None:
+    series = pd.Series(
+        [1.0, 2.0, 3.0, float("nan"), 5.0, 6.0, 7.0],
+        index=_date_index(7),
+    )
+
+    out = rolling_stability(series, window=3)
+
+    expected = pd.Series([float("nan")] * len(series), index=series.index)
+    expected.iloc[2] = float(np.std([1.0, 2.0, 3.0], ddof=0) / 2.0)
+    expected.iloc[6] = float(np.std([5.0, 6.0, 7.0], ddof=0) / 6.0)
+    pd.testing.assert_series_equal(out, expected)

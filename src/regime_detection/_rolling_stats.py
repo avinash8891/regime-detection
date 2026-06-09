@@ -102,7 +102,7 @@ def rolling_ols_slope(series: pd.Series, *, window: int) -> pd.Series:
         vw = windows[valid]
         y_centered = vw - vw.mean(axis=1, keepdims=True)
         slopes = (y_centered @ x_centered) / x_var
-        out[window - 1 :][valid] = slopes
+        out[window - 1 + np.flatnonzero(valid)] = slopes
     return pd.Series(out, index=series.index)
 
 
@@ -128,7 +128,7 @@ def rolling_stability(series: pd.Series, *, window: int) -> pd.Series:
         nonzero = means != 0.0
         if nonzero.any():
             stabilities[nonzero] = vw[nonzero].std(axis=1, ddof=0) / means[nonzero]
-        out[window - 1 :][valid] = stabilities
+        out[window - 1 + np.flatnonzero(valid)] = stabilities
     return pd.Series(out, index=series.index)
 
 
