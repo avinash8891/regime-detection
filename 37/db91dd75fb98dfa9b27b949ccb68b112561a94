@@ -1,0 +1,27 @@
+pyproject.toml
+  s_e13bd0da99a610::t_1ca0d71cad5ec2 146
+scripts/run_walkforward_replay_check.py
+  s_e13bd0da99a610::t_a789a9b9fde897 18,57,80,143-147
+tests/test_walkforward_replay_check.py
+  s_e13bd0da99a610::t_a789a9b9fde897 30-32,70
+tests/test_credit_funding_axis_engine.py
+  s_e13bd0da99a610::t_a789a9b9fde897 660-661
+tests/test_trend_direction_v2_euphoria.py
+  s_e13bd0da99a610::t_a789a9b9fde897 258,538-557
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "37db91dd75fb98dfa9b27b949ccb68b112561a94",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

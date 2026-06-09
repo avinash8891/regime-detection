@@ -1,0 +1,42 @@
+docs/superpowers/plans/2026-05-31-trend-character-vectorized-coverage.md
+  s_08d0dc23197648::t_e9cdb97b916550 25-34
+  s_08d0dc23197648::t_cc2c0f8b0d0113 43,65,75,89,95,98,103,108,113,118,123,128,133,138,142,146,150-159,179,182,192,206,245,255,265
+  s_08d0dc23197648::t_287b5bb8ffc4f9 1-24,35-42,44-64,66-74,76-88,90-94,96-97,99-102,104-107,109-112,114-117,119-122,124-127,129-132,134-137,139-141,143-145,147-149,160-178,180-181,183-191,193-205,207-244,246-254,256-264,266-293
+tests/test_trend_character_v2_labels.py
+  s_08d0dc23197648::t_c88c763fdbe69c 524,527,532,537,542,547,552,557,562,567,571,575,608
+  s_4d3117c64ec706::t_2da9627612a5b7 523,525-526,528-531,533-536,538-541,543-546,548-551,553-556,558-561,563-566,568-570,572-574,576-607,609-650
+tests/test_trend_character.py
+  s_3eb11427433f2a::t_b97e7b436d3c36 218-229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "43a030fc7e79b871ce0e60b4bdfc674530ca79bd",
+  "prompts": {},
+  "sessions": {
+    "s_08d0dc23197648": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7cd2-6e8f-7a31-aba0-ec398f0cabe2",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_3eb11427433f2a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7cda-a4f4-7b30-b5df-776d8f323f37",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_4d3117c64ec706": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7cdc-ea72-7b81-8f32-ac6347c614c7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

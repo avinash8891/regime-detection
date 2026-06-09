@@ -1,0 +1,21 @@
+src/regime_detection/hysteresis.py
+  s_57f9992e063d4e::t_0b8315ea253395 132-138,142
+tests/test_per_label_hysteresis.py
+  s_57f9992e063d4e::t_afd8b29581784c 231-232,237,247-248,255-256,271-272,275-281
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1923252dd3b0418ccfc0ed8e782a2cff6d1b6bb2",
+  "prompts": {},
+  "sessions": {
+    "s_57f9992e063d4e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7bf3-5fe0-7b43-933e-c145c5a78377",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

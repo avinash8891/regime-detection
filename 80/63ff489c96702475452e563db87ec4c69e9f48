@@ -1,0 +1,30 @@
+scripts/build_walkforward_report.py
+  s_e13bd0da99a610::t_03c1e541d7437d 17
+  s_e13bd0da99a610::t_69eed6dc383530 45-50
+src/regime_detection/shadow_strategy_metrics.py
+  s_e13bd0da99a610::t_04b1e1f7319594 33-37
+  s_e13bd0da99a610::t_b8693adc09d482 154,184
+  s_e13bd0da99a610::t_dd973dc5966522 1-32,38-153,155-183,185-227
+scripts/build_shadow_metrics_report.py
+  s_e13bd0da99a610::t_2dd41abc184e8b 1-52
+tests/test_shadow_strategy_metrics.py
+  s_e13bd0da99a610::t_fa928a597fafaf 1-161
+docs/decisions/0025-shadow-strategy-success-metrics.md
+  s_e13bd0da99a610::t_61495b4f284e60 1-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8063ff489c96702475452e563db87ec4c69e9f48",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

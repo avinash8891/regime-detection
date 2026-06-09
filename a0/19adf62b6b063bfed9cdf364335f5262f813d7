@@ -1,0 +1,25 @@
+tests/test_trend_character.py
+  s_e13bd0da99a610::t_17ca78bc19c805 246-278
+tests/test_transition_and_strategy.py
+  s_e13bd0da99a610::t_cba868b5c2e99c 206-240
+src/regime_detection/trend_character.py
+  s_e13bd0da99a610::t_6fdbe26fe98ba6 190-195
+tests/test_shadow_replay_check.py
+  s_e13bd0da99a610::t_f2917a41bffa3f 164-229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a019adf62b6b063bfed9cdf364335f5262f813d7",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

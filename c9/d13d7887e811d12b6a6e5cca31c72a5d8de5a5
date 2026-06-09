@@ -1,0 +1,19 @@
+docs/verification/v2_data_acquisition_backlog.md
+  s_5a3786e1f57ed0::t_c4433d215ab9ae 23-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c9d13d7887e811d12b6a6e5cca31c72a5d8de5a5",
+  "prompts": {},
+  "sessions": {
+    "s_5a3786e1f57ed0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d0421e9a-9ee4-4278-9e2a-9b317a3418c0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

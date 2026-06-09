@@ -1,0 +1,21 @@
+tests/test_transition_and_strategy.py
+  s_e13bd0da99a610::t_4bd13bbe5d6641 127-129,131-133,135
+docs/regime_engine_v1_final_spec.md
+  s_e13bd0da99a610::t_2cfd3081f86e6e 1138,1142-1147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4af18b6431a5ab95519eaa0fb829219ba299227d",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

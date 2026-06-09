@@ -1,0 +1,27 @@
+tests/test_fixture_verification.py
+  s_e13bd0da99a610::t_42896db8036561 76-89,91-104
+tests/fixtures/derived/golden_dates.yaml
+  s_e13bd0da99a610::t_9e054ef8482b8e 27-29,32-47
+  s_e13bd0da99a610::t_11767e5872e9fc 189-197,199
+  s_e13bd0da99a610::t_41ca98591f152d 216-224,228
+docs/regime_engine_v2_spec.md
+  s_e13bd0da99a610::t_1eebe3f4baa47e 4676-4681,4686-4705
+docs/decisions/0022-correlation-to-one-percentile-cannot-detect-single-day-shock.md
+  s_e13bd0da99a610::t_55f6ba7d2c616c 1-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6bb7f6f761f502aefc88a0e9b354d37e817b5224",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

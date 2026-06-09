@@ -1,0 +1,31 @@
+tests/test_shadow_deadman_check.py
+  s_57f9992e063d4e::t_534ec20b3bb71d 10-11,141-160,162-166
+  s_57f9992e063d4e::t_f3707573e99ed8 6,161
+docs/superpowers/plans/2026-05-31-resolve-spec-compliance-findings.md
+  s_57f9992e063d4e::t_70c3814ef806b2 68-72
+  s_57f9992e063d4e::t_d26a1b7285e094 73
+src/regime_detection/shadow_qualification.py
+  s_57f9992e063d4e::t_bf6bc071b0a045 73-82
+  s_57f9992e063d4e::t_01e960527a1aec 54,58,115-118
+  s_57f9992e063d4e::t_0df3ca78b0b05c 1-53,55-57,59-72,83-114,119-129
+scripts/run_shadow_deadman_check.py
+  s_57f9992e063d4e::t_d7c265d7e28ac4 9,23,43,50-55,61,77
+tests/test_shadow_qualification.py
+  s_57f9992e063d4e::t_3496d229d3bff7 1-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f7642543c061c25d3aca22b1985899d57f41427f",
+  "prompts": {},
+  "sessions": {
+    "s_57f9992e063d4e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7bf3-5fe0-7b43-933e-c145c5a78377",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

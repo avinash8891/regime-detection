@@ -1,0 +1,25 @@
+tests/test_transition_risk.py
+  s_e13bd0da99a610::t_a5bcef0e5a2ea5 473-478
+  s_e13bd0da99a610::t_a08fd277ef6478 422
+  s_e13bd0da99a610::t_30061cfa94ee44 397-400,416-418
+tests/test_transition_score_v2.py
+  s_e13bd0da99a610::t_fb5213b8856b20 247,251-256,259-261
+src/regime_detection/transition_score.py
+  s_e13bd0da99a610::t_cbbae25fc03ca8 275-289
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b4e3cb22da77d551ad7fc2f6533cfa7f26efc8b7",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

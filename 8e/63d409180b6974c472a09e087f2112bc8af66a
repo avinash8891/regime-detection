@@ -1,0 +1,21 @@
+src/regime_detection/cohort_routing.py
+  s_e13bd0da99a610::t_711a8df50eb6fd 26-32,35
+tests/test_cohort_routing.py
+  s_e13bd0da99a610::t_4270891169b9ed 93-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8e63d409180b6974c472a09e087f2112bc8af66a",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

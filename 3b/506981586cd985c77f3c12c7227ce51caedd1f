@@ -1,0 +1,21 @@
+tests/test_shadow_storage.py
+  s_e13bd0da99a610::t_01c222c4696aa4 257-278
+src/regime_detection/shadow_storage.py
+  s_e13bd0da99a610::t_418cf4ec7c889e 216-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3b506981586cd985c77f3c12c7227ce51caedd1f",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

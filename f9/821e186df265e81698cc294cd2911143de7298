@@ -1,0 +1,51 @@
+src/regime_detection/network_fragility_rules.py
+  s_57f9992e063d4e::t_1930d67514fb64 71-74,77,733
+src/regime_detection/axis_builders/per_label.py
+  s_57f9992e063d4e::t_0a06c828cf2ae9 33-34,44-46,48
+tests/test_per_label_hysteresis.py
+  s_57f9992e063d4e::t_23278aae2c0a8e 39-98,237-246,256-262
+src/regime_detection/axis_series.py
+  s_57f9992e063d4e::t_184a2d5c32a4c8 569-570
+  s_57f9992e063d4e::t_21dcd097842628 591,593
+src/regime_detection/axis_builders/trend_character.py
+  s_57f9992e063d4e::t_21dcd097842628 49-50
+src/regime_detection/_config_layer1.py
+  s_57f9992e063d4e::t_21dcd097842628 12-13
+tests/test_network_fragility_classifier.py
+  s_57f9992e063d4e::t_6050fff065861f 51,336-343,841-842
+src/regime_detection/axis_builders/breadth.py
+  s_57f9992e063d4e::t_21dcd097842628 193-194
+tests/test_v2_config.py
+  s_57f9992e063d4e::t_465aa80b4127f7 16,26,131-144
+  s_57f9992e063d4e::t_bded9e31312cd6 150-154
+src/regime_detection/axis_builders/trend_direction.py
+  s_57f9992e063d4e::t_21dcd097842628 50-51
+src/regime_detection/axis_builders/volatility.py
+  s_57f9992e063d4e::t_21dcd097842628 49-50
+src/regime_detection/hysteresis.py
+  s_57f9992e063d4e::t_3766417333a104 17-18,23-25,30-32,35-37,59-73,108-109,127,138-139,200-214
+  s_57f9992e063d4e::t_9695093621be81 128-132
+docs/superpowers/plans/2026-05-31-resolve-spec-compliance-findings.md
+  s_57f9992e063d4e::t_a4e68880ce17d4 112-115
+  s_57f9992e063d4e::t_ab544290727a3a 116
+docs/regime_engine_v2_spec.md
+  s_57f9992e063d4e::t_2ba056acb98723 70,81-82,774-777,3501,3508,3592-3594,3596-3599,3611,3626
+  s_57f9992e063d4e::t_1a47c16c0b5be5 3595
+  s_57f9992e063d4e::t_91d0d4271a4ecc 3618
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f9821e186df265e81698cc294cd2911143de7298",
+  "prompts": {},
+  "sessions": {
+    "s_57f9992e063d4e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7bf3-5fe0-7b43-933e-c145c5a78377",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

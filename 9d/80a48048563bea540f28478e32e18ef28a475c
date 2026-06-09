@@ -1,0 +1,26 @@
+docs/verification/v2_data_acquisition_backlog.md
+  s_5a3786e1f57ed0::t_8d580a92a6508e 3-33
+tests/fixtures/raw/v2/PROVENANCE.md
+  s_5a3786e1f57ed0::t_b886d190a0b69d 9
+tests/test_fixture_verification.py
+  s_5a3786e1f57ed0::t_4a205a27551721 35,39
+  s_5a3786e1f57ed0::t_c11c32bfab16a8 36-38
+tests/conftest.py
+  s_5a3786e1f57ed0::t_c11c32bfab16a8 517-522
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9d80a48048563bea540f28478e32e18ef28a475c",
+  "prompts": {},
+  "sessions": {
+    "s_5a3786e1f57ed0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d0421e9a-9ee4-4278-9e2a-9b317a3418c0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+tests/test_inflation_growth_axis_engine.py
+  s_e13bd0da99a610::t_19e2c11535f6e4 305-331
+src/regime_detection/inflation_growth.py
+  s_e13bd0da99a610::t_559648839f53d4 358-366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e991aceb3a9dbf5339fba60018a7cec0f604c621",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
