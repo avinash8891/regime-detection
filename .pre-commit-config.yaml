@@ -3,11 +3,30 @@ default_stages: [pre-commit]
 repos:
   - repo: local
     hooks:
+      - id: gitleaks
+        name: gitleaks
+        entry: gitleaks git --pre-commit --staged --redact --no-banner
+        language: system
+        pass_filenames: false
+
+      - id: ruff
+        name: ruff
+        entry: python3 -m ruff check
+        language: system
+        types: [python]
+
       - id: black
         name: black
         entry: python3 -m black
         language: system
         types: [python]
+
+      - id: pyright
+        name: pyright
+        entry: python3 -m pyright
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
 
       - id: deptry
         name: deptry

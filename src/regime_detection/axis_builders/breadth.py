@@ -146,8 +146,8 @@ def build_breadth_axis_series(
         and v2_features.ad_line_slope_20d is not None
     )
     if v2_active:
-        assert v2_features is not None  # narrowing for type-checker
-        assert v2_config is not None
+        if v2_features is None or v2_config is None:
+            raise RuntimeError("breadth v2 active without v2 features/config")
         raw_labels, raw_evidence = resolve_breadth_v2_raw_outputs(
             dates=spy_close.index,
             raw_labels=raw_labels,

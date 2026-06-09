@@ -100,3 +100,17 @@ def test_fetch_bytes_does_not_retry_non_transient_http_errors() -> None:
         )
 
     assert attempts == 1
+
+
+def test_fetch_bytes_rejects_non_http_urls_before_opening() -> None:
+    called = False
+
+    def fake_urlopen(_request: Request, *, timeout: float) -> _Response:
+        nonlocal called
+        called = True
+        return _Response(b"local file contents")
+
+    with pytest.raises(ValueError, match="Unsupported URL scheme"):
+        _http.fetch_bytes("file:///tmp/secret.txt", urlopen=fake_urlopen)
+
+    assert called is False

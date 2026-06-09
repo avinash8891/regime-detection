@@ -99,11 +99,3 @@ class SecondaryValidator(Protocol):
         store: AcquisitionStore | None,
         run_id: int | None,
     ) -> list[ValidationResult]: ...
-
-
-class AmbiguityResolver(Protocol):
-    def resolve(
-        self,
-        candidate_key: tuple[str, dt.date],
-        conflicting: list[EventCandidate],
-    ) -> EventCandidate | None: ...

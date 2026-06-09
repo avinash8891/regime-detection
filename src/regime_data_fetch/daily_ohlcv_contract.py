@@ -28,6 +28,8 @@ if TYPE_CHECKING:  # pragma: no cover - imports only used for typing
     import pandas as pd
     import pyarrow as pa
 
+    PyArrowTable = pa.Table
+
 
 DAILY_OHLCV_ARTIFACT_PREFIX: str = f"{FIXED_UNIVERSE_TREE_NAME}_"
 
@@ -72,7 +74,7 @@ def require_symbol_partition_frame(
 
 
 def require_symbol_partition_table(
-    table: "pa.Table",
+    table: "PyArrowTable",
     *,
     expected_symbol: str,
     source: Path | str,

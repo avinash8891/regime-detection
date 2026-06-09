@@ -32,7 +32,6 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from numpy.lib.stride_tricks import sliding_window_view
 
 from regime_detection.fragility_universe import (
     CROSS_ASSET_SYMBOLS,
@@ -84,10 +83,11 @@ def _assemble_returns_matrix(
         elif symbol in SECTOR_ETFS:
             series = sector_etf_closes.get(symbol)
         else:
-            assert symbol in CROSS_ASSET_SYMBOLS, (
-                f"Unreachable: symbol {symbol!r} is outside the closed "
-                f"network fragility universe (INDEX_SYMBOL | SECTOR_ETFS | CROSS_ASSET_SYMBOLS)."
-            )
+            if symbol not in CROSS_ASSET_SYMBOLS:
+                raise ValueError(
+                    f"Network fragility universe symbol {symbol!r} is outside "
+                    "INDEX_SYMBOL, SECTOR_ETFS, and CROSS_ASSET_SYMBOLS."
+                )
             series = cross_asset_closes.get(symbol)
 
         if series is None:

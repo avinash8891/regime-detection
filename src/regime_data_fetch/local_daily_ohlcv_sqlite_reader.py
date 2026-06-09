@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import datetime as dt
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Iterable
-from contextlib import closing
 
 import numpy as np
 import pandas as pd
 
 from regime_data_fetch.local_daily_ohlcv_sqlite import EXPECTED_COLUMNS
+from regime_data_fetch.sqlite_identifiers import quote_sqlite_identifier
 from regime_shared.pandas_compat import cow_safe_assign
 
 DAILY_OHLCV_ROWS_TABLE = "daily_ohlcv_rows"
+_SQLITE_IDENTIFIER_ALLOWLIST = frozenset({DAILY_OHLCV_ROWS_TABLE})
 _REQUIRED_COLUMNS = frozenset(["symbol", "source_file", *EXPECTED_COLUMNS])
 _VALUE_COLUMNS = [c for c in EXPECTED_COLUMNS if c != "date"]
 
@@ -43,12 +45,15 @@ def read_constituent_ohlcv(
     with closing(sqlite3.connect(db_path)) as conn:
         _validate_schema(conn)
 
+        table_identifier = _quote_table_identifier(DAILY_OHLCV_ROWS_TABLE)
         placeholders = ",".join("?" for _ in ticker_list)
         query = (
-            f"SELECT symbol, date, open, high, low, close, volume, adjusted_close "
-            f"FROM {DAILY_OHLCV_ROWS_TABLE} "
-            f"WHERE symbol IN ({placeholders}) AND date BETWEEN ? AND ? "
-            f"ORDER BY symbol, date"
+            "SELECT symbol, date, open, high, low, close, volume, adjusted_close "
+            "FROM "
+            + table_identifier
+            + " WHERE symbol IN ("
+            + placeholders
+            + ") AND date BETWEEN ? AND ? ORDER BY symbol, date"
         )
         params = [*ticker_list, start_date.isoformat(), end_date.isoformat()]
         rows = pd.read_sql_query(query, conn, params=params)
@@ -78,7 +83,8 @@ def read_constituent_ohlcv(
 
 
 def _validate_schema(conn: sqlite3.Connection) -> None:
-    cursor = conn.execute(f"PRAGMA table_info({DAILY_OHLCV_ROWS_TABLE})")
+    table_identifier = _quote_table_identifier(DAILY_OHLCV_ROWS_TABLE)
+    cursor = conn.execute(f"PRAGMA table_info({table_identifier})")
     info = cursor.fetchall()
     if not info:
         raise LocalDailyOHLCVReadError(
@@ -90,3 +96,9 @@ def _validate_schema(conn: sqlite3.Connection) -> None:
         raise LocalDailyOHLCVReadError(
             f"Table '{DAILY_OHLCV_ROWS_TABLE}' missing required columns: {sorted(missing)!r}"
         )
+
+
+def _quote_table_identifier(table_name: str) -> str:
+    return quote_sqlite_identifier(
+        table_name, allowed_identifiers=_SQLITE_IDENTIFIER_ALLOWLIST
+    )

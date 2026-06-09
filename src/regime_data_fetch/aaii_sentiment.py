@@ -39,6 +39,7 @@ class _TableParser(HTMLParser):
         self.rows: list[list[str]] = []
 
     def handle_starttag(self, tag: str, attrs: list) -> None:
+        del attrs  # HTMLParser override signature includes attrs.
         if tag == "table":
             self._in_table = True
         elif tag == "tr" and self._in_table:

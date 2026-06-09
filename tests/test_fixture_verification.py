@@ -223,6 +223,31 @@ def test_fixture_verification_legacy_path_fails_loudly_without_v2_transition_inp
     assert "ClassifyRequest missing configured V2 inputs" in message
 
 
+def test_fixture_verification_logs_git_sha_lookup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    import importlib.util
+    import subprocess
+
+    script_path = repo_root / "scripts" / "verify_fixtures.py"
+    spec = importlib.util.spec_from_file_location("verify_fixtures", script_path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+
+    def fail_git(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(128, ["git", "rev-parse", "HEAD"])
+
+    monkeypatch.setattr(mod.subprocess, "check_output", fail_git)
+    caplog.set_level("WARNING", logger="verify_fixtures")
+
+    assert mod._git_head_sha() == "unknown"
+    assert "git rev-parse HEAD failed" in caplog.text
+
+
 def test_classified_golden_outputs_cover_every_row_without_silent_skips(
     golden_rows: list[dict[str, object]],
     classified_golden_outputs: dict[date, object],

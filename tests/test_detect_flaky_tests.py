@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _load_module(name: str, rel_path: str):
     repo_root = Path(__file__).resolve().parents[1]
@@ -72,6 +74,25 @@ def test_collect_test_history_flags_inconsistent_results(tmp_path: Path) -> None
     ]
     assert report["stable_failures"] == []
     assert report["stable_tests"] == 1
+
+
+def test_collect_test_history_rejects_xml_entities(tmp_path: Path) -> None:
+    detector = _load_module("detect_flaky_tests", "scripts/detect_flaky_tests.py")
+    report = tmp_path / "hostile.xml"
+    report.write_text(
+        """<?xml version="1.0"?>
+<!DOCTYPE testsuite [
+  <!ENTITY injected "expanded-entity">
+]>
+<testsuite>
+  <testcase classname="tests.test_sample" name="&injected;" />
+</testsuite>
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception, match="EntitiesForbidden|forbidden"):
+        detector.collect_test_history([report])
 
 
 def test_cli_writes_report_and_fails_when_flakes_detected(tmp_path: Path) -> None:

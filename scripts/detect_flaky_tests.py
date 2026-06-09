@@ -5,11 +5,13 @@ import argparse
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
-from xml.etree import ElementTree
+from typing import Any, cast
+from xml.etree.ElementTree import Element
+
+from defusedxml import ElementTree
 
 
-def _nodeid_for(testcase: ElementTree.Element) -> str:
+def _nodeid_for(testcase: Element) -> str:
     classname = testcase.attrib.get("classname", "").strip()
     name = testcase.attrib.get("name", "").strip()
     if classname:
@@ -17,7 +19,7 @@ def _nodeid_for(testcase: ElementTree.Element) -> str:
     return name
 
 
-def _status_for(testcase: ElementTree.Element) -> str:
+def _status_for(testcase: Element) -> str:
     if testcase.find("failure") is not None:
         return "failed"
     if testcase.find("error") is not None:
@@ -30,7 +32,7 @@ def _status_for(testcase: ElementTree.Element) -> str:
 def collect_test_history(report_paths: list[Path]) -> dict[str, list[str]]:
     history: dict[str, list[str]] = defaultdict(list)
     for report_path in report_paths:
-        root = ElementTree.parse(report_path).getroot()
+        root = cast(Element, ElementTree.parse(report_path).getroot())
         for testcase in root.iter("testcase"):
             history[_nodeid_for(testcase)].append(_status_for(testcase))
     return dict(history)
