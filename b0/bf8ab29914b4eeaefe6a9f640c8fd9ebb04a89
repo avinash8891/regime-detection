@@ -1,0 +1,63 @@
+tests/test_feature_store_specs.py
+  s_913a092fe5e591::t_4f1de5854eb037 53-54
+  s_913a092fe5e591::t_500ca0c533b8fb 107-109
+src/regime_detection/feature_store.py
+  s_913a092fe5e591::t_f78d32d79a3f0b 6-8,21-23,25-27,32-33,38-44
+tests/test_feature_store_refactors.py
+  s_0d43344a48cf5a::t_8116d227ea2d2f 29,148,234,237,240,243
+src/regime_detection/_feature_specs.py
+  s_0d43344a48cf5a::t_79bd26a4db0c40 31-35,90,94,773-789,792-812,815-823
+  s_913a092fe5e591::t_5a9727ac14accc 1000
+  s_913a092fe5e591::t_ab45f013610274 1-30,36-89,91-93,95-312,314-378,380-542,546-568,570-583,585-599,606-608,613-631,642-644,648,651-670,675-676,681,688,691-710,715,720,726,729-765,824-847,849-862,866-873,880-888,890-904,906-912,914-920,922-928,930-937,939-970,972-978,980-999,1001-1007,1009-1016,1018-1025,1027-1038,1040-1046,1048-1058,1060-1066,1068-1070
+  s_913a092fe5e591::t_3186c0245806b5 584
+  s_913a092fe5e591::t_ac0ab7f7917860 938
+  s_913a092fe5e591::t_876953b1f52214 905
+  s_913a092fe5e591::t_b53299a200b3fb 971
+  s_913a092fe5e591::t_8a193475bba723 889
+  s_75270fdd5c79b3::t_0bd5339993936c 543-545,569,600-605,609-612,632-641,645-647,649-650,671-674,677-680,682-687,689-690,711-714,716-719,721-725,727-728,848,863-865,874-879
+  s_913a092fe5e591::t_50f86d8dbc8709 921
+  s_913a092fe5e591::t_3899cba4f9cc01 379
+  s_913a092fe5e591::t_dd1da205e2da50 313
+  s_913a092fe5e591::t_e7619ab6002311 1017
+  s_0d43344a48cf5a::t_2f778f2cfd63c2 767-772,790-791,813-814,1008,1026,1039,1067
+  s_913a092fe5e591::t_99766ce88eae98 1047
+  s_913a092fe5e591::t_1b6efaeffd3d20 1059
+  s_913a092fe5e591::t_f2cba47cec0350 913
+  s_913a092fe5e591::t_614140537ad778 979
+  s_913a092fe5e591::t_a554fc88757639 929
+  s_913a092fe5e591::t_3ce7a9bf163813 766
+tests/test_trend_direction_v2_euphoria.py
+  s_0d43344a48cf5a::t_8116d227ea2d2f 181,208,235,272,595,639
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "b0bf8ab29914b4eeaefe6a9f640c8fd9ebb04a89",
+  "prompts": {},
+  "sessions": {
+    "s_0d43344a48cf5a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eab5a-b02b-7922-9420-46c911681074",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_75270fdd5c79b3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eab95-e573-79b2-98db-efe10a11c602",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_913a092fe5e591": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e6982f76-8c70-403b-987c-597826766580",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
