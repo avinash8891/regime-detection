@@ -68,28 +68,35 @@ def test_resolve_returns_kwargs_then_build_runs_and_store_writes() -> None:
     }
 
 
-def test_unavailable_with_missing_inputs_emits_missing_required_inputs_reason() -> None:
+def test_unavailable_with_missing_inputs_raises_missing_required_inputs_reason() -> (
+    None
+):
     state = _ToyState()
     specs = (_make_spec("beta", required=("x", "y"), missing=("y",)),)
 
-    report = _run_feature_specs(specs, state)
-
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"feature spec 'beta' unavailable: missing_required_inputs; "
+            r"missing_inputs=\('y',\)"
+        ),
+    ):
+        _run_feature_specs(specs, state)
     assert state.outputs == {}
-    assert report["beta"].available is False
-    assert report["beta"].reason == "missing_required_inputs"
-    assert report["beta"].missing_inputs == ("y",)
-    assert report["beta"].required_inputs == ("x", "y")
 
 
-def test_unavailable_with_empty_missing_emits_not_configured_reason() -> None:
+def test_unavailable_with_empty_missing_raises_not_configured_reason() -> None:
     state = _ToyState()
     specs = (_make_spec("gamma", required=("config",), missing=()),)
 
-    report = _run_feature_specs(specs, state)
-
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"feature spec 'gamma' unavailable: not_configured; " r"missing_inputs=\(\)"
+        ),
+    ):
+        _run_feature_specs(specs, state)
     assert state.outputs == {}
-    assert report["gamma"].reason == "not_configured"
-    assert report["gamma"].missing_inputs == ()
 
 
 def test_build_exception_propagates() -> None:
@@ -137,10 +144,8 @@ def test_spec_with_report_false_runs_but_omits_availability_entry() -> None:
     assert "internal" not in report
 
 
-def test_spec_with_report_false_skips_emission_even_when_unavailable() -> None:
-    """A spec with report=False that resolves to _Unavailable does NOT emit an
-    entry — internal specs are silent about absence too, matching legacy
-    behavior where intermediate state fields had no availability entry."""
+def test_spec_with_report_false_still_raises_when_unavailable() -> None:
+    """Internal specs cannot hide missing required inputs under fail-loud mode."""
     state = _ToyState()
     specs = (
         FeatureSpec(
@@ -154,16 +159,19 @@ def test_spec_with_report_false_skips_emission_even_when_unavailable() -> None:
         ),
     )
 
-    report = _run_feature_specs(specs, state)
-
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"feature spec 'internal_missing' unavailable: "
+            r"missing_required_inputs; missing_inputs=\('x',\)"
+        ),
+    ):
+        _run_feature_specs(specs, state)
     assert state.outputs == {}  # build did not run
-    assert report == {}  # no availability emission
 
 
-def test_spec_with_build_returning_none_emits_available_false() -> None:
-    """When resolve succeeds but build returns None, orchestrator emits
-    available=False, reason="not_configured" (matching legacy _availability
-    helper's value-is-None semantics)."""
+def test_spec_with_build_returning_none_raises() -> None:
+    """When inputs resolve but build returns None, the orchestrator fails loud."""
     state = _ToyState(inputs={"x": 5})
     none_returning_build_spec: FeatureSpec[int | None, _ToyState] = FeatureSpec(
         name="sometimes_none",
@@ -178,17 +186,20 @@ def test_spec_with_build_returning_none_emits_available_false() -> None:
             s.outputs.__setitem__("sometimes_none", v) if v is not None else None
         ),
     )
-    report = _run_feature_specs((none_returning_build_spec,), state)
 
-    assert report["sometimes_none"].available is False
-    assert report["sometimes_none"].reason == "not_configured"
-    assert report["sometimes_none"].missing_inputs == ()
-    assert report["sometimes_none"].required_inputs == ("x",)
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"feature spec 'sometimes_none' returned None after inputs resolved; "
+            r"insufficient history or failed model fit must fail loudly"
+        ),
+    ):
+        _run_feature_specs((none_returning_build_spec,), state)
+    assert state.outputs == {}
 
 
-def test_spec_with_build_returning_none_and_report_false_emits_nothing() -> None:
-    """Internal spec (report=False) with None-returning build emits no
-    availability entry, just like other report=False paths."""
+def test_spec_with_build_returning_none_and_report_false_raises() -> None:
+    """report=False affects observability, not fail-loud validation."""
     state = _ToyState(inputs={"x": 5})
     internal_none_spec: FeatureSpec[int | None, _ToyState] = FeatureSpec(
         name="internal_none",
@@ -199,7 +210,13 @@ def test_spec_with_build_returning_none_and_report_false_emits_nothing() -> None
         store=lambda s, v: None,
         report=False,
     )
-    report = _run_feature_specs((internal_none_spec,), state)
 
-    assert "internal_none" not in report
-    assert report == {}
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"feature spec 'internal_none' returned None after inputs resolved; "
+            r"insufficient history or failed model fit must fail loudly"
+        ),
+    ):
+        _run_feature_specs((internal_none_spec,), state)
+    assert state.outputs == {}

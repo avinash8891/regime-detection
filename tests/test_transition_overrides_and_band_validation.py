@@ -218,6 +218,9 @@ def test_fragile_bull_override_threshold_is_config_driven() -> None:
             history=history,
             transition_score_inputs_by_date=inputs_by_date,
             transition_score_config=config,
+            state_confirmation_days={
+                state: 1 for state in config.state_confirmation_days
+            },
         )
         return outputs[day].state
 
@@ -306,6 +309,8 @@ def test_compose_score_is_byte_identical_under_default_scales() -> None:
         spy_close=400.0,
         spy_sma_50=420.0,
         absorption_ratio_top3=0.90,
+        credit_funding_label="credit_calm",
+        volume_liquidity_label="normal_volume",
         volume_zscore_20d=2.0,
         hmm_top_state_prob_now=0.50,
         hmm_top_state_prob_5d_ago=0.50,

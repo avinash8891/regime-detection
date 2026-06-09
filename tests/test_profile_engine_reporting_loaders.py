@@ -410,11 +410,9 @@ def test_profile_engine_loads_aaii_sentiment_when_present(tmp_path: Path) -> Non
     pd.testing.assert_frame_equal(actual, expected)
 
 
-def test_profile_engine_skips_aaii_sentiment_when_absent(tmp_path: Path) -> None:
-    assert (
+def test_profile_engine_raises_when_aaii_sentiment_absent(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="aaii_sentiment file not found"):
         profile_engine._load_optional_aaii_sentiment(tmp_path / "missing.parquet")
-        is None
-    )
 
 
 def test_profile_engine_loads_event_calendar_when_present(tmp_path: Path) -> None:

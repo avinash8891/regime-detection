@@ -63,15 +63,20 @@ def test_deadman_check_passes_when_previous_session_has_run(
         check_date=date(2023, 12, 15),
     )
 
-    assert result["status"] == "ok"
+    assert result["status"] == "missing_session_gap"
     assert result["expected_as_of_date"] == "2023-12-14"
-    assert result["alert"] is None
+    assert "missing_session_gap" in result["alert"]
 
     with closing(sqlite3.connect(out_root / "regime_shadow.db")) as conn:
         incidents = conn.execute(
             "SELECT incident_date, description FROM incidents"
         ).fetchall()
-    assert incidents == []
+    assert incidents == [
+        (
+            "2023-12-15",
+            "Shadow qualification window broken by missing_session_gap for previous NYSE session 2023-12-14",
+        )
+    ]
 
 
 def test_deadman_check_fails_when_previous_session_run_is_not_success(
@@ -221,7 +226,7 @@ def test_deadman_check_uses_previous_friday_for_weekend_check(
         check_date=date(2023, 12, 17),
     )
 
-    assert result["status"] == "ok"
+    assert result["status"] == "missing_session_gap"
     assert result["expected_as_of_date"] == "2023-12-15"
 
 

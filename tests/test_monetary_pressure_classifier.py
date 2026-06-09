@@ -76,6 +76,18 @@ def _default_classifier_config() -> MonetaryPressureV2Config:
     return load_default_regime_config().monetary_pressure_state
 
 
+def _isolated_monetary_test_config():
+    cfg = RegimeEngine().config
+    return cfg.model_copy(
+        update={
+            "config_version": "core3-v1.0.0",
+            "hmm": None,
+            "clustering": None,
+            "change_point": None,
+        }
+    )
+
+
 def _yield_series(*, index: pd.DatetimeIndex, base: float, seed: int) -> pd.Series:
     rng = np.random.default_rng(seed=seed)
     innovations = rng.normal(loc=0.0, scale=0.03, size=len(index))
@@ -346,7 +358,7 @@ def _build_context_with_macro(
         drift = np.linspace(0, usd_drift, len(index))
         usd = usd + drift
     macro = {"2y_yield": dgs2, "10y_yield": dgs10, "broad_usd_index": usd}
-    config = RegimeEngine().config
+    config = _isolated_monetary_test_config()
     context = build_market_context(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
@@ -360,7 +372,16 @@ def test_classifier_returns_none_when_feature_store_monetary_seam_is_none():
     """No monetary_pressure_v2 config / no macro series → seam None → classifier returns None."""
     index = _bdate_index()
     market_data = _synthetic_market_data(index)
-    config = RegimeEngine().config
+    config = load_default_regime_config().model_copy(
+        update={
+            "config_version": "core3-v1.0.0",
+            "monetary_pressure_v2": None,
+            "monetary_pressure_state": None,
+            "hmm": None,
+            "clustering": None,
+            "change_point": None,
+        }
+    )
     context = build_market_context(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
@@ -383,7 +404,7 @@ def test_feature_store_requires_broad_usd_for_monetary_pressure() -> None:
     context = build_market_context(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
-        config=RegimeEngine().config,
+        config=_isolated_monetary_test_config(),
         macro_series=macro,
     )
 
@@ -462,11 +483,10 @@ def test_engine_classify_window_populates_monetary_pressure_state(
     dgs2 = _yield_series(index=index, base=4.5, seed=_SEED + 1)
     dgs10 = _yield_series(index=index, base=4.2, seed=_SEED + 2)
     usd = _usd_series(index=index, base=100.0, seed=_SEED + 3)
-    macro = {"2y_yield": dgs2, "10y_yield": dgs10, "broad_usd_index": usd}
+    macro = dict(synthetic_v2_kwargs_for_market_data(market_data)["macro_series"])
+    macro.update({"2y_yield": dgs2, "10y_yield": dgs10, "broad_usd_index": usd})
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
-    config = kwargs["config"].model_copy(
-        update={"credit_funding": None, "inflation_growth": None}
-    )
+    config = kwargs["config"]
     timeline = RegimeEngine().classify_window(
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
@@ -478,6 +498,10 @@ def test_engine_classify_window_populates_monetary_pressure_state(
         pit_constituent_intervals=kwargs["pit_constituent_intervals"],
         constituent_ohlcv=kwargs["constituent_ohlcv"],
         macro_series=macro,
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
     populated = [
         out for out in timeline.outputs if out.monetary_pressure_state is not None
@@ -518,7 +542,9 @@ def test_engine_classify_window_raises_when_monetary_pressure_state_is_absent(
     assert "monetary_pressure_state: macro_series.2y_yield" in message
 
 
-def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode():
+def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode(
+    event_calendar_df,
+):
     """V1 config omits the monetary-pressure V2 output without aborting."""
     from pathlib import Path
     from regime_detection.config import load_regime_config
@@ -538,7 +564,7 @@ def test_engine_classify_window_monetary_pressure_state_none_in_pure_v1_mode():
         end_date=_LAST_SESSION.date(),
         market_data=market_data,
         lookback_days=20,
-        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+        event_calendar=event_calendar_df,
         config=v1_config,
     )
 

@@ -412,66 +412,40 @@ def test_hmm_uses_real_default_config_n_states() -> None:
 
 
 def test_feature_store_hmm_seam_lit_when_all_inputs_present(
-    golden_rows: list[dict[str, object]],
+    v2_classify_kwargs_for_asof,
 ) -> None:
     """Sanity wire-in: the engine's golden-date classify path must light the
     HMM seam — verified indirectly by inspecting one classify call's
     feature_store via the engine."""
-    from regime_detection.engine import RegimeEngine
     from regime_detection.feature_store import build_feature_store
     from regime_detection.market_context import build_market_context
 
-    # Use the latest golden date — that is far enough out to have >= 1260
-    # sessions of trailing history under the bundled fixture.
-    latest = max(date.fromisoformat(str(row["as_of_date"])) for row in golden_rows)
-    engine = RegimeEngine()
-    # Pull the matching market_data slice from the fixture (re-load via
-    # conftest helpers is heavy; instead read the parquet directly).
-    from pathlib import Path
-
-    repo_root = Path(__file__).resolve().parents[1]
-    raw_dir = repo_root / "tests" / "fixtures" / "raw"
-    market_parquet = raw_dir / "market_data.parquet"
-    if market_parquet.exists():
-        raw = pd.read_parquet(market_parquet)
-    else:
-        parts = [
-            pd.read_csv(raw_dir / f"{symbol}.csv") for symbol in ("SPY", "RSP", "VIXY")
-        ]
-        raw = pd.concat(parts, ignore_index=True)
-    raw = cow_safe_assign(raw, {"date": pd.to_datetime(raw["date"]).dt.date})
-    market_data = raw[raw["date"] <= latest].copy().reset_index(drop=True)
+    latest = date(2026, 5, 13)
+    kwargs = v2_classify_kwargs_for_asof(latest)
+    config = kwargs["config"]
     context = build_market_context(
         end_date=latest,
-        market_data=market_data,
-        config=engine.config,
+        market_data=kwargs["market_data"],
+        config=config,
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
-    feature_store = build_feature_store(
-        context,
-        network_fragility_config=engine.config.network_fragility,
-        trend_direction_v2_config=engine.config.trend_direction_v2,
-        volatility_state_v2_config=engine.config.volatility_state_v2,
-        breadth_state_v2_config=engine.config.breadth_state_v2,
-        volume_liquidity_v2_config=engine.config.volume_liquidity_v2,
-        monetary_pressure_v2_config=engine.config.monetary_pressure_v2,
-    )
-    # network_fragility is None in this fixture (no sector ETFs), so HMM
-    # seam should be None — accept either outcome but assert behavior is
-    # gated on input availability per the predicate.
-    if (
-        feature_store.network_fragility is None
-        or feature_store.volume_liquidity_v2 is None
-    ):
-        assert feature_store.hmm is None
-    else:
-        assert feature_store.hmm is not None
+    feature_store = build_feature_store(context, **config.v2_feature_build_configs())
+    assert feature_store.hmm is not None
 
 
 def test_feature_store_hmm_seam_none_when_hmm_config_absent(
     raw_market_frames: dict[str, pd.DataFrame],
 ) -> None:
     from regime_detection.config import load_default_regime_config
-    from regime_detection.feature_store import build_feature_store
     from regime_detection.market_context import build_market_context
 
     cfg = load_default_regime_config().model_copy(update={"hmm": None})
@@ -493,21 +467,12 @@ def test_feature_store_hmm_seam_none_when_hmm_config_absent(
         except Exception:
             last_session = last_session.fromordinal(last_session.toordinal() - 1)
     market_data = raw[raw["date"] <= last_session].copy().reset_index(drop=True)
-    context = build_market_context(
-        end_date=last_session,
-        market_data=market_data,
-        config=cfg,
-    )
-    feature_store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        trend_direction_v2_config=cfg.trend_direction_v2,
-        volatility_state_v2_config=cfg.volatility_state_v2,
-        breadth_state_v2_config=cfg.breadth_state_v2,
-        volume_liquidity_v2_config=cfg.volume_liquidity_v2,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-    )
-    assert feature_store.hmm is None
+    with pytest.raises(ValueError, match="missing required V2 sections: hmm"):
+        build_market_context(
+            end_date=last_session,
+            market_data=market_data,
+            config=cfg,
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from regime_detection.config import load_regime_config
 from regime_detection.axis_builders.breadth import (
     _derive_breadth_active_label_source,
     build_breadth_axis_series,
@@ -40,6 +41,9 @@ from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.market_context import build_market_context
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+_V1_CONFIG_PATH = (
+    _REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+)
 _REAL_V2_AS_OF = date(2026, 5, 13)
 
 
@@ -110,7 +114,19 @@ def _build_context(as_of: date, market_df_for_asof):
     return build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
-        config=RegimeEngine().config,
+        config=load_regime_config(_V1_CONFIG_PATH),
+    )
+
+
+def _isolated_v2_axis_test_config():
+    cfg = RegimeEngine().config
+    return cfg.model_copy(
+        update={
+            "config_version": "core3-v1.0.0",
+            "hmm": None,
+            "clustering": None,
+            "change_point": None,
+        }
     )
 
 
@@ -170,14 +186,14 @@ def test_breadth_builder_keeps_etf_proxy_when_pit_inputs_are_missing(
     context = build_market_context(
         end_date=_REAL_V2_AS_OF,
         market_data=v2_market_df_for_asof(_REAL_V2_AS_OF),
-        config=RegimeEngine().config,
+        config=load_regime_config(_V1_CONFIG_PATH),
         sector_etf_closes={
             symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
         },
     )
     store = build_feature_store(
         context,
-        breadth_state_v2_config=context.config.breadth_state_v2,
+        breadth_state_v2_config=RegimeEngine().config.breadth_state_v2,
     )
     assert store.breadth_state_v2 is not None
     assert store.breadth_state_v2.pct_above_50dma is None
@@ -240,12 +256,7 @@ def test_credit_funding_builder_marks_stale_etf_source_unknown() -> None:
         "axis_builder_credit_helpers", "test_credit_funding_axis_engine.py"
     )
     context = helpers._build_full_synthetic_context(hyg_truncate_sessions=10)
-    store = build_feature_store(
-        context,
-        network_fragility_config=context.config.network_fragility,
-        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
-        credit_funding_config=context.config.credit_funding,
-    )
+    store = build_feature_store(context, **context.config.v2_feature_build_configs())
 
     outputs = build_credit_funding_axis_series(context, store)
 
@@ -263,7 +274,7 @@ def test_network_fragility_builder_raises_when_supplied_axis_labels_miss_session
     context = build_market_context(
         end_date=_REAL_V2_AS_OF,
         market_data=v2_market_df_for_asof(_REAL_V2_AS_OF),
-        config=RegimeEngine().config,
+        config=_isolated_v2_axis_test_config(),
         sector_etf_closes={
             symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
         },
@@ -294,12 +305,7 @@ def test_inflation_growth_builder_marks_stale_cpi_source_unknown() -> None:
         "axis_builder_inflation_helpers", "test_inflation_growth_axis_engine.py"
     )
     context = helpers._build_synthetic_context(cpi_truncate_calendar_days=90)
-    store = build_feature_store(
-        context,
-        network_fragility_config=context.config.network_fragility,
-        credit_funding_config=context.config.credit_funding,
-        inflation_growth_config=context.config.inflation_growth,
-    )
+    store = build_feature_store(context, **context.config.v2_feature_build_configs())
 
     outputs = build_inflation_growth_axis_series(context, store)
 
@@ -316,12 +322,7 @@ def test_inflation_growth_builder_raises_when_credit_labels_miss_session() -> No
         "test_inflation_growth_axis_engine.py",
     )
     context = helpers._build_synthetic_context()
-    store = build_feature_store(
-        context,
-        network_fragility_config=context.config.network_fragility,
-        credit_funding_config=context.config.credit_funding,
-        inflation_growth_config=context.config.inflation_growth,
-    )
+    store = build_feature_store(context, **context.config.v2_feature_build_configs())
     credit_labels = {day: "credit_calm" for day in context.sessions}
     credit_labels.pop(context.end_date)
 

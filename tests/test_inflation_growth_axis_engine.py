@@ -44,6 +44,7 @@ from regime_detection.inflation_growth_rules import (
     InflationGrowthRuleInputs,
 )
 from regime_detection.market_context import build_market_context
+from conftest import synthetic_v2_evidence_kwargs_for_market_data
 
 # --- Synthetic fixtures ------------------------------------------------------
 
@@ -160,6 +161,26 @@ def _build_synthetic_context(
     )
 
     sector_etf_closes = {s: universe_prices[s] for s in SECTOR_ETFS}
+    pit_constituent_intervals = pd.DataFrame(
+        {
+            "ticker": list(SECTOR_ETFS),
+            "start_date": [idx[0].date()] * len(SECTOR_ETFS),
+            "end_date": [None] * len(SECTOR_ETFS),
+        }
+    )
+    constituent_ohlcv = {
+        symbol: pd.DataFrame(
+            {
+                "open": series,
+                "high": series,
+                "low": series,
+                "close": series,
+                "volume": pd.Series(1_000_000, index=series.index),
+                "adjusted_close": series,
+            }
+        )
+        for symbol, series in sector_etf_closes.items()
+    }
     cross_asset_closes: dict[str, pd.Series] = {
         s: universe_prices[s] for s in CROSS_ASSET_SYMBOLS
     }
@@ -218,6 +239,8 @@ def _build_synthetic_context(
         "nfci": nfci_w,
         "broad_usd_index": usd,
         "2y_yield": pd.Series(4.5, index=idx, dtype=float),
+        "hy_oas": pd.Series(400.0, index=idx, dtype=float, name="hy_oas"),
+        "ig_bbb_oas": pd.Series(150.0, index=idx, dtype=float, name="ig_bbb_oas"),
     }
     if include_nowcast_and_eps_revision:
         cpi_nowcast = pd.Series(0.01, index=idx, dtype=float)
@@ -231,12 +254,13 @@ def _build_synthetic_context(
             eps_revision.loc[eps_revision.index > eps_cutoff] = np.nan
         macro_series["aggregate_forward_eps_revision"] = eps_revision
 
-    cpi_first_release = None
-    if include_cpi_first_release:
-        cpi_first_release = pd.Series(np.nan, index=idx, dtype=float)
-        cpi_first_release.iloc[cpi_release_positions] = np.linspace(
-            299.5, 319.5, len(cpi_release_positions)
-        )
+    cpi_first_release = pd.Series(np.nan, index=idx, dtype=float)
+    cpi_first_release.iloc[cpi_release_positions] = np.linspace(
+        299.5, 319.5, len(cpi_release_positions)
+    )
+    if cpi_truncate_calendar_days is not None and not include_cpi_first_release:
+        cutoff = idx[-1] - pd.Timedelta(days=cpi_truncate_calendar_days)
+        cpi_first_release.loc[cpi_first_release.index > cutoff] = np.nan
 
     config = RegimeEngine().config
     assert config.hmm is not None
@@ -256,6 +280,7 @@ def _build_synthetic_context(
                     "n_states": 2,
                     "training_window_days": 100,
                     "random_seeds": (42, 7, 13),
+                    "state_label_map": {0: "test_low_risk", 1: "test_high_risk"},
                 }
             ),
             "clustering": config.clustering.model_copy(
@@ -266,6 +291,8 @@ def _build_synthetic_context(
             ),
         }
     )
+    evidence = synthetic_v2_evidence_kwargs_for_market_data(market_data)
+    evidence["cpi_first_release"] = cpi_first_release
     context = build_market_context(
         end_date=idx[-1].date(),
         market_data=market_data,
@@ -273,19 +300,16 @@ def _build_synthetic_context(
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         macro_series=macro_series,
-        cpi_first_release=cpi_first_release,
+        pit_constituent_intervals=pit_constituent_intervals,
+        constituent_ohlcv=constituent_ohlcv,
+        **evidence,
     )
     return context
 
 
 def _build_store_and_outputs(context, *, credit_funding_active_labels_by_date=None):
     cfg = context.config
-    store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        credit_funding_config=cfg.credit_funding,
-        inflation_growth_config=cfg.inflation_growth,
-    )
+    store = build_feature_store(context, **cfg.v2_feature_build_configs())
     outputs = build_inflation_growth_axis_series(
         context,
         store,
@@ -569,11 +593,29 @@ def test_feature_store_seam_none_when_dbc_missing() -> None:
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=stripped,
         macro_series=context.macro_series,
+        pit_constituent_intervals=context.pit_constituent_intervals,
+        constituent_ohlcv=context.constituent_ohlcv,
+        **synthetic_v2_evidence_kwargs_for_market_data(
+            pd.DataFrame(
+                [
+                    {
+                        "date": ts.date(),
+                        "symbol": "SPY",
+                        "open": float(context.spy_ohlcv["open"].loc[ts]),
+                        "high": float(context.spy_ohlcv["high"].loc[ts]),
+                        "low": float(context.spy_ohlcv["low"].loc[ts]),
+                        "close": float(context.spy_ohlcv["close"].loc[ts]),
+                        "volume": float(context.spy_ohlcv["volume"].loc[ts]),
+                    }
+                    for ts in context.spy_ohlcv.index
+                ]
+            )
+        ),
     )
-    store = build_feature_store(
-        new_context, inflation_growth_config=new_context.config.inflation_growth
-    )
-    assert store.inflation_growth is None
+    with pytest.raises(RuntimeError, match="inflation_growth"):
+        build_feature_store(
+            new_context, **new_context.config.v2_feature_build_configs()
+        )
 
 
 # --- Group D — Hysteresis (2 tests) ------------------------------------------
@@ -627,6 +669,7 @@ def test_unknown_does_not_delay_recovery_into_classified_inflation_label() -> No
 
 def test_regime_output_carries_inflation_growth_state_when_configured(
     default_inflation_growth_context,
+    event_calendar_df,
 ) -> None:
     """End-to-end: classify_window populates RegimeOutput.inflation_growth_state."""
     context = default_inflation_growth_context
@@ -684,12 +727,16 @@ def test_regime_output_carries_inflation_growth_state_when_configured(
         vix_data=pd.DataFrame(
             {"date": [ts.date() for ts in context.spy_ohlcv.index], "close": 20.0}
         ),
-        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+        event_calendar=event_calendar_df,
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
         macro_series=context.macro_series,
         pit_constituent_intervals=pit_intervals,
         constituent_ohlcv=constituent_ohlcv,
+        aaii_sentiment=context.aaii_sentiment,
+        news_sentiment=context.news_sentiment,
+        central_bank_text_releases=context.central_bank_text_releases,
+        cpi_first_release=context.cpi_first_release,
     )
     out = timeline.outputs[-1]
     assert out.inflation_growth_state is not None

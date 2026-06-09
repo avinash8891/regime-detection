@@ -12,10 +12,9 @@ import pandas as pd
 import pytest
 
 from regime_detection.axis_series import build_axis_series_bundle
+from regime_detection.config import load_default_regime_config, load_regime_config
 from regime_detection.engine import ClassifyRequest, RegimeEngine
 from regime_detection.feature_store import build_feature_store
-from regime_detection.config import load_default_regime_config
-from regime_detection.fragility_universe import CROSS_ASSET_SYMBOLS, SECTOR_ETFS
 from regime_detection.market_context import (
     MarketContext,
     build_market_context,
@@ -46,6 +45,14 @@ from regime_detection.timeline import (
 from regime_detection.transition_risk_series import (
     build_transition_risk_history,
     build_transition_risk_series,
+)
+
+_V1_CONFIG_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "src"
+    / "regime_detection"
+    / "configs"
+    / "core3-v1.0.0.yaml"
 )
 
 
@@ -186,28 +193,17 @@ def _fast_v2_test_config():
     )
 
 
-def _build_shared_timeline_pipeline(market_df_for_asof):
+def _build_shared_timeline_pipeline(market_df_for_asof, event_calendar_df):
     end_date = date(2023, 12, 14)
-    engine = RegimeEngine()
+    config = load_regime_config(_V1_CONFIG_PATH)
     market_data = market_df_for_asof(end_date)
     context = build_market_context(
         end_date=end_date,
         market_data=market_data,
-        config=engine.config,
+        config=config,
+        event_calendar=event_calendar_df,
     )
-    feature_store = build_feature_store(
-        context,
-        network_fragility_config=engine.config.network_fragility,
-        trend_direction_v2_config=engine.config.trend_direction_v2,
-        volatility_state_v2_config=engine.config.volatility_state_v2,
-        breadth_state_v2_config=engine.config.breadth_state_v2,
-        volume_liquidity_v2_config=engine.config.volume_liquidity_v2,
-        monetary_pressure_v2_config=engine.config.monetary_pressure_v2,
-        credit_funding_config=engine.config.credit_funding,
-        inflation_growth_config=engine.config.inflation_growth,
-        central_bank_text_config=engine.config.central_bank_text,
-        news_sentiment_config=engine.config.news_sentiment,
-    )
+    feature_store = build_feature_store(context)
     bundle = build_axis_series_bundle(context=context, feature_store=feature_store)
     return {
         "end_date": end_date,
@@ -219,7 +215,9 @@ def _build_shared_timeline_pipeline(market_df_for_asof):
 
 
 @pytest.fixture(scope="session")
-def shared_timeline_pipeline(market_df_for_asof, tmp_path_factory, worker_id):
+def shared_timeline_pipeline(
+    market_df_for_asof, event_calendar_df, tmp_path_factory, worker_id
+):
     """Session-scoped, but ALSO shared across pytest-xdist workers via a
     disk pickle cache. Without this cross-worker cache, each worker
     independently rebuilds the ~80s timeline pipeline (build_market_context +
@@ -234,7 +232,7 @@ def shared_timeline_pipeline(market_df_for_asof, tmp_path_factory, worker_id):
     equality, which is what every consumer asserts on.
     """
     if worker_id == "master":
-        return _build_shared_timeline_pipeline(market_df_for_asof)
+        return _build_shared_timeline_pipeline(market_df_for_asof, event_calendar_df)
 
     shared_dir = tmp_path_factory.getbasetemp().parent
     cache_path = shared_dir / "shared_timeline_pipeline.pkl"
@@ -246,7 +244,7 @@ def shared_timeline_pipeline(market_df_for_asof, tmp_path_factory, worker_id):
     try:
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.close(fd)
-        result = _build_shared_timeline_pipeline(market_df_for_asof)
+        result = _build_shared_timeline_pipeline(market_df_for_asof, event_calendar_df)
         tmp = cache_path.with_suffix(".pkl.tmp")
         tmp.write_bytes(pickle.dumps(result))
         tmp.replace(cache_path)
@@ -469,29 +467,18 @@ def test_timeline_output_helper_matches_timeline_output(
         context=context,
         required_sessions=required_sessions,
     )
-    feature_store = build_feature_store(
-        working_context,
-        network_fragility_config=context.config.network_fragility,
-        trend_direction_v2_config=context.config.trend_direction_v2,
-        volatility_state_v2_config=context.config.volatility_state_v2,
-        breadth_state_v2_config=context.config.breadth_state_v2,
-        volume_liquidity_v2_config=context.config.volume_liquidity_v2,
-        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
-        credit_funding_config=context.config.credit_funding,
-        inflation_growth_config=context.config.inflation_growth,
-        central_bank_text_config=context.config.central_bank_text,
-        news_sentiment_config=context.config.news_sentiment,
-    )
+    feature_store = build_feature_store(working_context)
     axis_bundle = build_axis_series_bundle(
         context=working_context,
         feature_store=feature_store,
     )
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
-        build_transition_risk_series(
-            context=working_context,
-            feature_store=feature_store,
-            axis_bundle=axis_bundle,
-        )
+    transition_risk = build_transition_risk_series(
+        context=working_context,
+        feature_store=feature_store,
+        axis_bundle=axis_bundle,
+    )
+    assert set(transition_risk) == set(working_context.sessions)
+    assert transition_risk[working_context.end_date].state
 
 
 def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
@@ -513,7 +500,7 @@ def test_build_regime_timeline_uses_context_config_when_config_arg_omitted(
         config=cfg,
     )
 
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
+    with pytest.raises(RuntimeError, match="sentiment_score"):
         build_regime_timeline(context=context, lookback_days=3)
 
 
@@ -609,20 +596,13 @@ def test_classify_delegates_to_classify_request_with_single_day_lookback(
 def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
     mocker,
     v2_market_df_for_asof,
-    v2_close_series_by_symbol,
+    synthetic_v2_kwargs_for_market_data,
     event_calendar_df,
 ) -> None:
     engine = RegimeEngine()
     as_of = date(2026, 5, 13)
     market_data = v2_market_df_for_asof(as_of)
-    spy_frame = market_data[market_data["symbol"] == "SPY"].sort_values("date")
-    spy_index = pd.to_datetime(spy_frame["date"])
-    trend = pd.Series(range(len(spy_index)), index=spy_index, dtype="float64")
-    macro_series = {
-        "2y_yield": (4.00 + trend * 0.0002).rename("2y_yield"),
-        "10y_yield": (4.25 + trend * 0.0001).rename("10y_yield"),
-        "broad_usd_index": (100.0 + trend * 0.001).rename("broad_usd_index"),
-    }
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     event_calendar = event_calendar_df.copy()
     event_calendar.loc[[0, 1], "date"] = as_of
     event_calendar.loc[[0, 1], "publication_date"] = date(2026, 1, 1)
@@ -630,42 +610,21 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
         "regime_detection.timeline.build_strategy_response",
         wraps=build_strategy_response,
     )
-    config = _fast_v2_test_config().model_copy(
-        update={
-            "credit_funding": None,
-            "inflation_growth": None,
-            "transition_score": None,
-        }
-    )
 
     out = engine.classify(
         as_of_date=as_of,
         market_data=market_data,
-        config=config,
+        config=kwargs["config"],
         event_calendar=event_calendar,
-        sector_etf_closes={
-            symbol: v2_close_series_by_symbol[symbol] for symbol in SECTOR_ETFS
-        },
-        cross_asset_closes={
-            symbol: v2_close_series_by_symbol[symbol] for symbol in CROSS_ASSET_SYMBOLS
-        },
-        macro_series=macro_series,
-        pit_constituent_intervals=pd.DataFrame(
-            {
-                "ticker": list(SECTOR_ETFS),
-                "start_date": [date(2019, 1, 2)] * len(SECTOR_ETFS),
-                "end_date": [None] * len(SECTOR_ETFS),
-                "source": ["test_fixture"] * len(SECTOR_ETFS),
-                "source_url": ["test_fixture"] * len(SECTOR_ETFS),
-                "bias_warning": ["test_fixture"] * len(SECTOR_ETFS),
-            }
-        ),
-        constituent_ohlcv={
-            symbol: _constituent_ohlcv_from_close_series(
-                v2_close_series_by_symbol[symbol]
-            )
-            for symbol in SECTOR_ETFS
-        },
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
 
     event_output = out.structural_causal_state.event_calendar
@@ -679,7 +638,8 @@ def test_timeline_passes_event_calendar_matching_labels_to_strategy_response(
     spy.assert_called_once()
     assert spy.call_args.kwargs["event_calendar_labels"] == event_output.matching_labels
     assert (
-        spy.call_args.kwargs["event_modifier_config"] is config.strategy_event_modifiers
+        spy.call_args.kwargs["event_modifier_config"]
+        is kwargs["config"].strategy_event_modifiers
     )
     assert out.effective_strategy_constraints is not None
     assert out.strategy_family_constraints is not None

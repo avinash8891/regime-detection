@@ -322,7 +322,6 @@ def test_feature_store_clustering_seam_none_when_config_absent(
     raw_market_frames: dict[str, pd.DataFrame],
 ) -> None:
     from regime_detection.config import load_default_regime_config
-    from regime_detection.feature_store import build_feature_store
     from regime_detection.market_context import build_market_context
     from regime_detection.calendar import require_nyse_trading_day
 
@@ -340,21 +339,12 @@ def test_feature_store_clustering_seam_none_when_config_absent(
         except Exception:
             last_session = last_session.fromordinal(last_session.toordinal() - 1)
     market_data = raw[raw["date"] <= last_session].copy().reset_index(drop=True)
-    context = build_market_context(
-        end_date=last_session,
-        market_data=market_data,
-        config=cfg,
-    )
-    feature_store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        trend_direction_v2_config=cfg.trend_direction_v2,
-        volatility_state_v2_config=cfg.volatility_state_v2,
-        breadth_state_v2_config=cfg.breadth_state_v2,
-        volume_liquidity_v2_config=cfg.volume_liquidity_v2,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-    )
-    assert feature_store.clustering is None
+    with pytest.raises(ValueError, match="missing required V2 sections: clustering"):
+        build_market_context(
+            end_date=last_session,
+            market_data=market_data,
+            config=cfg,
+        )
 
 
 def test_feature_store_clustering_seam_none_when_pct_above_50dma_absent(
@@ -386,18 +376,16 @@ def test_feature_store_clustering_seam_none_when_pct_above_50dma_absent(
         market_data=market_data,
         config=cfg,
     )
-    feature_store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        trend_direction_v2_config=cfg.trend_direction_v2,
-        volatility_state_v2_config=cfg.volatility_state_v2,
-        breadth_state_v2_config=cfg.breadth_state_v2,
-        volume_liquidity_v2_config=cfg.volume_liquidity_v2,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-    )
-    # No PIT inputs → breadth_state_v2 may exist but pct_above_50dma is None,
-    # or breadth_state_v2 itself is None. Either way clustering seam is None.
-    assert feature_store.clustering is None
+    with pytest.raises(RuntimeError, match="sentiment_score"):
+        build_feature_store(
+            context,
+            network_fragility_config=cfg.network_fragility,
+            trend_direction_v2_config=cfg.trend_direction_v2,
+            volatility_state_v2_config=cfg.volatility_state_v2,
+            breadth_state_v2_config=cfg.breadth_state_v2,
+            volume_liquidity_v2_config=cfg.volume_liquidity_v2,
+            monetary_pressure_v2_config=cfg.monetary_pressure_v2,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -444,7 +432,7 @@ def test_regime_output_fails_loudly_when_transition_score_lacks_clustering(
     kwargs = v2_classify_kwargs_for_asof(last_session)
     kwargs["config"] = config
 
-    with pytest.raises(RuntimeError, match="model evidence feature_store.clustering"):
+    with pytest.raises(ValueError, match="missing required V2 sections: clustering"):
         engine.classify(
             as_of_date=last_session,
             **kwargs,

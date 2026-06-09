@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 
-from regime_detection.engine import RegimeEngine
+from regime_detection.config import load_regime_config
 from regime_detection.feature_store import _FEATURE_SPECS, _FeatureStoreBuildState
 from regime_detection.feature_store_runtime import FeatureSpec
 from regime_detection.market_context import build_market_context
+
+_V1_CONFIG_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "src"
+    / "regime_detection"
+    / "configs"
+    / "core3-v1.0.0.yaml"
+)
 
 
 def _spec_by_name(name: str) -> FeatureSpec:
@@ -32,7 +41,7 @@ def v1_minimal_state(market_df_for_asof) -> _FeatureStoreBuildState:
     context = build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
-        config=RegimeEngine().config,
+        config=load_regime_config(_V1_CONFIG_PATH),
     )
     return _FeatureStoreBuildState(
         context=context,

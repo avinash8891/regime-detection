@@ -49,6 +49,10 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from regime_shared.pandas_compat import cow_safe_assign  # noqa: E402
 from regime_detection.config import load_regime_config  # noqa: E402
+from regime_detection.credit_funding_rules import (  # noqa: E402
+    FEDFUNDS_KEY,
+    IOER_LEGACY_KEY,
+)
 from regime_detection.engine import RegimeEngine  # noqa: E402
 from regime_detection.fragility_universe import (
     CROSS_ASSET_SYMBOLS,
@@ -391,7 +395,16 @@ def _macro_series_from_v2_fixture(as_of: date) -> dict[str, pd.Series]:
     series_by_key["pmi_manufacturing"] = (50.0 + trend * 0.0001).rename(
         "pmi_manufacturing"
     )
+    _add_legacy_funding_fallback_series(series_by_key, broad_usd.index)
     return series_by_key
+
+
+def _add_legacy_funding_fallback_series(
+    series_by_key: dict[str, pd.Series], index: pd.DatetimeIndex
+) -> None:
+    trend = pd.Series(range(len(index)), index=index, dtype="float64")
+    series_by_key[FEDFUNDS_KEY] = (0.10 + trend * 0.00001).rename(FEDFUNDS_KEY)
+    series_by_key[IOER_LEGACY_KEY] = (0.10 + trend * 0.000005).rename(IOER_LEGACY_KEY)
 
 
 def _synthetic_v2_evidence(*, start: date, as_of: date) -> dict[str, object]:
@@ -429,6 +442,20 @@ def _synthetic_v2_evidence(*, start: date, as_of: date) -> dict[str, object]:
             dtype="float64",
         ),
     }
+
+
+def synthetic_v2_evidence_kwargs_for_market_data(
+    market_data: pd.DataFrame, *, as_of: date | None = None
+) -> dict[str, object]:
+    if market_data.empty:
+        raise ValueError("market_data must not be empty")
+    resolved_as_of = as_of if as_of is not None else max(market_data["date"])
+    return _synthetic_v2_evidence(start=min(market_data["date"]), as_of=resolved_as_of)
+
+
+@pytest.fixture(scope="session")
+def synthetic_v2_evidence_for_market_data():
+    return synthetic_v2_evidence_kwargs_for_market_data
 
 
 def _v2_macro_fixture_covers(as_of: date) -> bool:
@@ -599,6 +626,7 @@ def v2_macro_series_by_key() -> dict[str, pd.Series]:
     series_by_key["pmi_manufacturing"] = (50.0 + trend * 0.0001).rename(
         "pmi_manufacturing"
     )
+    _add_legacy_funding_fallback_series(series_by_key, broad_usd.index)
     return series_by_key
 
 
@@ -852,7 +880,9 @@ def walkforward_2023_dec_template(
     )
     market_data_path = _REPO_ROOT / "tests" / "fixtures" / "raw" / "market_data.parquet"
     v2_daily_path = _REPO_ROOT / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
-    config_path = _REPO_ROOT / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = (
+        _REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+    )
     runner.run_walkforward(
         market_data_path=market_data_path,
         output_root=cache_dir,

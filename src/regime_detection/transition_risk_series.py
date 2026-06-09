@@ -612,7 +612,9 @@ def build_transition_risk_outputs_by_date(
     selection_config = transition_score_config or _legacy_transition_score_config()
     raw_outputs: dict[date, TransitionRiskOutput] = {}
     for i, day in enumerate(sessions):
-        strict_day = _strict_for_day(day, strict_output_sessions)
+        strict_day = transition_score_config is not None and _strict_for_day(
+            day, strict_output_sessions
+        )
         switch_days = history.days_since_axis_switch_by_date[day]
         inputs = transition_score_inputs_by_date[day]
         score_not_ready_reason: str | None = None
@@ -777,7 +779,11 @@ def build_transition_risk_outputs_by_date(
         raw_outputs=raw_outputs,
         state_confirmation_days=state_confirmation_days
         or selection_config.state_confirmation_days,
-        initial_active_state=initial_active_state,
+        initial_active_state=(
+            initial_active_state
+            if initial_active_state is not None
+            else selection_config.initial_active_state
+        ),
     )
 
 

@@ -6,8 +6,8 @@ one chart object per monthly vintage. These tests exercise the parser, the
 parquet merge, and the download+run orchestration against a synthetic feed
 shaped like the real one.
 
-Network is never touched: the download path is exercised via ``file://``
-source URLs pointing at on-disk fixtures.
+External network is never touched: the download path is exercised via an
+in-process local HTTP server serving the fixture payload.
 
 Per ~/.claude testing rules: real series key (`cpi_nowcast`), real module
 constants, realistic subcaptions / series names / month-over-month values,
@@ -16,9 +16,13 @@ no mocks.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+import http.server
 import json
 import re
 from pathlib import Path
+import threading
 
 import pandas as pd
 import pytest
@@ -111,6 +115,32 @@ def _write_feed(tmp_path: Path, json_text: str = _FIXTURE_JSON) -> Path:
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json_text)
     return json_path
+
+
+@contextmanager
+def _serve_http_payload(payload: str, *, status: int = 200) -> Iterator[str]:
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 - stdlib callback name
+            encoded = payload.encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        yield f"http://{host}:{port}/nowcast_month.json"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 # --- parse ------------------------------------------------------------------
@@ -245,23 +275,22 @@ def test_extract_data_vintage_returns_chart_comment() -> None:
     assert extract_data_vintage("{not json") is None
 
 
-# --- download (file:// — no network) ----------------------------------------
+# --- download (local HTTP — no external network) ----------------------------
 
 
-def test_download_writes_payload_from_file_url(tmp_path: Path) -> None:
-    src = tmp_path / "feed_source.json"
-    src.write_text(_FIXTURE_JSON)
+def test_download_writes_payload_from_http_url(tmp_path: Path) -> None:
     out_path = tmp_path / "downloaded.json"
-    download_cleveland_fed_nowcast_json(out_path=out_path, source_url=src.as_uri())
+    with _serve_http_payload(_FIXTURE_JSON) as source_url:
+        download_cleveland_fed_nowcast_json(out_path=out_path, source_url=source_url)
     assert out_path.read_text() == _FIXTURE_JSON
 
 
 def test_download_raises_on_unreachable_source(tmp_path: Path) -> None:
-    missing = tmp_path / "does_not_exist.json"
     with pytest.raises(ClevelandFedNowcastError, match="Failed to download"):
-        download_cleveland_fed_nowcast_json(
-            out_path=tmp_path / "out.json", source_url=missing.as_uri()
-        )
+        with _serve_http_payload("not found", status=404) as source_url:
+            download_cleveland_fed_nowcast_json(
+                out_path=tmp_path / "out.json", source_url=source_url
+            )
 
 
 # --- update_cpi_nowcast_parquet ---------------------------------------------
@@ -311,11 +340,10 @@ def test_update_raises_when_json_absent(tmp_path: Path) -> None:
 
 
 def test_run_fetch_downloads_parses_and_reports(tmp_path: Path) -> None:
-    src = tmp_path / "feed_source.json"
-    src.write_text(_FIXTURE_JSON)
-    report_path = run_cleveland_fed_nowcast_fetch(
-        out_dir=tmp_path, source_url=src.as_uri()
-    )
+    with _serve_http_payload(_FIXTURE_JSON) as source_url:
+        report_path = run_cleveland_fed_nowcast_fetch(
+            out_dir=tmp_path, source_url=source_url
+        )
 
     assert report_path.exists()
     report = json.loads(report_path.read_text())
@@ -339,10 +367,10 @@ def test_run_fetch_falls_back_to_present_json_on_download_failure(
     """If the download fails but a JSON is already on disk (prior download
     or manual drop), the fetch parses that instead of hard-failing."""
     _write_feed(tmp_path)  # pre-place the feed at the canonical path
-    missing_src = tmp_path / "unreachable.json"
-    report_path = run_cleveland_fed_nowcast_fetch(
-        out_dir=tmp_path, source_url=missing_src.as_uri()
-    )
+    with _serve_http_payload("not found", status=404) as source_url:
+        report_path = run_cleveland_fed_nowcast_fetch(
+            out_dir=tmp_path, source_url=source_url
+        )
     report = json.loads(report_path.read_text())
     assert report["rows"] == 3
 
@@ -350,8 +378,6 @@ def test_run_fetch_falls_back_to_present_json_on_download_failure(
 def test_run_fetch_raises_when_download_fails_and_no_local_json(
     tmp_path: Path,
 ) -> None:
-    missing_src = tmp_path / "unreachable.json"
     with pytest.raises(ClevelandFedNowcastError, match="Failed to download"):
-        run_cleveland_fed_nowcast_fetch(
-            out_dir=tmp_path, source_url=missing_src.as_uri()
-        )
+        with _serve_http_payload("not found", status=404) as source_url:
+            run_cleveland_fed_nowcast_fetch(out_dir=tmp_path, source_url=source_url)

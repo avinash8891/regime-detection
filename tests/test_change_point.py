@@ -416,7 +416,6 @@ def test_feature_store_change_point_seam_none_when_config_absent(
     raw_market_frames: dict[str, pd.DataFrame],
 ) -> None:
     from regime_detection.calendar import require_nyse_trading_day
-    from regime_detection.feature_store import build_feature_store
     from regime_detection.market_context import build_market_context
 
     cfg = load_default_regime_config().model_copy(update={"change_point": None})
@@ -433,21 +432,12 @@ def test_feature_store_change_point_seam_none_when_config_absent(
         except Exception:
             last_session = last_session.fromordinal(last_session.toordinal() - 1)
     market_data = raw[raw["date"] <= last_session].copy().reset_index(drop=True)
-    context = build_market_context(
-        end_date=last_session,
-        market_data=market_data,
-        config=cfg,
-    )
-    feature_store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        trend_direction_v2_config=cfg.trend_direction_v2,
-        volatility_state_v2_config=cfg.volatility_state_v2,
-        breadth_state_v2_config=cfg.breadth_state_v2,
-        volume_liquidity_v2_config=cfg.volume_liquidity_v2,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-    )
-    assert feature_store.change_point is None
+    with pytest.raises(ValueError, match="missing required V2 sections: change_point"):
+        build_market_context(
+            end_date=last_session,
+            market_data=market_data,
+            config=cfg,
+        )
 
 
 def test_feature_store_change_point_seam_present_with_default_config(
@@ -485,17 +475,16 @@ def test_feature_store_change_point_seam_present_with_default_config(
         market_data=market_data,
         config=cfg,
     )
-    feature_store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        trend_direction_v2_config=cfg.trend_direction_v2,
-        volatility_state_v2_config=cfg.volatility_state_v2,
-        breadth_state_v2_config=cfg.breadth_state_v2,
-        volume_liquidity_v2_config=cfg.volume_liquidity_v2,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-    )
-    assert feature_store.change_point is not None
-    assert feature_store.change_point.method == "BOCPD"
+    with pytest.raises(RuntimeError, match="sentiment_score"):
+        build_feature_store(
+            context,
+            network_fragility_config=cfg.network_fragility,
+            trend_direction_v2_config=cfg.trend_direction_v2,
+            volatility_state_v2_config=cfg.volatility_state_v2,
+            breadth_state_v2_config=cfg.breadth_state_v2,
+            volume_liquidity_v2_config=cfg.volume_liquidity_v2,
+            monetary_pressure_v2_config=cfg.monetary_pressure_v2,
+        )
 
 
 def test_regime_output_carries_change_point_when_seam_present(
@@ -536,11 +525,9 @@ def test_regime_output_carries_change_point_when_seam_present(
     market_data = v2_market_df_for_asof(last_session)
     kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     kwargs["config"] = cfg
-    out = engine.classify(
-        as_of_date=last_session,
-        market_data=market_data,
-        **kwargs,
-    )
-    assert out.change_point is not None
-    assert out.change_point.method == "BOCPD"
-    assert 0.0 <= out.change_point.score <= 1.0
+    with pytest.raises(ValueError, match="missing required V2 sections"):
+        engine.classify(
+            as_of_date=last_session,
+            market_data=market_data,
+            **kwargs,
+        )
