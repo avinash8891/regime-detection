@@ -39,6 +39,7 @@ from regime_detection.timeline import (
     _build_cluster_output,
     _build_hmm_output,
     _enrich_with_hmm_evidence,
+    _hmm_state_persistence_days,
     _resolve_timeline_required_sessions,
     build_regime_timeline,
 )
@@ -746,3 +747,55 @@ def test_transition_risk_history_precomputes_axis_switch_and_prior_bear_flags() 
     assert history.prior_bear_by_date[sessions[2]] is False
     assert history.prior_bear_by_date[sessions[3]] is True
     assert history.prior_bear_by_date[sessions[4]] is True
+
+
+def test_hmm_persistence_days_stable_across_refit_boundary() -> None:
+    """Regression: _hmm_state_persistence_days correctly counts consecutive
+    sessions with the same aligned HMM state ID across a refit boundary.
+
+    After Task 2 (Hungarian alignment), state IDs are stable across refits, so
+    int(prev) != int(current_state) is a meaningful comparison. This test locks
+    both the steady-state count and the transition-boundary count.
+    """
+    sessions = pd.bdate_range(start="2024-01-02", periods=20, freq="B")
+
+    # --- Stable case: all 20 sessions are state=1 (e.g. high_vol_stress).
+    # Querying at session 14 (0-indexed) = 15th session → should be 15.
+    stable_series = pd.array([1] * 20, dtype="Int64")
+    full_stable = pd.Series(stable_series, index=sessions)
+    target_session_14 = sessions[14]
+
+    result_stable = _hmm_state_persistence_days(full_stable, target_session_14)
+
+    assert (
+        result_stable == 15
+    ), f"Stable case: expected persistence=15 at session 14, got {result_stable}"
+
+    # --- Transition case: state=0 (elevated_uncertainty) for first 10 sessions,
+    # then state=1 (high_vol_stress) for last 10. Querying at session 14
+    # (the 5th session in the state=1 run) → persistence should be 5.
+    states_mixed = [0] * 10 + [1] * 10
+    transition_series = pd.Series(pd.array(states_mixed, dtype="Int64"), index=sessions)
+    target_session_14_transition = sessions[14]
+
+    result_transition = _hmm_state_persistence_days(
+        transition_series, target_session_14_transition
+    )
+
+    assert result_transition == 5, (
+        f"Transition case: expected persistence=5 at session 14 "
+        f"(5th day of state=1 run), got {result_transition}"
+    )
+
+    # --- Boundary check: querying exactly at the first session of the state=1
+    # run (session index 10) → persistence should be 1.
+    target_first_of_new_state = sessions[10]
+
+    result_boundary = _hmm_state_persistence_days(
+        transition_series, target_first_of_new_state
+    )
+
+    assert result_boundary == 1, (
+        f"Boundary case: expected persistence=1 at first session of new state, "
+        f"got {result_boundary}"
+    )
