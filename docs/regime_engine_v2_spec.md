@@ -575,14 +575,14 @@ the slice/commit that resolved it. Entries are append-only.
     Resolution: classical Mandelbrot–Wallis Rescaled-Range (R/S) over a
     single 250-session window (no chunk-averaging). H = log(R/S) /
     log(N) where N = lookback - 1 log-returns. Pinned in
-    `regime_detection.trend_direction_v2._rs_hurst_window`.
+    `regime_detection.trend_direction._rs_hurst_window`.
     Resolved by Slice 2.1.
 
 12. **§1A line 79 — Hurst input series (price vs log-returns).**
     Spec is silent on whether the 250d Hurst window operates on price
     levels or on returns. Resolution: log-returns (literature standard
     for R/S on financial time series; Lo 1991, Mandelbrot–Wallis 1969).
-    Pinned in `regime_detection.trend_direction_v2._rs_hurst_window`.
+    Pinned in `regime_detection.trend_direction._rs_hurst_window`.
     Resolved by Slice 2.1.
 
 13. **§1A line 116 — `drawdown_252d` peak-window inclusivity.**
@@ -600,7 +600,7 @@ the slice/commit that resolved it. Entries are append-only.
     `t >= sma_period - 1 + slope_lookback_days` (so slope_sma_50 first
     non-NaN at t=69, slope_sma_200 at t=219). Standard V1 cold-start
     contract (no warm-up). Pinned in
-    `regime_detection.trend_direction_v2._slope_of_sma`.
+    `regime_detection.trend_direction._slope_of_sma`.
     Resolved by Slice 2.1.
 
 15. **§1C line 142 — ATR estimator (Wilder vs simple-mean true range).**
@@ -641,7 +641,7 @@ the slice/commit that resolved it. Entries are append-only.
     efficiency_ratio_20d 'ending at t' convention" was off by one and
     is corrected here. Strictly `> threshold` per spec text — a gap
     exactly equal to the threshold is NOT counted. Pinned in
-    `regime_detection.volatility_state_v2._gap_frequency`.
+    `regime_detection.volatility_state._gap_frequency`.
     Resolved by Slice 2.2; first-valid-index documentation amended by
     Slice 2.4.
 
@@ -652,7 +652,7 @@ the slice/commit that resolved it. Entries are append-only.
     so a rising intraday-range maps to a rising percentile. Mirrors slice
     1.2's `pd.Series.rolling(N).rank(pct=True)` pattern in
     `regime_detection.network_fragility`. Pinned in
-    `regime_detection.volatility_state_v2._intraday_range_percentile`.
+    `regime_detection.volatility_state._intraday_range_percentile`.
     Resolved by Slice 2.2.
 
 18. **§1C line 181 — `gap_threshold_pct` "configurable per market" with
@@ -805,7 +805,7 @@ the slice/commit that resolved it. Entries are append-only.
     upstream data-quality gap. The fail-NaN policy is also consistent
     with V1 cold-start contract (missing input → NaN, not a synthesized
     value). Implemented in
-    `regime_detection.breadth_state_v2.compute_breadth_v2_features`.
+    `regime_detection.breadth_state.compute_breadth_v2_features`.
     Resolved by Slice 2.3.
 
 28. **§1E line 256 — `volume_zscore_20d` standard-deviation `ddof` choice.**
@@ -816,7 +816,7 @@ the slice/commit that resolved it. Entries are append-only.
     for z-scores on financial time series. Constant-volume windows
     yield `std == 0` ⇒ output masked to NaN (`0 / 0`), matching the V1
     cold-start contract (no synthesized values). Pinned in
-    `regime_detection.volume_liquidity_v2._volume_zscore` and exposed
+    `regime_detection.volume_liquidity._volume_zscore` and exposed
     as `VolumeLiquidityV2Config.volume_zscore_ddof` so §9.1 calibration
     can retune without code changes.
     Resolved by Slice 2.4.
@@ -839,19 +839,19 @@ the slice/commit that resolved it. Entries are append-only.
     `gap_frequency_20d` + `intraday_range_percentile_252d` from
     `FeatureStore.volatility_state_v2` (the two §1E features that
     already live on slice 2.2's seam — they are NOT recomputed in
-    `volume_liquidity_v2.py`).
+    `volume_liquidity.py`).
     Deferred by Slice 2.4.
 
 30. **§1E feature placement — `gap_frequency_20d` / `intraday_range_percentile_252d`.**
     Spec §1E lines 257–258 list `gap_frequency_20d` and
     `intraday_range_percentile_252d` as part of the Volume / Liquidity
     feature set, but slice 2.2 had already implemented them under the
-    §1C Volatility feature compute (`volatility_state_v2.py`) because
+    §1C Volatility feature compute (`volatility_state.py`) because
     §1C lines 176–187 also reference them. Resolution: keep the
     one-home-per-concept rule (AGENTS rule B) — those two features
-    continue to live in `volatility_state_v2.py` and surface through
+    continue to live in `volatility_state.py` and surface through
     `FeatureStore.volatility_state_v2`. The new slice 2.4 module
-    `volume_liquidity_v2.py` ships ONLY `volume_zscore_20d` and exposes
+    `volume_liquidity.py` ships ONLY `volume_zscore_20d` and exposes
     a separate `FeatureStore.volume_liquidity_v2` seam. The future §1E
     axis classifier reads its three feature inputs from BOTH seams. No
     feature is computed twice.
@@ -865,7 +865,7 @@ the slice/commit that resolved it. Entries are append-only.
     satisfies the rule; `return_63d` exactly at `0.10` does NOT;
     `close == SMA_50` does NOT. Each boundary has a dedicated unit test
     in `tests/test_trend_direction_v2_recovery_rule.py`. Pinned in
-    `regime_detection.trend_direction_v2.evaluate_recovery`.
+    `regime_detection.trend_direction_rules.evaluate_recovery`.
     Resolved by Slice 2.5.
 
 32. **§1A lines 121-127 — `euphoria` label deferral.**
@@ -880,7 +880,7 @@ the slice/commit that resolved it. Entries are append-only.
     `euphoria` slot above `bull` so the slice that lands sentiment can
     drop the rule in without re-ordering. The precedence-evaluation
     table in
-    `regime_detection.trend_direction_v2._V2_TREND_PRECEDENCE` includes
+    `regime_detection.trend_direction_rules._V2_TREND_PRECEDENCE` includes
     `"euphoria"` at index 0 but the rule predicate did not fire at
     Slice 2.5.
     Deferred by Slice 2.5.
@@ -909,7 +909,7 @@ the slice/commit that resolved it. Entries are append-only.
       historical top-decile of the AAII bull-bear 8w-MA distribution
       (1987–present).
 
-    Implemented in `regime_detection.trend_direction_v2.evaluate_euphoria`
+    Implemented in `regime_detection.trend_direction_rules.evaluate_euphoria`
     and tested by per-conjunct boundary cases in
     `tests/test_trend_direction_v2_euphoria.py`. Side-effect:
     `euphoria_specialist` in `regime_detection.cohort_routing` is now
@@ -967,7 +967,7 @@ the slice/commit that resolved it. Entries are append-only.
     (bull outranks recovery). If v1 emits `bear`/`sideways`/`transition`/
     `unknown` AND the v2 `recovery` predicate fires, the day becomes
     `recovery`. Implemented in
-    `regime_detection.trend_direction_v2.evaluate_v2_trend_label`.
+    `regime_detection.trend_direction_rules.evaluate_v2_trend_label`.
     Resolved by Slice 2.5.
 
 36. **§1C line 147-148 — `rising_vol` rule inequality strictness +
@@ -983,7 +983,7 @@ the slice/commit that resolved it. Entries are append-only.
     substitution). This mirrors slice 2.5's recovery cold-start and is
     conservative — a partially-warmed-up session cannot trigger a
     risk-up override. Implemented in
-    `regime_detection.volatility_state_v2.evaluate_rising_vol`.
+    `regime_detection.volatility_state_rules.evaluate_rising_vol`.
     Resolved by Slice 2.6.
 
 37. **§1C line 148 — `realized_vol` shared helper exposure.**
@@ -1025,20 +1025,20 @@ the slice/commit that resolved it. Entries are append-only.
     the day keeps the v1 label (both outrank rising_vol). If v1 emits
     `low_vol` / `normal_vol` / `unknown` AND the predicate fires, the
     day becomes `rising_vol`. Implemented in
-    `regime_detection.volatility_state_v2.evaluate_v2_volatility_label`.
+    `regime_detection.volatility_state_rules.evaluate_v2_volatility_label`.
     Resolved by Slice 2.6.
 
 40. **§1E lines 276-280 — `liquidity_gap_behavior` deferral.**
     Spec rule requires `gap_frequency_20d percentile_252d > 0.75 AND
     intraday_range_percentile_252d > 0.75`. The intraday-range
-    percentile already lives on `volatility_state_v2` (slice 2.2), but
+    percentile already lives on `volatility_state` (slice 2.2), but
     the 252d percentile of `gap_frequency_20d` is NOT yet computed by
     any feature module — the slice-2.2 compute exposes only the raw
     `gap_frequency_20d` series, not its 252d percentile rank. Per
     v2 §10 absolute rule we do NOT invent the missing input.
     Resolution: defer the `liquidity_gap_behavior` rule until a
     follow-up slice adds the 252d percentile of `gap_frequency_20d`
-    to `volatility_state_v2`. The `evaluate_liquidity_gap_behavior`
+    to `volatility_state`. The `evaluate_liquidity_gap_behavior`
     predicate in `regime_detection.volume_liquidity_rules`
     short-circuits to `False` today; the function signature already
     accepts the two percentile inputs (carrying NaN today) so a future
@@ -1052,7 +1052,7 @@ the slice/commit that resolved it. Entries are append-only.
     audit. The "missing input" turned out to require no new external
     feed: the 252d percentile of `gap_frequency_20d` is just a rolling
     rank on the already-shipped raw series. `compute_volatility_v2_
-    features` in `regime_detection.volatility_state_v2` now emits
+    features` in `regime_detection.volatility_state` now emits
     `gap_frequency_percentile_252d` alongside the existing
     `intraday_range_percentile_252d`. The
     `VolumeLiquidityStateSeriesClassifier` reads both percentiles from
@@ -1121,7 +1121,7 @@ the slice/commit that resolved it. Entries are append-only.
       Requires `pct_above_50dma`, a point-in-time (PIT) constituent
       feature. v1 `regime_detection.breadth_state` uses an
       RSP/SPY ETF-proxy and does not expose `pct_above_50dma`; v2
-      `regime_detection.breadth_state_v2` (Slice 2.3) explicitly
+      `regime_detection.breadth_state` (Slice 2.3) explicitly
       defers all PIT pct_above_*dma features per entry #21 and v2
       §1D lines 198–205 ("V2 PIT breadth must not silently fall back
       to biased current constituents").
@@ -1130,7 +1130,7 @@ the slice/commit that resolved it. Entries are append-only.
       `FeatureStore.network_fragility` since Slice 1.2.
     - `trend_break_score` (§4.2 line 1255): AVAILABLE.
       `drawdown_252d` exposed by
-      `regime_detection.trend_direction_v2` since Slice 2.1.
+      `regime_detection.trend_direction` since Slice 2.1.
     - `macro_event_score` (§4.2 line 1260): AVAILABLE.
       `regime_detection.event_calendar.classify_event_calendar`
       already emits the spec-named labels `fed_week`, `cpi_week`,
@@ -1163,7 +1163,7 @@ the slice/commit that resolved it. Entries are append-only.
     - PIT constituent membership now ships through the engine
       end-to-end (`market_context.py` accepts
       `pit_constituent_intervals` + `constituent_ohlcv`;
-      `breadth_state_v2._compute_pit_features` materialises
+      `breadth_state._compute_pit_features` materialises
       `pct_above_50dma`), unblocking `breadth_deterioration_score`.
     - HMM shipped in Slice 6 (`regime_detection.hmm_state`),
       unblocking `model_instability_score`.
@@ -1965,7 +1965,7 @@ the slice/commit that resolved it. Entries are append-only.
     `sma_200` reductions are computed off the same `adjusted_close`
     series. The §1D `52-week new highs / new lows` predicate (Ambiguity
     Log #55) also uses `adjusted_close` for the same reason. Pinned in
-    `regime_detection.breadth_state_v2` PIT-feature compute.
+    `regime_detection.breadth_state` PIT-feature compute.
     Resolved by Slice 2.8c.
 
 55. **§1D lines 218–221 — `nh_nl_ratio` lookback window.**
@@ -1981,7 +1981,7 @@ the slice/commit that resolved it. Entries are append-only.
     be both a member of the high count and unchanged from a prior
     high). Exposed as `BreadthV2Config.nh_nl_lookback_sessions = 252`
     so §9.1 calibration can retune without code changes. Pinned in
-    `regime_detection.breadth_state_v2` PIT-feature compute.
+    `regime_detection.breadth_state` PIT-feature compute.
     Resolved by Slice 2.8c.
 
 56. **§1D lines 213–214 + §1D `pct_advancing` — `advances` / `declines`
@@ -2011,7 +2011,7 @@ the slice/commit that resolved it. Entries are append-only.
     (standard convention). Downstream consumers must read
     `ad_line_slope_20d`, not the level. The level is exposed for
     diagnostic inspection only; no rule predicate references it.
-    Pinned in `regime_detection.breadth_state_v2._compute_ad_line`.
+    Pinned in `regime_detection.breadth_state._compute_ad_line`.
     Resolved by Slice 2.8c.
 
 58. **§1D line 211 + line 230 — newly-listed members lacking SMA
@@ -2033,7 +2033,7 @@ the slice/commit that resolved it. Entries are append-only.
     new-52w-low predicates (Ambiguity Log #55): a ticker with fewer
     than 252 sessions of history is excluded from both numerator and
     denominator at `as_of_date`. Pinned in
-    `regime_detection.breadth_state_v2` PIT-feature compute.
+    `regime_detection.breadth_state` PIT-feature compute.
     Resolved by Slice 2.8c.
 
 59. **§1D — PIT membership semantics for backward-looking
@@ -2056,7 +2056,7 @@ the slice/commit that resolved it. Entries are append-only.
     practice. The combination of #58 (NaN-SMA exclusion) and #59
     (full-history SMA computation) is what unblocks the §1D PIT
     features without inventing a definition. Pinned in
-    `regime_detection.breadth_state_v2` PIT-feature compute and
+    `regime_detection.breadth_state` PIT-feature compute and
     asserted by the integration test in slice 2.8d.
     Resolved by Slice 2.8c.
 
@@ -2103,7 +2103,7 @@ the slice/commit that resolved it. Entries are append-only.
     interpretation. Options (Y) and (Z) would require special-casing
     the flat-series detection (an extra `adj[D] == min == max` check)
     that adds a hidden invariant to the predicate. Pinned in
-    `regime_detection.breadth_state_v2._compute_nh_nl_ratio` and
+    `regime_detection.breadth_state._compute_nh_nl_ratio` and
     asserted by `test_nh_nl_ratio_zero_when_no_new_high_or_low` (the
     truly-no-extremum case) plus the structural-counting design of
     the helper.
