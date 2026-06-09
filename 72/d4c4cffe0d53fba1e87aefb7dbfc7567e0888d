@@ -1,0 +1,24 @@
+src/regime_detection/_config_layer2.py
+  s_3579a11c274b3d::t_698531bbadb0a8 91-96
+src/regime_detection/_feature_specs.py
+  s_3579a11c274b3d::t_244925014e7dd7 346-379
+tests/test_sentiment_staleness.py
+  s_3579a11c274b3d::t_0a8a714abba4d7 183-233
+  s_3579a11c274b3d::t_861f233ec3380c 1,7-10,19-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "72d4c4cffe0d53fba1e87aefb7dbfc7567e0888d",
+  "prompts": {},
+  "sessions": {
+    "s_3579a11c274b3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4ff0dba7-5695-4f37-858c-5161163327a0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
