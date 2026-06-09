@@ -193,6 +193,108 @@ def test_seed_determinism() -> None:
     )
 
 
+def test_cluster_ids_are_stable_across_pit_refit_boundary() -> None:
+    """Cluster IDs must not permute at PIT refit boundaries.
+
+    GMM component ordering is arbitrary after each fit. Without Hungarian
+    alignment, cluster 0 at checkpoint N can map to cluster 2 at
+    checkpoint N+1, corrupting cluster_label_map and causing spurious
+    cluster_flip = 1.0 at every refit boundary.
+
+    This test constructs data with 3 well-separated clusters cycling
+    through the entire series (so every training window sees all 3
+    clusters), runs with cadence=21, and asserts that points from
+    the same spatial cluster get a single consistent ID across all
+    refit checkpoints.
+    """
+    rng = np.random.default_rng(123)
+    n_sessions = 500
+    index = pd.bdate_range("2015-01-05", periods=n_sessions)
+
+    # Assign each session to one of 3 spatial clusters in a repeating
+    # pattern so every training window (100 sessions) sees all 3 clusters.
+    cluster_labels = np.array([i % 3 for i in range(n_sessions)])
+
+    # Three well-separated centroids in 7-dim feature space.
+    centroids = {
+        0: [0.05, 0.12, 0.08, -0.02, 15.0, 0.25, 0.80],
+        1: [-0.08, -0.15, 0.35, -0.25, 40.0, 0.70, 0.20],
+        2: [0.01, 0.02, 0.18, -0.10, 25.0, 0.45, 0.50],
+    }
+    # Tight spread relative to centroid separation.
+    scales = [0.003, 0.005, 0.003, 0.003, 0.5, 0.01, 0.01]
+
+    feature_names = [
+        "return_21d",
+        "return_63d",
+        "realized_vol_21d",
+        "drawdown_63d",
+        "adx_14",
+        "avg_pairwise_corr_63d",
+        "pct_above_50dma",
+    ]
+    data = np.empty((n_sessions, 7))
+    for i in range(n_sessions):
+        c = cluster_labels[i]
+        for j in range(7):
+            data[i, j] = rng.normal(loc=centroids[c][j], scale=scales[j])
+
+    inputs = {
+        name: pd.Series(data[:, j], index=index, name=name)
+        for j, name in enumerate(feature_names)
+    }
+
+    cfg = ClusteringConfig(
+        n_clusters=3,
+        training_window_days=100,
+        retrain_cadence_days=21,
+        random_state=42,
+    )
+
+    result = compute_clustering_features(config=cfg, **inputs)
+    assert result is not None
+
+    ids = result.cluster_id.dropna()
+    assert len(ids) > 0
+
+    # For each ground-truth cluster, the GMM should assign a single
+    # consistent ID across all refit checkpoints. If Hungarian alignment
+    # is missing, IDs permute at boundaries.
+    for gt_cluster in range(3):
+        # Use positional indexing aligned to the ids series.
+        gt_positions = np.where(
+            np.array([cluster_labels[i] for i in range(n_sessions)])[
+                ids.index.get_indexer(ids.index)
+            ]
+            == gt_cluster
+        )[0]
+        if len(gt_positions) == 0:
+            continue
+        cluster_ids_for_gt = ids.iloc[gt_positions]
+        dominant_id = cluster_ids_for_gt.mode().iloc[0]
+        consistency = (cluster_ids_for_gt == dominant_id).mean()
+        assert consistency >= 0.95, (
+            f"ground-truth cluster {gt_cluster}: ID consistency "
+            f"{consistency:.2%} < 95% — IDs permuted at refit boundary "
+            f"(unique IDs: {sorted(cluster_ids_for_gt.unique())})"
+        )
+
+    # The three ground-truth clusters must map to three DISTINCT IDs.
+    dominant_ids = set()
+    for gt_cluster in range(3):
+        gt_positions = np.where(
+            np.array([cluster_labels[i] for i in range(n_sessions)])[
+                ids.index.get_indexer(ids.index)
+            ]
+            == gt_cluster
+        )[0]
+        if len(gt_positions) > 0:
+            dominant_ids.add(int(ids.iloc[gt_positions].mode().iloc[0]))
+    assert (
+        len(dominant_ids) == 3
+    ), f"Expected 3 distinct cluster IDs, got {dominant_ids}"
+
+
 def test_compute_clustering_returns_none_on_singular_covariance() -> None:
     """Constant zero-variance inputs force a singular covariance failure."""
     index = pd.bdate_range("2010-01-04", periods=1500)

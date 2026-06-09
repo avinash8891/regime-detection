@@ -30,6 +30,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import linear_sum_assignment
 from sklearn.mixture import GaussianMixture
 
 from regime_detection.config import ClusteringConfig
@@ -69,6 +70,52 @@ class ClusteringFeatures:
     cluster_probabilities: pd.DataFrame
     n_clusters: int
     model_version: str
+
+
+def _align_components_to_reference(
+    model: GaussianMixture,
+    proba: np.ndarray,
+    reference_means: np.ndarray,
+) -> np.ndarray:
+    """Align GMM component ordering to match the previous checkpoint.
+
+    GMM component IDs are arbitrary after each fit. This uses the
+    Hungarian algorithm on the pairwise Euclidean distance cost matrix
+    between the new model's centroids and the reference centroids to
+    find the optimal permutation, then reorders all model attributes
+    and the posterior probability columns in-place.
+
+    Returns the column-permuted ``proba`` array.
+    """
+    # Cost matrix: (n_components, n_components) Euclidean distances.
+    diff = model.means_[:, np.newaxis, :] - reference_means[np.newaxis, :, :]
+    cost = np.linalg.norm(diff, axis=2)
+    row_ind, col_ind = linear_sum_assignment(cost)
+
+    # col_ind[i] = which reference component new component i maps to.
+    # We need the inverse: permutation[j] = which new component fills
+    # slot j in the aligned ordering.
+    n = len(col_ind)
+    perm = np.empty(n, dtype=int)
+    perm[col_ind] = row_ind
+
+    # Permute posterior columns.
+    proba = proba[:, perm]
+
+    # Permute model attributes so downstream code sees aligned centroids.
+    model.means_ = model.means_[perm]
+    model.weights_ = model.weights_[perm]
+    if hasattr(model, "covariances_") and model.covariances_ is not None:
+        model.covariances_ = model.covariances_[perm]
+    if hasattr(model, "precisions_") and model.precisions_ is not None:
+        model.precisions_ = model.precisions_[perm]
+    if (
+        hasattr(model, "precisions_cholesky_")
+        and model.precisions_cholesky_ is not None
+    ):
+        model.precisions_cholesky_ = model.precisions_cholesky_[perm]
+
+    return proba
 
 
 def compute_clustering_features(
@@ -125,6 +172,7 @@ def compute_clustering_features(
     cluster_id_series = pd.Series(pd.NA, index=frame.index, dtype="Int64")
     distance_series = pd.Series(float("nan"), index=frame.index, dtype="float64")
     successful_fit = False
+    reference_means: np.ndarray | None = None
     cadence = max(1, config.retrain_cadence_days)
     train_end_positions = list(range(n_train - 1, len(frame), cadence))
     if not train_end_positions or train_end_positions[-1] != len(frame) - 1:
@@ -162,6 +210,9 @@ def compute_clustering_features(
                 exc,
             )
             continue
+        if reference_means is not None:
+            proba = _align_components_to_reference(model, proba, reference_means)
+        reference_means = model.means_.copy()
         ids = proba.argmax(axis=1)
         means_for_rows = model.means_[ids]
         diff = segment_X - means_for_rows
