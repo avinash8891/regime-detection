@@ -43,6 +43,7 @@ from regime_detection._config_layer2 import (
     MonetaryPressureV2FeaturesConfig,
     MonetaryPressureV2RulesConfig,
     NewsSentimentConfig,
+    SentimentScoreConfig,
 )
 from regime_detection._config_evidence_strategy import (
     ChangePointConfig,
@@ -88,6 +89,7 @@ __all__ = [
     "NewsSentimentConfig",
     "NoFlipFlopConfig",
     "RegimeConfig",
+    "SentimentScoreConfig",
     "StrategyFamilyConstraintsConfig",
     "StrategyEventModifierRule",
     "StrategyEventModifiersConfig",
@@ -117,6 +119,7 @@ class V2FeatureBuildConfigs(TypedDict):
     inflation_growth_config: InflationGrowthConfig | None
     central_bank_text_config: CentralBankTextConfig | None
     news_sentiment_config: NewsSentimentConfig | None
+    sentiment_score_config: SentimentScoreConfig | None
 
 
 class RegimeConfig(StrictBaseModel):
@@ -158,6 +161,9 @@ class RegimeConfig(StrictBaseModel):
     # v2 §1A SF Fed news sentiment evidence config. Evidence only —
     # never read by the `euphoria` rule.
     news_sentiment: NewsSentimentConfig | None = None
+    # AAII sentiment staleness guard — prevents unbounded ffill from
+    # keeping stale euphoria readings alive indefinitely.
+    sentiment_score: SentimentScoreConfig | None = None
     inflation_growth: InflationGrowthConfig | None = None
     credit_funding: CreditFundingConfig | None = None
     hmm: HMMConfig | None = None
@@ -211,6 +217,7 @@ class RegimeConfig(StrictBaseModel):
                 "inflation_growth_config": None,
                 "central_bank_text_config": None,
                 "news_sentiment_config": None,
+                "sentiment_score_config": None,
             }
         return {
             "network_fragility_config": self.network_fragility,
@@ -223,6 +230,7 @@ class RegimeConfig(StrictBaseModel):
             "inflation_growth_config": self.inflation_growth,
             "central_bank_text_config": self.central_bank_text,
             "news_sentiment_config": self.news_sentiment,
+            "sentiment_score_config": self.sentiment_score,
         }
 
 

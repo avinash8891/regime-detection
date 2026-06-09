@@ -42,6 +42,7 @@ from regime_detection.config import (
     MonetaryPressureV2FeaturesConfig,
     NetworkFragilityConfig,
     NewsSentimentConfig,
+    SentimentScoreConfig,
     TrendDirectionV2Config,
     VolatilityV2Config,
     VolumeLiquidityV2Config,
@@ -163,6 +164,7 @@ class _FeatureStoreBuildState:
     inflation_growth_config: InflationGrowthConfig | None = None
     central_bank_text_config: CentralBankTextConfig | None = None
     news_sentiment_config: NewsSentimentConfig | None = None
+    sentiment_score_config: SentimentScoreConfig | None = None
     trend_direction: TrendDirectionFeatures | None = None
     sentiment_score: pd.Series | None = None
     news_sentiment_score: pd.Series | None = None
@@ -217,6 +219,7 @@ def _build_sentiment_score_series(
     *,
     aaii_sentiment: pd.DataFrame | None,
     session_index: pd.DatetimeIndex,
+    config: SentimentScoreConfig | None = None,
 ) -> pd.Series | None:
     """Align AAII bull-bear-spread 8w-MA onto the SPY session index for
     consumption by the v2 §1A `euphoria` predicate (ADR 0004 Q1+Q4).
@@ -289,7 +292,43 @@ def _build_sentiment_score_series(
         readings_on_or_before >= _MIN_SENTIMENT_WEEKLY_READINGS,
         index=session_index,
     )
-    return result.where(warm)
+    result = result.where(warm)
+
+    # Max-staleness guard: NaN-out sessions whose last real AAII reading is
+    # older than config.max_staleness_sessions sessions. This prevents the
+    # euphoria gate from firing on arbitrarily stale forward-filled data.
+    if config is not None:
+        # For each session, find how many sessions ago the last real reading was.
+        # `readings_on_or_before` is the count of publication dates on or before
+        # each session. Where this count doesn't increase, it means no new real
+        # reading arrived. We compute sessions_since_last_real as the distance
+        # from each session to the latest publication date that is <= session.
+        last_real_idx = np.clip(readings_on_or_before - 1, 0, len(publication) - 1)
+        last_real_dates = publication[last_real_idx]
+        # For sessions before ANY real reading (readings_on_or_before == 0),
+        # already masked by warm; set last_real_dates to NaT so they stay NaN.
+        no_readings_mask = readings_on_or_before == 0
+        last_real_dates_series = pd.Series(last_real_dates, index=session_index)
+        last_real_dates_series[no_readings_mask] = pd.NaT
+
+        # Count NYSE sessions between the last real reading and each session.
+        # Use searchsorted on session_index to get the positional index of each
+        # date, then compute the difference.
+        session_positions = np.arange(len(session_index))
+        last_real_positions = np.asarray(
+            session_index.searchsorted(last_real_dates_series, side="right") - 1,
+            dtype=float,
+        )
+        last_real_positions[no_readings_mask] = np.nan
+        sessions_since_last_real = session_positions - last_real_positions
+
+        fresh = pd.Series(
+            sessions_since_last_real <= config.max_staleness_sessions,
+            index=session_index,
+        )
+        result = result.where(fresh)
+
+    return result
 
 
 def _build_news_sentiment_score_series(
@@ -392,6 +431,7 @@ def _resolve_sentiment_score(
     return {
         "aaii_sentiment": aaii,
         "session_index": _as_datetime_index(state.spy_close.index),
+        "config": state.sentiment_score_config,
     }
 
 

@@ -14,6 +14,7 @@ from regime_detection.config import (
     MonetaryPressureV2FeaturesConfig,
     NetworkFragilityConfig,
     NewsSentimentConfig,
+    SentimentScoreConfig,
     TrendDirectionV2Config,
     VolatilityV2Config,
     VolumeLiquidityV2Config,
@@ -174,6 +175,7 @@ def build_feature_store(
     inflation_growth_config: InflationGrowthConfig | None = None,
     central_bank_text_config: CentralBankTextConfig | None = None,
     news_sentiment_config: NewsSentimentConfig | None = None,
+    sentiment_score_config: SentimentScoreConfig | None = None,
 ) -> FeatureStore:
     # TODO(refactor, owner=regime-maintainers): Decompose this builder in a dedicated no-behavior-change
     # refactor. Keep feature wiring and fixture replay frozen while extracting
@@ -194,6 +196,7 @@ def build_feature_store(
         inflation_growth_config=inflation_growth_config,
         central_bank_text_config=central_bank_text_config,
         news_sentiment_config=news_sentiment_config,
+        sentiment_score_config=sentiment_score_config,
     )
     availability = _run_feature_specs(FEATURE_SPECS, build_state)
 
