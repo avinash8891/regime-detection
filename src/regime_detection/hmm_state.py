@@ -207,6 +207,9 @@ def compute_hmm_features(
         columns=list(range(config.n_states)),
     )
     latest_fit: dict[str, Any] | None = None
+    # Findings #3/#4: align HMM state ordering across PIT refit checkpoints
+    # so that state IDs are stable (mapped_label, state_persistence_days).
+    reference_hmm_means: np.ndarray | None = None
     # F-025: §6.1 calibration drift between consecutive PIT refit checkpoints.
     previous_raw_means: np.ndarray | None = None
     previous_transmat: np.ndarray | None = None
@@ -298,15 +301,12 @@ def compute_hmm_features(
                         best = result
                 if best is None:
                     continue
-                state_prob_frame.loc[segment_frame.index, :] = best["posterior"]
-                latest_fit = best
 
-                # §6.1 drift monitor (F-025): de-standardize this checkpoint's
-                # state means back to raw feature units (model.means_ live in the
-                # per-window standardized space), then compare to the previous
-                # checkpoint. Transition probabilities are scale-invariant.
-                # Fail-open: skip silently if a fitter did not expose params.
-                if best["means"] is not None and best["transmat"] is not None:
+                # De-standardize state means to raw feature units BEFORE
+                # alignment so the Hungarian cost matrix uses a scale that
+                # is comparable across windows (findings #3, #4).
+                raw_means: np.ndarray | None = None
+                if best["means"] is not None:
                     raw_means = best["means"]
                     if config.standardize_inputs:
                         train_means = train_frame.mean().to_numpy(dtype=float)
@@ -316,6 +316,26 @@ def compute_hmm_features(
                             .to_numpy(dtype=float)
                         )
                         raw_means = best["means"] * train_stds + train_means
+
+                # Align state ordering to previous checkpoint so IDs are
+                # stable across refit boundaries (findings #3, #4).
+                if reference_hmm_means is not None and raw_means is not None:
+                    aligned_post, aligned_raw = _align_posterior_to_reference(
+                        best["posterior"], raw_means, reference_hmm_means
+                    )
+                    best["posterior"] = aligned_post
+                    raw_means = aligned_raw
+                if raw_means is not None:
+                    reference_hmm_means = raw_means
+
+                state_prob_frame.loc[segment_frame.index, :] = best["posterior"]
+                latest_fit = best
+
+                # §6.1 drift monitor (F-025): compare de-standardized,
+                # aligned state means to the previous checkpoint.
+                # Transition probabilities are scale-invariant.
+                # Fail-open: skip silently if a fitter did not expose params.
+                if raw_means is not None and best["transmat"] is not None:
                     if previous_raw_means is not None and previous_transmat is not None:
                         latest_drift = compute_hmm_parameter_drift(
                             previous_state_means=previous_raw_means,
@@ -395,6 +415,35 @@ def _prepare_hmm_frames(
     train = ((train_frame - means) / stds).to_numpy(dtype=float)
     full = ((full_frame - means) / stds).to_numpy(dtype=float)
     return train, full
+
+
+def _align_posterior_to_reference(
+    posterior: np.ndarray,
+    current_means: np.ndarray,
+    reference_means: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Align HMM state ordering to a reference checkpoint via Hungarian matching.
+
+    HMM state IDs from ``hmmlearn`` are arbitrary after each refit. This
+    finds the optimal permutation mapping the current states to the
+    reference states (minimising pairwise Euclidean distance on state
+    means), then reorders posterior columns and means accordingly.
+
+    Returns ``(permuted_posterior, permuted_means)``.
+    """
+    cost = np.linalg.norm(
+        current_means[:, np.newaxis, :] - reference_means[np.newaxis, :, :],
+        axis=2,
+    )
+    row_ind, col_ind = linear_sum_assignment(cost)
+
+    # col_ind[i] = which reference slot new state i maps to.
+    # Invert: perm[j] = which new state fills reference slot j.
+    n = len(col_ind)
+    perm = np.empty(n, dtype=int)
+    perm[col_ind] = row_ind
+
+    return posterior[:, perm], current_means[perm]
 
 
 def _has_sufficient_distinct_rows(frame: np.ndarray, *, n_states: int) -> bool:

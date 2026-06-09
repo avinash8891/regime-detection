@@ -712,3 +712,108 @@ def test_compute_hmm_features_parameter_drift_is_none_with_single_checkpoint() -
     result = compute_hmm_features(config=cfg, **inputs)
     assert result is not None
     assert result.parameter_drift is None
+
+
+# ---------------------------------------------------------------------------
+# Finding #3 / #4 — HMM state IDs must be stable across PIT refit boundaries
+# ---------------------------------------------------------------------------
+
+
+def test_hmm_state_ids_are_stable_across_pit_refit_boundary() -> None:
+    """State IDs assigned by consecutive PIT refit checkpoints must be
+    consistent: the same physical regime must keep the same integer label
+    across the refit boundary. Without Hungarian alignment of HMM state
+    ordering, hmmlearn's arbitrary ID assignment can swap state labels at
+    each checkpoint, corrupting mapped_label and state_persistence_days.
+
+    Strategy: build 800 sessions split into alternating calm/stress blocks
+    (each 200 sessions), with a 252-day training window that always spans
+    both regimes. The window ensures the HMM learns both states in every
+    refit, and the 21-day cadence creates several checkpoints per block.
+    We verify state IDs stay consistent deep within each block.
+    """
+    rng = np.random.default_rng(42)
+    n_sessions = 800
+    index = pd.bdate_range("2012-01-03", periods=n_sessions)
+
+    # Two alternating regime blocks: calm (0-199, 400-599), stress (200-399, 600-799)
+    returns = np.empty(n_sessions)
+    vol_z = np.empty(n_sessions)
+    corr_vals = np.empty(n_sessions)
+    for block_start in range(0, n_sessions, 200):
+        block_end = block_start + 200
+        is_stress = (block_start // 200) % 2 == 1
+        if is_stress:
+            returns[block_start:block_end] = rng.normal(
+                loc=-0.003, scale=0.030, size=200
+            )
+            vol_z[block_start:block_end] = rng.normal(loc=2.0, scale=0.3, size=200)
+            corr_vals[block_start:block_end] = rng.normal(
+                loc=0.75, scale=0.03, size=200
+            ).clip(0.0, 0.95)
+        else:
+            returns[block_start:block_end] = rng.normal(
+                loc=0.001, scale=0.005, size=200
+            )
+            vol_z[block_start:block_end] = rng.normal(loc=-0.5, scale=0.3, size=200)
+            corr_vals[block_start:block_end] = rng.normal(
+                loc=0.20, scale=0.03, size=200
+            ).clip(0.0, 0.95)
+
+    return_1d = pd.Series(returns, index=index, name="return_1d")
+    realized_vol_21d = return_1d.rolling(21).std() * np.sqrt(252)
+    realized_vol_21d.name = "realized_vol_21d"
+    price = (1.0 + return_1d).cumprod() * 100.0
+    peak = price.rolling(63, min_periods=63).max()
+    drawdown_63d = (price / peak - 1.0).rename("drawdown_63d")
+    volume_zscore_20d = pd.Series(vol_z, index=index, name="volume_zscore_20d")
+    avg_pairwise_corr_63d = pd.Series(
+        corr_vals, index=index, name="avg_pairwise_corr_63d"
+    )
+
+    cfg = HMMConfig(
+        n_states=2,
+        training_window_days=252,
+        retrain_cadence_days=21,
+        random_state=42,
+        standardize_inputs=True,
+        covariance_type="full",
+        min_covar=0.001,
+        random_seeds=(42, 101, 202),
+    )
+
+    result = compute_hmm_features(
+        config=cfg,
+        return_1d=return_1d,
+        realized_vol_21d=realized_vol_21d,
+        drawdown_63d=drawdown_63d,
+        volume_zscore_20d=volume_zscore_20d,
+        avg_pairwise_corr_63d=avg_pairwise_corr_63d,
+    )
+    assert result is not None
+
+    # Extract the top state (argmax of posterior) for each session.
+    top_state = result.state_probabilities.idxmax(axis=1)
+
+    # Second calm block: sessions 420-580 (well inside, past warm-up).
+    calm_states = top_state.iloc[420:580].dropna()
+    assert len(calm_states) > 0, "calm block should have assigned states"
+    calm_id = calm_states.mode().iloc[0]
+    calm_agreement = (calm_states == calm_id).mean()
+    assert (
+        calm_agreement >= 0.90
+    ), f"calm block should be consistently one state, got {calm_agreement:.0%} agreement"
+
+    # Second stress block: sessions 620-780 (well inside stress).
+    stress_states = top_state.iloc[620:780].dropna()
+    assert len(stress_states) > 0, "stress block should have assigned states"
+    stress_id = stress_states.mode().iloc[0]
+    stress_agreement = (stress_states == stress_id).mean()
+    assert (
+        stress_agreement >= 0.90
+    ), f"stress block should be consistently one state, got {stress_agreement:.0%} agreement"
+
+    # The two regimes must have DIFFERENT state IDs.
+    assert (
+        calm_id != stress_id
+    ), f"calm and stress regimes must have different state IDs, both got {calm_id}"
