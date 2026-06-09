@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 
 # Pandas/numpy sample-std convention (ddof=1).
 _ZSCORE_DDOF = 1
@@ -70,13 +71,15 @@ def rolling_ols_slope(series: pd.Series, *, window: int) -> pd.Series:
     ``x = [0, 1, ..., window-1]``. Returns NaN until ``window`` non-NaN
     observations are available; any NaN in the window propagates to NaN.
 
-    The centered form is the canonical implementation: it subtracts means
-    BEFORE multiplying, dramatically reducing intermediate dynamic range
-    compared with the algebraically equivalent normal-equations form
-    ``(n·Σxy − Σx·Σy) / (n·Σx² − (Σx)²)``. The uncentered form can suffer
-    catastrophic cancellation for near-zero slopes feeding sign-sensitive
-    predicates (e.g. network_fragility's ``avg_pairwise_corr_slope_21d > 0``),
-    which is part of the V1 wire and must remain bit-stable.
+    The centered form subtracts means BEFORE multiplying, reducing intermediate
+    dynamic range compared with the uncentered normal-equations form
+    ``(n·Σxy − Σx·Σy) / (n·Σx² − (Σx)²)`` which can suffer catastrophic
+    cancellation for near-zero slopes feeding sign-sensitive predicates
+    (e.g. network_fragility's ``avg_pairwise_corr_slope_21d > 0`` V2 rule).
+    Note: the V1 wire hardcodes ``network_fragility`` to a placeholder — this
+    predicate is in the V2 classification path only.
+
+    Fully vectorized via ``sliding_window_view`` — no per-window Python loop.
 
     Single home for OLS-slope math — formerly duplicated in
     ``credit_funding._rolling_ols_slope`` and
@@ -84,16 +87,58 @@ def rolling_ols_slope(series: pd.Series, *, window: int) -> pd.Series:
     """
     if window < 2:
         raise ValueError(f"window must be >= 2; got {window}")
-    series = series.astype(float)
+    values = series.astype(float).to_numpy()
+    out = np.full(len(values), np.nan, dtype=float)
+    if len(values) < window:
+        return pd.Series(out, index=series.index)
+
     x = np.arange(window, dtype=float)
-    x_mean = x.mean()
-    x_centered = x - x_mean
+    x_centered = x - x.mean()
     x_var = float((x_centered**2).sum())
 
-    def _slope(window_arr: np.ndarray) -> float:
-        if np.isnan(window_arr).any():
-            return float("nan")
-        y_mean = window_arr.mean()
-        return float((x_centered * (window_arr - y_mean)).sum() / x_var)
+    windows = sliding_window_view(values, window_shape=window)
+    valid = np.isfinite(windows).all(axis=1)
+    if valid.any():
+        vw = windows[valid]
+        y_centered = vw - vw.mean(axis=1, keepdims=True)
+        slopes = (y_centered @ x_centered) / x_var
+        out[window - 1 :][valid] = slopes
+    return pd.Series(out, index=series.index)
 
-    return series.rolling(window=window, min_periods=window).apply(_slope, raw=True)
+
+def rolling_stability(series: pd.Series, *, window: int) -> pd.Series:
+    """Rolling coefficient-of-variation (std/mean, ddof=0) over a trailing window.
+
+    Returns NaN until ``window`` non-NaN observations are available; any NaN
+    in the window propagates to NaN. Rows where the rolling mean is zero
+    produce NaN (undefined CV). Used by network_fragility §3.5
+    ``diversified_normal`` to assess effective-rank stability.
+    """
+    values = series.to_numpy(dtype=float)
+    out = np.full(len(values), np.nan, dtype=float)
+    if len(values) < window:
+        return pd.Series(out, index=series.index)
+
+    windows = sliding_window_view(values, window_shape=window)
+    valid = np.isfinite(windows).all(axis=1)
+    if valid.any():
+        vw = windows[valid]
+        means = vw.mean(axis=1)
+        stabilities = np.full(len(vw), np.nan, dtype=float)
+        nonzero = means != 0.0
+        if nonzero.any():
+            stabilities[nonzero] = vw[nonzero].std(axis=1, ddof=0) / means[nonzero]
+        out[window - 1 :][valid] = stabilities
+    return pd.Series(out, index=series.index)
+
+
+def rolling_drawdown(close: pd.Series, *, window: int) -> pd.Series:
+    """Rolling drawdown of ``close`` from its trailing ``window``-day peak.
+
+    Returns ``close / peak - 1`` (negative; 0 at fresh highs). NaN where the
+    peak window hasn't filled or where the peak is non-positive (avoids
+    division by zero on adjusted-price series with non-positive values).
+    """
+    peak = close.rolling(window=window, min_periods=window).max()
+    drawdown = close / peak - 1.0
+    return drawdown.where(peak > 0).astype(float)

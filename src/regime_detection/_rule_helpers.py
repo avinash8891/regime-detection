@@ -18,21 +18,23 @@ import pandas as pd
 
 
 def any_nan(*values: float) -> bool:
-    """True if any of ``values`` is NaN.
+    """True if any of ``values`` is NaN or pandas NA.
 
     Used by rule predicates as a single cold-start gate before applying
-    threshold comparisons.
+    threshold comparisons. Handles both ``float('nan')`` and ``pd.NA``
+    (nullable-dtype scalars) — ``np.isnan(pd.NA)`` raises TypeError.
     """
-    return any(np.isnan(v) for v in values)
+    return any(pd.isna(v) for v in values)
 
 
 def is_nan(value: float) -> bool:
-    """True if ``value`` is NaN.
+    """True if ``value`` is NaN or pandas NA.
 
     Single-argument variant for predicates that gate on one input at a
     time (e.g. ``volume_liquidity_rules._gap_history_unavailable``).
+    Handles both ``float('nan')`` and ``pd.NA``.
     """
-    return bool(np.isnan(value))
+    return bool(pd.isna(value))
 
 
 def scalar_at(series: pd.Series, dt: pd.Timestamp) -> float:
@@ -66,6 +68,9 @@ def scalar_at_lag(series: pd.Series, dt: pd.Timestamp, lag: int) -> float:
     if dt not in series.index:
         return float("nan")
     pos = series.index.get_loc(dt)
+    # get_loc returns slice or ndarray for non-unique indices; treat as missing.
+    if not isinstance(pos, (int, np.integer)):
+        return float("nan")
     if pos - lag < 0:
         return float("nan")
     val = series.iloc[pos - lag]

@@ -13,13 +13,16 @@ FORBIDDEN_SOURCE_PATTERNS = re.compile(
     r"source-data audit[^\n]*M[0-9]|Log #[0-9]"
 )
 V1_CONTRACT_GUARD_PATHS = (
-    # trend_direction, trend_character, volatility_state, breadth_state were
-    # previously guarded as V1-only contract paths. After the axis classifier
-    # refactor merged V1+V2 into one module per axis (per CLAUDE.md framing
-    # "V1 and V2 are phases of one engine, not two systems"), those modules
-    # now formally own V2 features and were removed from the guard list. The
-    # remaining paths are genuinely V1-only contract surfaces: the wire shim,
-    # the V1-fixed event calendar feed, and the V1 strategy adapter.
+    # breadth_state_rules.py holds the V1 breadth label walker and evidence
+    # shape — it was previously guarded as breadth_state.py. The other
+    # *_rules.py classify layers (trend_direction, volatility_state, etc.)
+    # legitimately reference V2 feature names (hurst_250d, efficiency_ratio,
+    # eigenvalue) so they cannot be added here without a large allowlist; the
+    # broader V2_EVIDENCE_IMPORT_ALLOWLIST check already blocks the truly
+    # dangerous imports (hmmlearn, sklearn) across ALL regime_detection files.
+    Path("src/regime_detection/breadth_state_rules.py"),
+    # Genuinely V1-only contract surfaces: the wire shim, the V1-fixed event
+    # calendar feed, and the V1 strategy adapter.
     Path("src/regime_detection/event_calendar.py"),
     Path("src/regime_detection/strategy_response.py"),
     Path("src/regime_detection/legacy_v1_wire.py"),

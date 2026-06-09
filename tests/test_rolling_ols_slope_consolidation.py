@@ -193,20 +193,25 @@ class TestRollingOlsSlopeConsolidation:
     def test_shared_helper_bit_identical_to_centered_form(
         self, production_series: pd.Series, window: int
     ) -> None:
-        """The shared helper IS credit_funding's centered form → bit-identical."""
+        """The shared helper agrees with credit_funding's centered form.
+
+        The consolidated implementation uses a vectorized sliding_window_view
+        path (matmul) instead of rolling().apply(), so floating-point operation
+        order differs at ULP level. We assert NaN-alignment is exact and finite
+        values agree within 1e-14 (well inside double-precision noise floor).
+        """
         new = rolling_ols_slope(production_series, window=window)
         old = _credit_funding_centered_form(production_series, window=window)
-        # Both NaN-aligned on cold-start
         new_arr = new.to_numpy()
         old_arr = old.to_numpy()
         new_nan = np.isnan(new_arr)
         old_nan = np.isnan(old_arr)
         assert np.array_equal(new_nan, old_nan), "NaN positions diverge"
-        # Bit-identity on finite values
         finite = ~new_nan
-        assert np.array_equal(
-            new_arr[finite], old_arr[finite]
-        ), "Centered-form bodies must produce bit-identical results"
+        max_diff = np.abs(new_arr[finite] - old_arr[finite]).max()
+        assert max_diff <= 1e-14, (
+            f"Centered-form bodies diverge beyond ULP noise: max_diff={max_diff}"
+        )
 
     @pytest.mark.parametrize("window", _PRODUCTION_WINDOWS)
     def test_shared_helper_within_tolerance_of_uncentered_form(

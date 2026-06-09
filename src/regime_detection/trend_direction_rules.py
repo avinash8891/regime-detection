@@ -96,6 +96,10 @@ def raw_label_for_day(
 def _v2_evidence_for_day(
     features: TrendDirectionV2Features, dt: pd.Timestamp
 ) -> dict[str, Any]:
+    # Guard: V2 features may cover a shorter date range than V1 close.index
+    # due to cold-start lookbacks. Return empty dict rather than KeyError.
+    if dt not in features.efficiency_ratio_20d.index:
+        return {}
     evidence = {
         "efficiency_ratio_20d": _ev_float(features.efficiency_ratio_20d.loc[dt]),
         "hurst_250d": _ev_float(features.hurst_250d.loc[dt]),
@@ -105,13 +109,19 @@ def _v2_evidence_for_day(
         "drawdown_252d": _ev_float(features.drawdown_252d.loc[dt]),
         "realized_vol_21d": _ev_float(features.realized_vol_21d.loc[dt]),
     }
-    if features.sentiment_score is not None:
+    if features.sentiment_score is not None and dt in features.sentiment_score.index:
         evidence["sentiment_score"] = _ev_float(features.sentiment_score.loc[dt])
-    if features.news_sentiment_score is not None:
+    if (
+        features.news_sentiment_score is not None
+        and dt in features.news_sentiment_score.index
+    ):
         evidence["news_sentiment_score"] = _ev_float(
             features.news_sentiment_score.loc[dt]
         )
-    if features.sentiment_concordance is not None:
+    if (
+        features.sentiment_concordance is not None
+        and dt in features.sentiment_concordance.index
+    ):
         evidence["sentiment_concordance"] = _ev_float(
             features.sentiment_concordance.loc[dt]
         )
