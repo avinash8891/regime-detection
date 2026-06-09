@@ -26,7 +26,7 @@ def _sector_etf_closes(index: pd.DatetimeIndex) -> dict[str, pd.Series]:
 def test_build_news_sentiment_score_series_preserves_existing_alignment_and_smoothing() -> (
     None
 ):
-    from regime_detection.feature_store import _build_news_sentiment_score_series
+    from regime_detection._feature_specs import _build_news_sentiment_score_series
 
     sessions = pd.bdate_range(start="2024-03-04", end="2024-03-08", freq="B")
     news = pd.Series(
@@ -145,7 +145,7 @@ def test_feature_specs_registry_preserves_required_ordering_invariants() -> None
 def test_feature_store_registry_preserves_trend_and_news_outputs(
     market_df_for_asof,
 ) -> None:
-    from regime_detection.feature_store import _build_news_sentiment_score_series
+    from regime_detection._feature_specs import _build_news_sentiment_score_series
 
     cfg = load_default_regime_config()
     as_of = date(2023, 12, 14)
@@ -231,16 +231,16 @@ def test_feature_store_reuses_realized_vol_21d_for_trainable_evidence_layers(
         return pd.Series(0.2, index=close.index, name="realized_vol_21d")
 
     monkeypatch.setattr(
-        "regime_detection.feature_store.realized_vol", counting_realized_vol
+        "regime_detection._feature_specs.realized_vol", counting_realized_vol
     )
     monkeypatch.setattr(
-        "regime_detection.feature_store.compute_hmm_features", lambda **_: None
+        "regime_detection._feature_specs.compute_hmm_features", lambda **_: None
     )
     monkeypatch.setattr(
-        "regime_detection.feature_store.compute_clustering_features", lambda **_: None
+        "regime_detection._feature_specs.compute_clustering_features", lambda **_: None
     )
     monkeypatch.setattr(
-        "regime_detection.feature_store.compute_change_point_features", lambda **_: None
+        "regime_detection._feature_specs.compute_change_point_features", lambda **_: None
     )
 
     build_feature_store(

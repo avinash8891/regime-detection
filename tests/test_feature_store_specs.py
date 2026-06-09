@@ -50,8 +50,8 @@ def test_trend_direction_resolve_returns_spy_close_kwargs(
     assert isinstance(
         resolved, dict
     ), f"trend_direction.resolve returned {type(resolved).__name__}, expected dict"
-    assert set(resolved.keys()) == {"spy_close"}
-    assert resolved["spy_close"] is v1_minimal_state.spy_close
+    assert set(resolved.keys()) == {"close"}
+    assert resolved["close"] is v1_minimal_state.spy_close
 
 
 def test_trend_character_resolve_returns_ohlcv_kwargs_v1_path(
@@ -104,8 +104,9 @@ def test_sma_50_resolve_returns_spy_close(
     resolved = spec.resolve(v1_minimal_state)
 
     assert isinstance(resolved, dict)
-    assert set(resolved.keys()) == {"spy_close"}
-    assert resolved["spy_close"] is v1_minimal_state.spy_close
+    assert set(resolved.keys()) == {"series", "window"}
+    assert resolved["series"] is v1_minimal_state.spy_close
+    assert resolved["window"] == 50
 
 
 def test_sentiment_score_resolve_missing_aaii_returns_unavailable(
