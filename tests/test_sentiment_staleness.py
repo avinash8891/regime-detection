@@ -1,9 +1,13 @@
-"""Tests for the AAII sentiment max-staleness guard.
+"""Tests for the AAII and news-sentiment max-staleness guards.
 
 The staleness guard NaN-outs forward-filled sentiment_score values when the
 last real AAII reading is older than ``SentimentScoreConfig.max_staleness_sessions``
 NYSE sessions. This prevents the euphoria gate from firing on arbitrarily
 stale AAII data if the survey stops publishing.
+
+An identical guard exists for SF Fed news sentiment in
+``NewsSentimentConfig.max_staleness_sessions`` and
+``_build_news_sentiment_score_series``.
 """
 
 from __future__ import annotations
@@ -12,8 +16,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection._config_layer2 import SentimentScoreConfig
-from regime_detection._feature_specs import _build_sentiment_score_series
+from regime_detection._config_layer2 import NewsSentimentConfig, SentimentScoreConfig
+from regime_detection._feature_specs import (
+    _build_news_sentiment_score_series,
+    _build_sentiment_score_series,
+)
 
 
 def _make_aaii_frame(
@@ -173,3 +180,54 @@ class TestSentimentStalenessGuard:
         """Default max_staleness_sessions is 40 (approx 8 weeks)."""
         config = SentimentScoreConfig()
         assert config.max_staleness_sessions == 40
+
+
+class TestNewsSentimentStalenessGuard:
+    """SF Fed news-sentiment staleness guard mirrors the AAII guard.
+
+    After ffill, sessions whose last real observation is older than
+    ``NewsSentimentConfig.max_staleness_sessions`` NYSE sessions are NaN-ed out.
+    """
+
+    def test_news_sentiment_goes_nan_after_max_staleness(self) -> None:
+        """100 NYSE sessions, daily readings for first 20 sessions, then nothing.
+        With max_staleness_sessions=30:
+          - Session 40 (20 sessions stale) -> valid
+          - Session 60 (40 sessions stale) -> NaN
+        """
+        sessions = _make_session_index("2024-01-02", periods=100)
+
+        # Daily readings for first 20 sessions.
+        raw_index = sessions[:20]
+        raw_values = np.linspace(0.1, 0.3, 20)
+        news_sentiment = pd.Series(raw_values, index=raw_index, name="news_sentiment")
+
+        config = NewsSentimentConfig(max_staleness_sessions=30)
+
+        result = _build_news_sentiment_score_series(
+            news_sentiment=news_sentiment,
+            session_index=sessions,
+            config=config,
+        )
+
+        assert result is not None
+
+        # Session 40 is 20 sessions after last reading at session 19 -> valid (<= 30)
+        assert not np.isnan(
+            result.iloc[40]
+        ), f"Session 40 should be valid (20 sessions stale <= 30 max), got {result.iloc[40]}"
+
+        # Session 60 is 40 sessions after last reading at session 19 -> stale (> 30)
+        assert np.isnan(
+            result.iloc[60]
+        ), f"Session 60 should be NaN (40 sessions stale > 30 max), got {result.iloc[60]}"
+
+    def test_news_sentiment_config_default_is_63(self) -> None:
+        """Default max_staleness_sessions is 63 (approx 3 months)."""
+        config = NewsSentimentConfig()
+        assert config.max_staleness_sessions == 63
+
+    def test_news_sentiment_config_rejects_zero_staleness(self) -> None:
+        """max_staleness_sessions must be > 0."""
+        with pytest.raises(Exception):
+            NewsSentimentConfig(max_staleness_sessions=0)

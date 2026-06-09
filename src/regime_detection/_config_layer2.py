@@ -88,6 +88,12 @@ class NewsSentimentConfig(StrictBaseModel):
     # NYSE sessions ≈ 1 month — short enough to react to material
     # narrative shifts, long enough to dampen single-day noise.
     smoothing_window_sessions: int = Field(default=21, gt=0)
+    # Max-staleness guard: NaN-out forward-filled sessions when the last
+    # real SF Fed news-sentiment observation is older than this many NYSE
+    # sessions. Default 63 ≈ 3 months — prevents the news-sentiment evidence
+    # from persisting through prolonged data gaps. Mirrors the AAII guard in
+    # SentimentScoreConfig.max_staleness_sessions.
+    max_staleness_sessions: int = Field(default=63, gt=0)
 
 
 class CentralBankTextConfig(StrictBaseModel):

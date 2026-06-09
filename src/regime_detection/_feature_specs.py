@@ -343,6 +343,40 @@ def _build_news_sentiment_score_series(
         .mean()
     )
     score.name = "news_sentiment_score"
+
+    # Max-staleness guard: NaN-out sessions whose last real SF Fed news-sentiment
+    # observation is older than config.max_staleness_sessions NYSE sessions.
+    # `news_sentiment` is a daily Series indexed by date; original dates are the
+    # dates where the raw series has a non-NaN value.
+    real_dates = pd.DatetimeIndex(
+        news_sentiment.index[news_sentiment.notna()]
+    ).sort_values()
+    if len(real_dates) > 0:
+        # For each session, count how many real dates exist on or before it.
+        readings_on_or_before = np.asarray(
+            real_dates.searchsorted(session_index, side="right"),  # type: ignore[reportUnknownMemberType]
+            dtype=int,
+        )
+        no_readings_mask = readings_on_or_before == 0
+        last_real_idx = np.clip(readings_on_or_before - 1, 0, len(real_dates) - 1)
+        last_real_dates = real_dates[last_real_idx]
+        last_real_dates_series = pd.Series(last_real_dates, index=session_index)
+        last_real_dates_series[no_readings_mask] = pd.NaT
+
+        session_positions = np.arange(len(session_index))
+        last_real_positions = np.asarray(
+            session_index.searchsorted(last_real_dates_series, side="right") - 1,
+            dtype=float,
+        )
+        last_real_positions[no_readings_mask] = np.nan
+        sessions_since_last_real = session_positions - last_real_positions
+
+        fresh = pd.Series(
+            sessions_since_last_real <= config.max_staleness_sessions,
+            index=session_index,
+        )
+        score = score.where(fresh)
+
     return score
 
 
