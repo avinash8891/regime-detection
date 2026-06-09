@@ -1,0 +1,56 @@
+tests/test_shadow_deadman_check.py
+  s_ab33020b7c1f29::t_24e7709b8ae39d 215-251
+src/regime_detection/engine.py
+  s_ab33020b7c1f29::t_3dea20f13f3429 328-332
+src/regime_detection/feature_store_runtime.py
+  s_ab33020b7c1f29::t_1ec806c75d979e 152
+tests/test_fixture_verification.py
+  s_ab33020b7c1f29::t_d7dddf4f672604 251-289
+src/regime_detection/event_calendar.py
+  s_ab33020b7c1f29::t_5b7c7cc616be7b 152-153
+src/regime_detection/monetary_pressure_rules.py
+  s_ab33020b7c1f29::t_c712af77455a22 27-28,38,111-112,114-121
+tests/test_feature_store_runtime.py
+  s_ab33020b7c1f29::t_1f2b47de15bc55 28
+  s_ab33020b7c1f29::t_02dcbc51060f8c 4,22-27,29,83,98,158,184,212,232-247
+tests/test_event_calendar.py
+  s_ab33020b7c1f29::t_d7dddf4f672604 70-73,75-82
+  s_ab33020b7c1f29::t_69ddb2531465bd 74
+src/regime_detection/axis_builders/monetary_pressure.py
+  s_ab33020b7c1f29::t_f0ae9f750a5492 83
+tests/test_monetary_pressure_classifier.py
+  s_ab33020b7c1f29::t_590c79089ba919 245,256
+src/regime_detection/network_fragility.py
+  s_ab33020b7c1f29::t_0be0a7a3230159 35,221-261
+tests/test_rule_helpers.py
+  s_ab33020b7c1f29::t_d7dddf4f672604 1-14
+tests/test_axis_builders.py
+  s_ab33020b7c1f29::t_d7dddf4f672604 182-200
+scripts/verify_fixtures.py
+  s_ab33020b7c1f29::t_5b7c7cc616be7b 40-42,228
+tests/test_schema_and_timeline.py
+  s_ab33020b7c1f29::t_91ccdd6c3267d8 409-445
+  s_ab33020b7c1f29::t_3b106fb77bef0d 16-21
+scripts/run_shadow_deadman_check.py
+  s_ab33020b7c1f29::t_d279d5efb7c703 69-75,132-139
+tests/test_feature_store_specs.py
+  s_ab33020b7c1f29::t_9b8a35914b1cc5 428-458,500-501
+  s_ab33020b7c1f29::t_1f2b47de15bc55 497-499
+  s_ab33020b7c1f29::t_d8201c52b5367e 6,10-14,459-496
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "87584ec456a958883e3c6a6f106c72f692b9a02d",
+  "prompts": {},
+  "sessions": {
+    "s_ab33020b7c1f29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eabb2-f3d1-7c91-b71a-ca44437f87a6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
