@@ -222,42 +222,38 @@ def compute_hmm_features(
     # effect; otherwise dispatch the seed sweep across processes.
     is_patched = getattr(GaussianHMM, "__module__", "") != "hmmlearn.hmm"
     n_workers = 1 if is_patched else min(len(config.random_seeds), os.cpu_count() or 1)
-    try:
-        train_end_positions = list(
-            range(n_train - 1, len(frame), max(1, config.retrain_cadence_days))
-        )
-        if train_end_positions[-1] != len(frame) - 1:
-            train_end_positions.append(len(frame) - 1)
-        backend = "threading" if is_patched else "loky"
-        with Parallel(n_jobs=n_workers, backend=backend, batch_size=1) as parallel:
-            for offset, train_end_pos in enumerate(train_end_positions):
-                train_frame = frame.iloc[
-                    train_end_pos - n_train + 1 : train_end_pos + 1
-                ]
-                next_train_end_pos = (
-                    train_end_positions[offset + 1]
-                    if offset + 1 < len(train_end_positions)
-                    else len(frame)
+    train_end_positions = list(
+        range(n_train - 1, len(frame), max(1, config.retrain_cadence_days))
+    )
+    if train_end_positions[-1] != len(frame) - 1:
+        train_end_positions.append(len(frame) - 1)
+    backend = "threading" if is_patched else "loky"
+    with Parallel(n_jobs=n_workers, backend=backend, batch_size=1) as parallel:
+        for offset, train_end_pos in enumerate(train_end_positions):
+            train_frame = frame.iloc[train_end_pos - n_train + 1 : train_end_pos + 1]
+            next_train_end_pos = (
+                train_end_positions[offset + 1]
+                if offset + 1 < len(train_end_positions)
+                else len(frame)
+            )
+            segment_frame = frame.iloc[train_end_pos:next_train_end_pos]
+            fit_frame, predict_frame = _prepare_hmm_frames(
+                train_frame=train_frame,
+                full_frame=segment_frame,
+                standardize_inputs=config.standardize_inputs,
+            )
+            if not _has_sufficient_distinct_rows(fit_frame, n_states=config.n_states):
+                _LOGGER.warning(
+                    "GaussianHMM training window has fewer distinct rows than "
+                    "configured states; HMM seam skips checkpoint: "
+                    "checkpoint=%s distinct_rows=%s n_states=%s",
+                    train_end_pos,
+                    len(np.unique(fit_frame, axis=0)),
+                    config.n_states,
                 )
-                segment_frame = frame.iloc[train_end_pos:next_train_end_pos]
-                fit_frame, predict_frame = _prepare_hmm_frames(
-                    train_frame=train_frame,
-                    full_frame=segment_frame,
-                    standardize_inputs=config.standardize_inputs,
-                )
-                if not _has_sufficient_distinct_rows(
-                    fit_frame, n_states=config.n_states
-                ):
-                    _LOGGER.warning(
-                        "GaussianHMM training window has fewer distinct rows than "
-                        "configured states; HMM seam skips checkpoint: "
-                        "checkpoint=%s distinct_rows=%s n_states=%s",
-                        train_end_pos,
-                        len(np.unique(fit_frame, axis=0)),
-                        config.n_states,
-                    )
-                    continue
-                best: dict[str, Any] | None = None
+                continue
+            best: dict[str, Any] | None = None
+            try:
                 seed_results = parallel(
                     delayed(_fit_single_seed)(
                         fit_frame=fit_frame,
@@ -270,109 +266,103 @@ def compute_hmm_features(
                     )
                     for seed in config.random_seeds
                 )
-                for result in seed_results:
-                    if result["non_monotonic"]:
-                        # Recoverable per-seed rejection is DEBUG-only; the
-                        # no-usable-seed path below remains WARNING.
-                        _LOGGER.debug(
-                            "GaussianHMM skipped non-monotonic seed: "
-                            "checkpoint=%s seed=%s log_likelihood=%s "
-                            "previous_log_likelihood=%s delta=%s",
+            except (np.linalg.LinAlgError, ValueError) as exc:
+                _LOGGER.warning(
+                    "GaussianHMM fit/predict failed at checkpoint %s; " "skipping: %s",
+                    train_end_pos,
+                    exc,
+                )
+                continue
+            for result in seed_results:
+                if result["non_monotonic"]:
+                    # Recoverable per-seed rejection is DEBUG-only; the
+                    # no-usable-seed path below remains WARNING.
+                    _LOGGER.debug(
+                        "GaussianHMM skipped non-monotonic seed: "
+                        "checkpoint=%s seed=%s log_likelihood=%s "
+                        "previous_log_likelihood=%s delta=%s",
+                        train_end_pos,
+                        result["seed"],
+                        result["log_likelihood"],
+                        result["previous_log_likelihood"],
+                        result["delta"],
+                    )
+                    all_skipped.append(
+                        (
                             train_end_pos,
                             result["seed"],
                             result["log_likelihood"],
                             result["previous_log_likelihood"],
                             result["delta"],
                         )
-                        all_skipped.append(
-                            (
-                                train_end_pos,
-                                result["seed"],
-                                result["log_likelihood"],
-                                result["previous_log_likelihood"],
-                                result["delta"],
-                            )
-                        )
-                        continue
-                    if (
-                        best is None
-                        or result["log_likelihood"] > best["log_likelihood"]
-                    ):
-                        best = result
-                if best is None:
-                    continue
-
-                # De-standardize state means to raw feature units BEFORE
-                # alignment so the Hungarian cost matrix uses a scale that
-                # is comparable across windows (findings #3, #4).
-                raw_means: np.ndarray | None = None
-                if best["means"] is not None:
-                    raw_means = best["means"]
-                    if config.standardize_inputs:
-                        train_means = train_frame.mean().to_numpy(dtype=float)
-                        train_stds = (
-                            train_frame.std(ddof=0)
-                            .replace(0.0, 1.0)
-                            .to_numpy(dtype=float)
-                        )
-                        raw_means = best["means"] * train_stds + train_means
-
-                # Align state ordering to previous checkpoint so IDs are
-                # stable across refit boundaries (findings #3, #4).
-                if reference_hmm_means is not None and raw_means is not None:
-                    aligned_post, aligned_raw = _align_posterior_to_reference(
-                        best["posterior"], raw_means, reference_hmm_means
                     )
-                    best["posterior"] = aligned_post
-                    raw_means = aligned_raw
-                if raw_means is not None:
-                    reference_hmm_means = raw_means
+                    continue
+                if best is None or result["log_likelihood"] > best["log_likelihood"]:
+                    best = result
+            if best is None:
+                continue
 
-                state_prob_frame.loc[segment_frame.index, :] = best["posterior"]
-                latest_fit = best
+            # De-standardize state means to raw feature units BEFORE
+            # alignment so the Hungarian cost matrix uses a scale that
+            # is comparable across windows (findings #3, #4).
+            raw_means: np.ndarray | None = None
+            if best["means"] is not None:
+                raw_means = best["means"]
+                if config.standardize_inputs:
+                    train_means = train_frame.mean().to_numpy(dtype=float)
+                    train_stds = (
+                        train_frame.std(ddof=0).replace(0.0, 1.0).to_numpy(dtype=float)
+                    )
+                    raw_means = best["means"] * train_stds + train_means
 
-                # §6.1 drift monitor (F-025): compare de-standardized,
-                # aligned state means to the previous checkpoint.
-                # Transition probabilities are scale-invariant.
-                # Fail-open: skip silently if a fitter did not expose params.
-                if raw_means is not None and best["transmat"] is not None:
-                    if previous_raw_means is not None and previous_transmat is not None:
-                        latest_drift = compute_hmm_parameter_drift(
-                            previous_state_means=previous_raw_means,
-                            current_state_means=raw_means,
-                            previous_transition_matrix=previous_transmat,
-                            current_transition_matrix=best["transmat"],
+            # Align state ordering to previous checkpoint so IDs are
+            # stable across refit boundaries (findings #3, #4).
+            if reference_hmm_means is not None and raw_means is not None:
+                aligned_post, aligned_raw = _align_posterior_to_reference(
+                    best["posterior"], raw_means, reference_hmm_means
+                )
+                best["posterior"] = aligned_post
+                raw_means = aligned_raw
+            if raw_means is not None:
+                reference_hmm_means = raw_means
+
+            state_prob_frame.loc[segment_frame.index, :] = best["posterior"]
+            latest_fit = best
+
+            # §6.1 drift monitor (F-025): compare de-standardized,
+            # aligned state means to the previous checkpoint.
+            # Transition probabilities are scale-invariant.
+            # Fail-open: skip silently if a fitter did not expose params.
+            if raw_means is not None and best["transmat"] is not None:
+                if previous_raw_means is not None and previous_transmat is not None:
+                    latest_drift = compute_hmm_parameter_drift(
+                        previous_state_means=previous_raw_means,
+                        current_state_means=raw_means,
+                        previous_transition_matrix=previous_transmat,
+                        current_transition_matrix=best["transmat"],
+                    )
+                    # F-039: surface the §6.1 quarterly-review alerts. The drift
+                    # seam was computed and exposed on HmmOutput but never logged,
+                    # so the >20% state-mean / >30% transition-prob thresholds
+                    # passed silently. Emit a WARNING the moment a refit crosses
+                    # either threshold so the operational review receives it.
+                    if (
+                        latest_drift.state_mean_drift_alert
+                        or latest_drift.transition_prob_review_flag
+                    ):
+                        _LOGGER.warning(
+                            "HMM parameter drift alert: state_mean_drift=%.4f "
+                            "(alert=%s, threshold=%.2f), max_transition_prob_shift="
+                            "%.4f (review=%s, threshold=%.2f)",
+                            latest_drift.parameter_drift,
+                            latest_drift.state_mean_drift_alert,
+                            _STATE_MEAN_DRIFT_ALERT_THRESHOLD,
+                            latest_drift.max_transition_prob_shift,
+                            latest_drift.transition_prob_review_flag,
+                            _TRANSITION_PROB_REVIEW_THRESHOLD,
                         )
-                        # F-039: surface the §6.1 quarterly-review alerts. The drift
-                        # seam was computed and exposed on HmmOutput but never logged,
-                        # so the >20% state-mean / >30% transition-prob thresholds
-                        # passed silently. Emit a WARNING the moment a refit crosses
-                        # either threshold so the operational review receives it.
-                        if (
-                            latest_drift.state_mean_drift_alert
-                            or latest_drift.transition_prob_review_flag
-                        ):
-                            _LOGGER.warning(
-                                "HMM parameter drift alert: state_mean_drift=%.4f "
-                                "(alert=%s, threshold=%.2f), max_transition_prob_shift="
-                                "%.4f (review=%s, threshold=%.2f)",
-                                latest_drift.parameter_drift,
-                                latest_drift.state_mean_drift_alert,
-                                _STATE_MEAN_DRIFT_ALERT_THRESHOLD,
-                                latest_drift.max_transition_prob_shift,
-                                latest_drift.transition_prob_review_flag,
-                                _TRANSITION_PROB_REVIEW_THRESHOLD,
-                            )
-                    previous_raw_means = raw_means
-                    previous_transmat = best["transmat"]
-    except Exception as exc:  # noqa: BLE001
-        # Fail-open: degenerate inputs (singular covariance, etc.) should
-        # not crash the engine — the seam goes None and downstream falls
-        # back to the 5-component transition score.
-        _LOGGER.warning(
-            "GaussianHMM fit/predict failed; HMM seam returns None: %s", exc
-        )
-        return None
+                previous_raw_means = raw_means
+                previous_transmat = best["transmat"]
     if latest_fit is None:
         _LOGGER.warning(
             "GaussianHMM produced no PIT monotonic fit across %d seed(s); "

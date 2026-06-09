@@ -186,6 +186,22 @@ def test_compute_hmm_features_returns_none_when_hmm_fit_fails() -> None:
     assert result is None
 
 
+def test_compute_hmm_features_raises_on_programming_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Programming bugs (KeyError, TypeError, etc.) must propagate, not be swallowed."""
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config()
+
+    def _exploding_seed(*args, **kwargs):
+        raise KeyError("programming bug")
+
+    monkeypatch.setattr("regime_detection.hmm_state._fit_single_seed", _exploding_seed)
+
+    with pytest.raises(KeyError, match="programming bug"):
+        compute_hmm_features(config=cfg, **inputs)
+
+
 def test_compute_hmm_features_returns_none_when_hmm_fit_is_non_monotonic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
