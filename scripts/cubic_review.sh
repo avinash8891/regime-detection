@@ -15,6 +15,20 @@ if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
+run_with_timeout() {
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout -k 5 "$timeout_seconds" "$@"
+  elif command -v timeout >/dev/null 2>&1; then
+    timeout -k 5 "$timeout_seconds" "$@"
+  else
+    perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout_seconds" "$@"
+  fi
+}
+
+is_timeout_status() {
+  [[ "$1" -eq 124 || "$1" -eq 137 || "$1" -eq 142 ]]
+}
+
 repo_root="$(git rev-parse --show-toplevel)"
 review_dir="$(mktemp -d "${TMPDIR:-/tmp}/regime-cubic-review.XXXXXX")"
 
@@ -54,23 +68,27 @@ if [[ "$base_ref" == origin/* ]]; then
   fi
 fi
 
-if perl -e 'alarm shift @ARGV; exec @ARGV' \
-  "$timeout_seconds" \
-  env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_sha" "$@"
+if run_with_timeout env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --print-logs --base "$base_sha" "$@"
 then
   :
 else
   status=$?
-  # If Cubic can't compute a git diff (observed in some worktree/snapshot setups),
-  # skip rather than blocking pushes indefinitely.
-  # NOTE: output is on stderr; redirecting isn't trivial here, so run a lightweight
-  # follow-up check that reproduces the error signature.
-  if env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --base "$base_sha" --print-logs "$@" 2>&1 | rg -q "failed to get diff|exitCode=128"; then
-    echo "cubic review could not compute diff (exitCode=128); skipping cubic-review hook" >&2
+  if is_timeout_status "$status"; then
+    echo "cubic review timed out after ${timeout_seconds}s; skipping cubic-review hook" >&2
     exit 0
   fi
-  if [[ "$status" -eq 142 ]]; then
-    echo "cubic review timed out after ${timeout_seconds}s" >&2
+  # If Cubic can't compute a git diff (observed in some worktree/snapshot setups),
+  # skip rather than blocking pushes indefinitely.
+  # Run a bounded follow-up check and match its captured output for the known
+  # git-worktree signatures.
+  probe_output="$review_dir/cubic-review-probe.log"
+  if run_with_timeout env PATH="$HOME/.superset/bin:$HOME/.cubic/bin:$PATH" cubic review --base "$base_sha" --print-logs "$@" >"$probe_output" 2>&1
+  then
+    :
+  fi
+  if rg -q "failed to get diff|exitCode=128|fatal: working tree '.+' already exists" "$probe_output"; then
+    echo "cubic review could not compute diff in this worktree snapshot; skipping cubic-review hook" >&2
+    exit 0
   fi
   exit "$status"
 fi

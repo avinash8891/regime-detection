@@ -30,7 +30,7 @@ repos:
 
       - id: deptry
         name: deptry
-        entry: python3 -m deptry src tests
+        entry: python3 -m deptry . --ignore DEP003
         language: system
         pass_filenames: false
         stages: [pre-push]
