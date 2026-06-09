@@ -262,6 +262,39 @@ def test_compose_transition_score_forces_insufficient_data_on_missing_model_evid
     assert out.missing_components == ("model_instability",)
 
 
+def test_cluster_flip_does_not_fire_on_same_aligned_id(
+    transition_score_config: TransitionScoreConfig,
+) -> None:
+    """Regression: cluster_flip must be 0.0 when cluster_id_now == cluster_id_5d_ago
+    (same aligned ID = no genuine regime flip) and 1.0 when IDs differ.
+
+    After Task 1 stabilised cluster IDs across refit boundaries, this comparison
+    is meaningful. Locks the fix so a revert cannot silently break it."""
+    no_flip = _compose(
+        transition_score_config,
+        cluster_id_now=2,
+        cluster_id_5d_ago=2,
+        # Zero out all other model-instability sub-signals so cluster_flip drives
+        # the component value directly.
+        hmm_top_state_prob_now=0.50,
+        hmm_top_state_prob_5d_ago=0.50,
+        change_point_score=0.0,
+    )
+    assert no_flip.components is not None
+    assert no_flip.components["model_instability"] == pytest.approx(0.0)
+
+    genuine_flip = _compose(
+        transition_score_config,
+        cluster_id_now=2,
+        cluster_id_5d_ago=5,
+        hmm_top_state_prob_now=0.50,
+        hmm_top_state_prob_5d_ago=0.50,
+        change_point_score=0.0,
+    )
+    assert genuine_flip.components is not None
+    assert genuine_flip.components["model_instability"] == pytest.approx(1.0)
+
+
 def test_compose_transition_score_returns_insufficient_when_many_components_missing(
     transition_score_config: TransitionScoreConfig,
 ) -> None:
