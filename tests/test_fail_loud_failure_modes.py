@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -149,6 +150,7 @@ def test_model_cold_start_failures_are_loud_for_direct_callers() -> None:
 def test_feature_spec_build_returning_none_fails_loudly() -> None:
     class _State:
         value: object | None = None
+        context = SimpleNamespace(config=SimpleNamespace(config_version="core3-v2.0.0"))
 
     spec: FeatureSpec[object | None, _State] = FeatureSpec(
         name="hmm",

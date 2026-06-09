@@ -455,14 +455,12 @@ def test_regime_output_emits_agent_routing_when_cohort_routing_configured(
 
 
 @pytest.mark.integration
-def test_regime_output_omits_agent_routing_when_cohort_routing_absent_from_config(
+def test_regime_output_fails_when_cohort_routing_absent_from_v2_config(
     v2_market_df_for_asof,
     golden_rows: list[dict[str, object]],
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
-    """V1 byte-identity preservation: a RegimeConfig with cohort_routing=None
-    must produce ``RegimeOutput.agent_routing is None`` and the JSON dump
-    must omit the field (exclude_none=True)."""
+    """V2 config with cohort_routing=None is invalid under fail-loud mode."""
     engine = RegimeEngine()
     as_of = max(date.fromisoformat(str(row["as_of_date"])) for row in golden_rows)
     market_data = v2_market_df_for_asof(as_of)
@@ -470,10 +468,11 @@ def test_regime_output_omits_agent_routing_when_cohort_routing_absent_from_confi
     no_routing_config = kwargs["config"].model_copy(update={"cohort_routing": None})
     assert no_routing_config.cohort_routing is None
     kwargs["config"] = no_routing_config
-    out = engine.classify(
-        as_of_date=as_of,
-        market_data=market_data,
-        **kwargs,
-    )
-    assert out.agent_routing is None
-    assert "agent_routing" not in out.model_dump()
+    with pytest.raises(
+        ValidationError, match="missing required V2 sections: cohort_routing"
+    ):
+        engine.classify(
+            as_of_date=as_of,
+            market_data=market_data,
+            **kwargs,
+        )

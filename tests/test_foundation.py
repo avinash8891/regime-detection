@@ -469,7 +469,7 @@ def test_classify_request_rejects_missing_configured_v2_input_family(
     assert missing_input in message
 
 
-def test_classify_request_allows_declared_optional_evidence_inputs_to_be_absent(
+def test_classify_request_requires_configured_evidence_inputs(
     market_df_for_asof, event_calendar_df
 ) -> None:
     as_of = date(2023, 12, 14)
@@ -483,9 +483,10 @@ def test_classify_request_allows_declared_optional_evidence_inputs_to_be_absent(
         ),
     )
 
-    timeline = RegimeEngine().classify_request(request)
-
-    assert timeline.outputs[-1].as_of_date == as_of
+    with pytest.raises(
+        ValueError, match="ClassifyRequest missing configured V2 inputs"
+    ):
+        RegimeEngine().classify_request(request)
 
 
 def test_classify_uses_request_object(

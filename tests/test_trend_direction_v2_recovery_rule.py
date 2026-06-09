@@ -26,7 +26,9 @@ from regime_detection.config import (
     TrendDirectionV2RulesConfig,
     load_default_regime_config,
 )
-from regime_detection.engine import RegimeEngine
+from regime_detection.axis_series import build_axis_series_bundle
+from regime_detection.feature_store import build_feature_store
+from regime_detection.market_context import build_market_context
 from regime_detection.trend_direction import (
     TrendDirectionV2Features,
     compute_features as compute_v1_features,
@@ -425,23 +427,31 @@ def test_end_to_end_engine_emits_recovery_on_synthetic_series(
     vix_df["close"] = vix_values
     full_df = pd.concat([market_df, rsp_df, vix_df], ignore_index=True)
 
-    engine = RegimeEngine()
     end_dt = close_series.index[-1].date()
     kwargs = synthetic_v2_kwargs_for_market_data(full_df)
-    timeline = engine.classify_window(
+    cfg = kwargs["config"]
+    context = build_market_context(
         end_date=end_dt,
         market_data=full_df,
-        lookback_days=120,
-        config=kwargs["config"],
+        config=cfg,
         event_calendar=kwargs["event_calendar"],
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],
         macro_series=kwargs["macro_series"],
         pit_constituent_intervals=kwargs["pit_constituent_intervals"],
         constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
+    store = build_feature_store(context, **cfg.v2_feature_build_configs())
+    bundle = build_axis_series_bundle(context=context, feature_store=store)
 
-    raw_labels = [out.trend_direction.raw_label for out in timeline.outputs]
+    raw_labels = [
+        bundle.trend_direction.outputs_by_date[day].raw_label
+        for day in context.sessions[-120:]
+    ]
     assert (
         "recovery" in raw_labels
     ), f"expected recovery in end-to-end raw_labels; got distinct: {sorted(set(raw_labels))}"

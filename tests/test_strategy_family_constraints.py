@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
+from pydantic import ValidationError
 
 from regime_detection.config import (
     FamilyOverride,
@@ -236,7 +237,7 @@ def test_regime_output_carries_strategy_family_constraints_when_configured(
 
 
 @pytest.mark.integration
-def test_regime_output_omits_strategy_family_constraints_when_config_absent(
+def test_regime_output_fails_when_strategy_family_constraints_absent_from_v2_config(
     v2_market_df_for_asof,
     golden_rows: list[dict[str, object]],
     synthetic_v2_kwargs_for_market_data,
@@ -248,10 +249,12 @@ def test_regime_output_omits_strategy_family_constraints_when_config_absent(
     no_sfc = kwargs["config"].model_copy(update={"strategy_family_constraints": None})
     assert no_sfc.strategy_family_constraints is None
     kwargs["config"] = no_sfc
-    out = engine.classify(
-        as_of_date=as_of,
-        market_data=market_data,
-        **kwargs,
-    )
-    assert out.strategy_family_constraints is None
-    assert "strategy_family_constraints" not in out.model_dump()
+    with pytest.raises(
+        ValidationError,
+        match="missing required V2 sections: strategy_family_constraints",
+    ):
+        engine.classify(
+            as_of_date=as_of,
+            market_data=market_data,
+            **kwargs,
+        )

@@ -149,13 +149,23 @@ def test_feature_store_registry_preserves_trend_and_news_outputs(
     market_df_for_asof,
 ) -> None:
     from regime_detection._feature_specs import _build_news_sentiment_score_series
+    from regime_detection.config import load_regime_config
 
     cfg = load_default_regime_config()
+    cfg_v1 = load_regime_config("src/regime_detection/configs/core3-v1.0.0.yaml")
     as_of = date(2023, 12, 14)
     base_context = build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
-        config=cfg,
+        config=cfg_v1,
+    )
+    aaii = pd.DataFrame(
+        {
+            "publication_date": pd.date_range(
+                end=base_context.spy_ohlcv.index[-1], periods=8, freq="7D"
+            ),
+            "bull_bear_spread_8w_ma": [10.0] * 8,
+        }
     )
     news = pd.Series(
         [0.2, -0.1, 0.4],
@@ -171,7 +181,8 @@ def test_feature_store_registry_preserves_trend_and_news_outputs(
     context = build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
-        config=cfg,
+        config=cfg_v1,
+        aaii_sentiment=aaii,
         news_sentiment=news,
     )
 
@@ -179,6 +190,7 @@ def test_feature_store_registry_preserves_trend_and_news_outputs(
         context,
         trend_direction_v2_config=cfg.trend_direction_v2,
         news_sentiment_config=NewsSentimentConfig(smoothing_window_sessions=2),
+        sentiment_score_config=cfg.sentiment_score,
     )
 
     spy_close = context.spy_ohlcv["close"].squeeze()

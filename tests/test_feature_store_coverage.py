@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from regime_detection.feature_store import _FEATURE_SPECS, FeatureStore
 
 _FEATURE_STORE_NON_FEATURE_FIELDS = frozenset({"spy_index", "availability"})
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_V1_CONFIG_PATH = (
+    _REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+)
 
 
 def test_every_feature_store_field_has_a_spec() -> None:
@@ -44,7 +50,7 @@ def test_availability_report_uses_only_allowed_reason_strings(
     vocabulary. Catches accidental wire-format drift."""
     from datetime import date
 
-    from regime_detection.engine import RegimeEngine
+    from regime_detection.config import load_regime_config
     from regime_detection.feature_store import build_feature_store
     from regime_detection.market_context import build_market_context
 
@@ -52,7 +58,7 @@ def test_availability_report_uses_only_allowed_reason_strings(
     context = build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
-        config=RegimeEngine().config,
+        config=load_regime_config(_V1_CONFIG_PATH),
     )
     store = build_feature_store(context)
 
