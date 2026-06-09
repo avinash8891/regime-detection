@@ -707,3 +707,40 @@ def test_hysteresis_with_new_labels_respects_precedence() -> None:
     assert active[2] == "transition"
     # After 3 consecutive breakout_expansion sessions (idx 3,4,5), de-escalate.
     assert stable[5] == "breakout_expansion"
+
+
+# ---------------------------------------------------------------------------
+# Volume NaN bypass — missing volume must not suppress breakout_expansion.
+# ---------------------------------------------------------------------------
+
+
+def test_breakout_expansion_fires_when_volume_is_nan() -> None:
+    """When volume data is NaN (missing), the volume gate should be bypassed
+    rather than silently falsifying breakout_expansion.  All other conditions
+    (breakout flag, BB expanding, followthrough rate) are satisfied.
+    """
+    idx = _trading_index(5)
+    s = lambda v: pd.Series([v] * 5, index=idx, dtype=float)  # noqa: E731
+    sb = lambda v: pd.Series([v] * 5, index=idx)  # noqa: E731
+
+    f = _synthetic_features(
+        close=s(120.0),
+        sma_50=s(100.0),
+        return_10d=s(0.08),
+        return_21d=s(0.10),
+        return_63d=s(0.20),
+        prior_63d_drawdown=s(-0.05),
+        adx_14=s(25.0),
+        midpoint_excursion_20d=s(0.20),
+        breakout_20d_or_50d=sb(True),
+        bb_width_expanding=sb(True),
+        volume_above_20d_average=pd.Series([float("nan")] * 5, index=idx, dtype=float),
+        followthrough_rate=s(0.80),
+    )
+
+    labels, evidence = build_raw_outputs(f)
+    assert all(lbl == "breakout_expansion" for lbl in labels), labels
+
+    # Per-day path must agree.
+    label, ev = raw_label_for_day(f, idx[-1])
+    assert label == "breakout_expansion", (label, ev)

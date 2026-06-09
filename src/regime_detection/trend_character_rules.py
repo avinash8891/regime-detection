@@ -102,7 +102,9 @@ def build_raw_outputs(
     midpoint_ex = f.midpoint_excursion_20d
     breakout_flag = f.breakout_20d_or_50d.fillna(False).astype(bool)
     bb_expanding = f.bb_width_expanding.fillna(False).astype(bool)
+    vol_available = f.volume_above_20d_average.notna()
     vol_above = f.volume_above_20d_average.fillna(False).astype(bool)
+    vol_gate = vol_above | ~vol_available
     ft_rate = f.followthrough_rate
 
     valid = ~(
@@ -124,7 +126,7 @@ def build_raw_outputs(
         valid
         & breakout_flag
         & bb_expanding
-        & vol_above
+        & vol_gate
         & ft_rate.notna()
         & ft_rate.ge(followthrough_rate_threshold)
     )

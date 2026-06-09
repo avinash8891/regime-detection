@@ -56,7 +56,12 @@ def build_trend_character_axis_series(
         default_escalation_days=hysteresis_config.default_escalation_days,
         default_deescalation_days=hysteresis_config.default_deescalation_days,
         max_unknown_freeze_days=hysteresis_config.max_unknown_freeze_days,
-        required_inputs=[close, context.spy_ohlcv["high"], context.spy_ohlcv["low"]],
+        required_inputs=[
+            close,
+            context.spy_ohlcv["high"],
+            context.spy_ohlcv["low"],
+            context.spy_ohlcv["volume"],
+        ],
         required_trading_days=TREND_CHARACTER_REQUIRED_TRADING_DAYS,
         max_freshness_days=context.config.data_quality.max_freshness_days,
         min_completeness=context.config.data_quality.min_completeness,
