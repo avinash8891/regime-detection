@@ -431,7 +431,8 @@ def resolve_credit_funding_effective_output(
     proxy_signal = _credit_output_has_classified_signal(proxy)
 
     if oas_signal and proxy_signal:
-        assert oas is not None and proxy is not None
+        oas = _require_credit_output(oas, "oas")
+        proxy = _require_credit_output(proxy, "proxy")
         oas_rank = CREDIT_FUNDING_RISK_RANK[oas.active_label]
         proxy_rank = CREDIT_FUNDING_RISK_RANK[proxy.active_label]
         if oas_rank == proxy_rank:
@@ -459,7 +460,7 @@ def resolve_credit_funding_effective_output(
         )
 
     if proxy_signal:
-        assert proxy is not None
+        proxy = _require_credit_output(proxy, "proxy")
         return _with_effective_credit_evidence(
             chosen=proxy,
             oas=oas,
@@ -473,7 +474,7 @@ def resolve_credit_funding_effective_output(
         )
 
     if oas_signal:
-        assert oas is not None
+        oas = _require_credit_output(oas, "oas")
         return _with_effective_credit_evidence(
             chosen=oas,
             oas=oas,
@@ -494,7 +495,7 @@ def resolve_credit_funding_effective_output(
         chosen = proxy
     else:
         chosen = oas if oas is not None else proxy
-    assert chosen is not None
+    chosen = _require_credit_output(chosen, "chosen")
     return _with_effective_credit_evidence(
         chosen=chosen,
         oas=oas,
@@ -502,6 +503,14 @@ def resolve_credit_funding_effective_output(
         source_used="no_classified_signal",
         agreement_status="unavailable",
     )
+
+
+def _require_credit_output(
+    value: CreditFundingOutput | None, name: str
+) -> CreditFundingOutput:
+    if value is None:
+        raise RuntimeError(f"credit funding resolver invariant failed: {name} is None")
+    return value
 
 
 def resolve_credit_funding_effective_series(

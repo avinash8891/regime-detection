@@ -233,7 +233,7 @@ transition_score:
     absorption_range: 0.25
     volume_zscore_floor: 1.0
     volume_zscore_range: 2.0
-  initial_active_state: null
+  initial_active_state: stable
 trend_character_v2:
   followthrough_rate_threshold: 0.6
   followthrough_lookback_sessions: 504
@@ -245,14 +245,32 @@ trend_character_v2:
   range_bound_return_63d_threshold: 0.05
   range_bound_midpoint_excursion_threshold: 0.05
   range_bound_adx_threshold: 20.0
-monetary_pressure_v2: null
-monetary_pressure_state: null
+monetary_pressure_v2:
+  yield_change_lookback_days: 63
+  zscore_normalizer_window_days: 1260
+  rate_shock_lookback_days: 21
+  broad_usd_lookback_days: 63
+monetary_pressure_state:
+  rules:
+    tightening_pressure_zscore_threshold: 1.5
+    easing_pressure_zscore_threshold: -1.5
+    rate_shock_zscore_threshold: 2.0
+  deescalation_days_by_label:
+    rate_shock: 5
+    tightening_pressure: 3
+    easing_pressure: 2
+    neutral_monetary: 0
+    unknown: 0
+  default_deescalation_days: 0
+  max_unknown_freeze_days: 2
 central_bank_text:
   smoothing_window_sessions: 30
   max_release_age_days: 365
   same_date_aggregation: pick_longer
 news_sentiment:
   smoothing_window_sessions: 21
+sentiment_score:
+  max_staleness_sessions: 40
 inflation_growth:
   series_ids: {}
   rules:

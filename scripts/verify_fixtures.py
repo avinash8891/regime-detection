@@ -9,6 +9,8 @@ of classification logic — the engine IS the source of truth.
 from __future__ import annotations
 
 import json
+import logging
+import shutil
 import subprocess
 import sys
 from datetime import date, datetime
@@ -33,7 +35,11 @@ from regime_detection.shadow_storage import utc_iso_now  # noqa: E402
 from regime_data_fetch.artifact_store import sha256_file as _sha256_file  # noqa: E402
 from regime_data_fetch.cli_common import parse_date  # noqa: E402
 
+LOGGER = logging.getLogger("verify_fixtures")
 EVENT_CALENDAR_PATH = REPO_ROOT / "tests" / "fixtures" / "events" / "us_events.yaml"
+ENGINE_CONFIG_PATH = (
+    REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v2.0.0.yaml"
+)
 
 INTENTS: list[dict[str, Any]] = [
     {
@@ -166,12 +172,18 @@ REPORT_PATH = (
 
 
 def _git_head_sha() -> str:
+    git = shutil.which("git")
+    if git is None:
+        LOGGER.warning("git executable not found; recording unknown commit")
+        return "unknown"
     try:
-        out = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        out = subprocess.check_output(  # noqa: S603 - git path comes from shutil.which.
+            [git, "rev-parse", "HEAD"], text=True
+        ).strip()
         if out:
             return out
-    except Exception:
-        pass
+    except (subprocess.CalledProcessError, OSError) as exc:
+        LOGGER.warning("git rev-parse HEAD failed; recording unknown commit: %s", exc)
     return "unknown"
 
 
@@ -213,7 +225,7 @@ def _serialize_obj(x: Any) -> Any:
 def _classify_all_intents(
     market_data: pd.DataFrame,
 ) -> dict[date, Any]:
-    engine = RegimeEngine()
+    engine = RegimeEngine(config_path=ENGINE_CONFIG_PATH)
     intent_dates = sorted(parse_date(item["intent_date"]) for item in INTENTS)
     end = max(intent_dates)
     earliest = min(intent_dates)

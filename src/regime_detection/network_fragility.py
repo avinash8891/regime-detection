@@ -84,10 +84,11 @@ def _assemble_returns_matrix(
         elif symbol in SECTOR_ETFS:
             series = sector_etf_closes.get(symbol)
         else:
-            assert symbol in CROSS_ASSET_SYMBOLS, (
-                f"Unreachable: symbol {symbol!r} is outside the closed "
-                f"network fragility universe (INDEX_SYMBOL | SECTOR_ETFS | CROSS_ASSET_SYMBOLS)."
-            )
+            if symbol not in CROSS_ASSET_SYMBOLS:
+                raise ValueError(
+                    f"Network fragility universe symbol {symbol!r} is outside "
+                    "INDEX_SYMBOL, SECTOR_ETFS, and CROSS_ASSET_SYMBOLS."
+                )
             series = cross_asset_closes.get(symbol)
 
         if series is None:
@@ -243,7 +244,7 @@ def rolling_stability_series(series: pd.Series, window: int) -> pd.Series:
             stabilities[nonzero] = (
                 valid_windows[nonzero].std(axis=1, ddof=0) / means[nonzero]
             )
-        out[window - 1 :][valid] = stabilities
+        out[window - 1 + np.flatnonzero(valid)] = stabilities
     return pd.Series(out, index=series.index)
 
 

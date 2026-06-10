@@ -7,8 +7,11 @@ import numpy as np
 import pandas as pd
 
 from regime_detection.config import NewsSentimentConfig, load_default_regime_config
+from regime_detection.change_point import ChangePointFeatures
+from regime_detection.clustering import ClusteringFeatures
 from regime_detection.feature_store import build_feature_store
 from regime_detection.fragility_universe import SECTOR_ETFS
+from regime_detection.hmm_state import HMMFeatures
 from regime_detection.market_context import build_market_context
 from regime_detection.trend_direction import (
     compute_features as compute_trend_direction_features,
@@ -26,7 +29,7 @@ def _sector_etf_closes(index: pd.DatetimeIndex) -> dict[str, pd.Series]:
 def test_build_news_sentiment_score_series_preserves_existing_alignment_and_smoothing() -> (
     None
 ):
-    from regime_detection.feature_store import _build_news_sentiment_score_series
+    from regime_detection._feature_specs import _build_news_sentiment_score_series
 
     sessions = pd.bdate_range(start="2024-03-04", end="2024-03-08", freq="B")
     news = pd.Series(
@@ -145,14 +148,24 @@ def test_feature_specs_registry_preserves_required_ordering_invariants() -> None
 def test_feature_store_registry_preserves_trend_and_news_outputs(
     market_df_for_asof,
 ) -> None:
-    from regime_detection.feature_store import _build_news_sentiment_score_series
+    from regime_detection._feature_specs import _build_news_sentiment_score_series
+    from regime_detection.config import load_regime_config
 
     cfg = load_default_regime_config()
+    cfg_v1 = load_regime_config("src/regime_detection/configs/core3-v1.0.0.yaml")
     as_of = date(2023, 12, 14)
     base_context = build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
-        config=cfg,
+        config=cfg_v1,
+    )
+    aaii = pd.DataFrame(
+        {
+            "publication_date": pd.date_range(
+                end=base_context.spy_ohlcv.index[-1], periods=8, freq="7D"
+            ),
+            "bull_bear_spread_8w_ma": [10.0] * 8,
+        }
     )
     news = pd.Series(
         [0.2, -0.1, 0.4],
@@ -168,7 +181,8 @@ def test_feature_store_registry_preserves_trend_and_news_outputs(
     context = build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
-        config=cfg,
+        config=cfg_v1,
+        aaii_sentiment=aaii,
         news_sentiment=news,
     )
 
@@ -176,6 +190,7 @@ def test_feature_store_registry_preserves_trend_and_news_outputs(
         context,
         trend_direction_v2_config=cfg.trend_direction_v2,
         news_sentiment_config=NewsSentimentConfig(smoothing_window_sessions=2),
+        sentiment_score_config=cfg.sentiment_score,
     )
 
     spy_close = context.spy_ohlcv["close"].squeeze()
@@ -214,13 +229,25 @@ def test_feature_store_reuses_realized_vol_21d_for_trainable_evidence_layers(
         market_data=market_df_for_asof(as_of),
         config=cfg,
     )
+    session_index = pd.DatetimeIndex(bootstrap.spy_ohlcv.index)
+    aaii_sentiment = pd.DataFrame(
+        {
+            "publication_date": pd.date_range(
+                end=session_index[-1], periods=8, freq="7D"
+            ),
+            "bull_bear_spread_8w_ma": [10.0] * 8,
+        }
+    )
+    news_sentiment = pd.Series(
+        [0.1] * len(session_index), index=session_index, name="news_sentiment"
+    )
     context = build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
         config=cfg,
-        sector_etf_closes=_sector_etf_closes(
-            pd.DatetimeIndex(bootstrap.spy_ohlcv.index)
-        ),
+        sector_etf_closes=_sector_etf_closes(session_index),
+        aaii_sentiment=aaii_sentiment,
+        news_sentiment=news_sentiment,
     )
 
     calls: list[int] = []
@@ -231,16 +258,54 @@ def test_feature_store_reuses_realized_vol_21d_for_trainable_evidence_layers(
         return pd.Series(0.2, index=close.index, name="realized_vol_21d")
 
     monkeypatch.setattr(
-        "regime_detection.feature_store.realized_vol", counting_realized_vol
+        "regime_detection._feature_specs.realized_vol", counting_realized_vol
+    )
+
+    def fake_hmm_features(**kwargs) -> HMMFeatures:
+        index = kwargs["return_1d"].index
+        return HMMFeatures(
+            top_state_prob=pd.Series(1.0, index=index),
+            state_probabilities=pd.DataFrame({0: 1.0}, index=index),
+            n_states=1,
+            selected_seed=0,
+            log_likelihood=0.0,
+        )
+
+    def fake_clustering_features(**kwargs) -> ClusteringFeatures:
+        index = kwargs["return_21d"].index
+        return ClusteringFeatures(
+            cluster_id=pd.Series([0] * len(index), index=index, dtype="Int64"),
+            distance_to_centroid=pd.Series(0.0, index=index),
+            cluster_probabilities=pd.DataFrame({0: 1.0}, index=index),
+            n_clusters=1,
+            model_version="test",
+        )
+
+    def fake_change_point_features(**kwargs) -> ChangePointFeatures:
+        index = kwargs["realized_vol_21d"].index
+        return ChangePointFeatures(
+            posterior_changepoint_prob=pd.Series(0.0, index=index),
+            score=pd.Series(0.0, index=index),
+            days_since_last_break=pd.Series(
+                [pd.NA] * len(index), index=index, dtype="Int64"
+            ),
+            method="BOCPD",
+        )
+
+    monkeypatch.setattr(
+        "regime_detection._feature_specs.compute_hmm_features", fake_hmm_features
     )
     monkeypatch.setattr(
-        "regime_detection.feature_store.compute_hmm_features", lambda **_: None
+        "regime_detection._feature_specs.compute_clustering_features",
+        fake_clustering_features,
     )
     monkeypatch.setattr(
-        "regime_detection.feature_store.compute_clustering_features", lambda **_: None
+        "regime_detection._feature_specs.compute_change_point_features",
+        fake_change_point_features,
     )
     monkeypatch.setattr(
-        "regime_detection.feature_store.compute_change_point_features", lambda **_: None
+        "regime_detection.feature_store_runtime._state_uses_v2_config",
+        lambda _state: False,
     )
 
     build_feature_store(
@@ -250,6 +315,8 @@ def test_feature_store_reuses_realized_vol_21d_for_trainable_evidence_layers(
         volatility_state_v2_config=cfg.volatility_state_v2,
         breadth_state_v2_config=cfg.breadth_state_v2,
         volume_liquidity_v2_config=cfg.volume_liquidity_v2,
+        news_sentiment_config=cfg.news_sentiment,
+        sentiment_score_config=cfg.sentiment_score,
     )
 
     assert calls == [21]

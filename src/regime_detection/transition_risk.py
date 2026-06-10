@@ -46,20 +46,18 @@ def compose_transition_risk_output(
     primary_driver_min: float = _DEFAULT_DRIVER_THRESHOLD,
 ) -> TransitionRiskOutput:
     if score.score is None or score.interpretation is None or score.components is None:
-        state = _select_transition_state(
-            score_state="insufficient_data",
-            flags=flags,
+        raise RuntimeError(
+            "transition score inputs not ready; refusing to emit transition_risk"
         )
-        data_quality = DataQuality(
-            status="insufficient_history",
-            reason="transition_score_inputs_not_ready",
+    if flags.insufficient_data:
+        raise RuntimeError(
+            "transition risk inputs insufficient; refusing to emit transition_risk"
         )
-    else:
-        state = _select_transition_state(
-            score_state=_SCORE_BAND_TO_STATE[score.interpretation],
-            flags=flags,
-        )
-        data_quality = DataQuality(status="ok")
+    state = _select_transition_state(
+        score_state=_SCORE_BAND_TO_STATE[score.interpretation],
+        flags=flags,
+    )
+    data_quality = DataQuality(status="ok")
 
     triggered_rules = _triggered_rules(flags)
     primary_drivers = _primary_drivers(score.components, threshold=primary_driver_min)
@@ -100,7 +98,6 @@ def _select_transition_state(
     # not as a separate public final state.
     if flags.sideways_stress:
         return "watch"
-    # Concrete watch evidence is still useful when another axis is unknown.
     if flags.event_transition_watch:
         return "watch"
     if flags.post_switch_cooldown and score_state == "stable":

@@ -110,58 +110,45 @@ def test_transition_risk_hard_override_wins_over_generic_score_state() -> None:
     assert output.triggered_rules == ["bear_stress"]
 
 
-def test_transition_risk_crisis_override_wins_over_insufficient_axis_data() -> None:
-    output = compose_transition_risk_output(
-        score=ComposedTransitionScore(
-            score=0.10,
-            interpretation="stable",
-            components={"trend_break": 0.10},
-        ),
-        flags=_flags(crisis=True, insufficient_data=True),
-    )
-
-    assert output.state == "crisis"
-    assert output.triggered_rules == ["crisis", "insufficient_data"]
+def test_transition_risk_crisis_override_does_not_hide_insufficient_axis_data() -> None:
+    with pytest.raises(RuntimeError, match="transition risk inputs insufficient"):
+        compose_transition_risk_output(
+            score=ComposedTransitionScore(
+                score=0.10,
+                interpretation="stable",
+                components={"trend_break": 0.10},
+            ),
+            flags=_flags(crisis=True, insufficient_data=True),
+        )
 
 
-def test_transition_risk_watch_rules_win_over_insufficient_axis_data() -> None:
+def test_transition_risk_watch_rules_do_not_hide_insufficient_axis_data() -> None:
     score = ComposedTransitionScore(
         score=0.10,
         interpretation="stable",
         components={"trend_break": 0.10},
     )
 
-    event_watch = compose_transition_risk_output(
-        score=score,
-        flags=_flags(event_transition_watch=True, insufficient_data=True),
-    )
-    cooldown_watch = compose_transition_risk_output(
-        score=score,
-        flags=_flags(post_switch_cooldown=True, insufficient_data=True),
-    )
-
-    assert event_watch.state == "watch"
-    assert event_watch.triggered_rules == [
-        "event_transition_watch",
-        "insufficient_data",
-    ]
-    assert cooldown_watch.state == "watch"
-    assert cooldown_watch.triggered_rules == [
-        "post_switch_cooldown",
-        "insufficient_data",
-    ]
+    with pytest.raises(RuntimeError, match="transition risk inputs insufficient"):
+        compose_transition_risk_output(
+            score=score,
+            flags=_flags(event_transition_watch=True, insufficient_data=True),
+        )
+    with pytest.raises(RuntimeError, match="transition risk inputs insufficient"):
+        compose_transition_risk_output(
+            score=score,
+            flags=_flags(post_switch_cooldown=True, insufficient_data=True),
+        )
 
 
-def test_transition_risk_missing_score_becomes_insufficient_data() -> None:
-    output = compose_transition_risk_output(
-        score=ComposedTransitionScore(score=None, interpretation=None, components=None),
-        flags=_flags(),
-    )
-
-    assert output.state == "insufficient_data"
-    assert output.score is None
-    assert output.data_quality.status == "insufficient_history"
-    assert output.classification_status == "insufficient_history"
+def test_transition_risk_missing_score_raises() -> None:
+    with pytest.raises(RuntimeError, match="transition score inputs not ready"):
+        compose_transition_risk_output(
+            score=ComposedTransitionScore(
+                score=None, interpretation=None, components=None
+            ),
+            flags=_flags(),
+        )
 
 
 def test_transition_risk_evidence_preserves_dict_access_and_dump_shape() -> None:
@@ -283,6 +270,8 @@ def test_transition_risk_series_matches_direct_score_composer() -> None:
         change_point_score=0.50,
         cluster_id_now=1,
         cluster_id_5d_ago=1,
+        credit_funding_label="credit_recovery",
+        volume_liquidity_label="normal_volume",
     )
 
     outputs = build_transition_risk_outputs_by_date(
@@ -302,6 +291,7 @@ def test_transition_risk_series_matches_direct_score_composer() -> None:
         ),
         transition_score_inputs_by_date={session: score_inputs},
         transition_score_config=cfg,
+        initial_active_state="weakening",
     )
     expected = compose_transition_score_for_session(
         realized_vol_short=score_inputs.realized_vol_short,
@@ -315,6 +305,8 @@ def test_transition_risk_series_matches_direct_score_composer() -> None:
         change_point_score=score_inputs.change_point_score,
         cluster_id_now=score_inputs.cluster_id_now,
         cluster_id_5d_ago=score_inputs.cluster_id_5d_ago,
+        credit_funding_label=score_inputs.credit_funding_label,
+        volume_liquidity_label=score_inputs.volume_liquidity_label,
         config=cfg,
     )
 
@@ -356,6 +348,7 @@ def test_transition_risk_v1_path_suppresses_v2_score_fields() -> None:
             )
         },
         transition_score_config=None,
+        initial_active_state="stable",
     )
 
     output = outputs[session]
@@ -415,6 +408,7 @@ def test_transition_risk_evidence_preserves_macro_event_matching_labels() -> Non
         ),
         transition_score_inputs_by_date={session: score_inputs},
         transition_score_config=cfg,
+        initial_active_state=cfg.initial_active_state,
     )
 
     assert outputs[session].evidence.macro_event_labels == ["fed_week", "cpi_week"]
@@ -436,34 +430,28 @@ def test_transition_score_inputs_event_calendar_labels_are_closed_type() -> None
         )
 
 
-def test_transition_score_missing_model_evidence_forces_insufficient_data() -> None:
+def test_transition_score_missing_model_evidence_raises() -> None:
     """F-002 (production config): with the transition_score seam enabled but no
-    per-session model evidence supplied, compose forces insufficient_data — model
-    evidence is mandatory and must NOT be renormalized away into a normal score."""
+    per-session model evidence supplied, compose raises — model evidence is
+    mandatory and must NOT be renormalized away into a normal score."""
     cfg = load_default_regime_config().transition_score
     assert cfg is not None
 
-    out = compose_transition_score_for_session(
-        realized_vol_short=12.0,
-        realized_vol_long=10.0,
-        pct_above_50dma=0.45,
-        avg_pairwise_corr_percentile_504d=0.60,
-        drawdown_252d=-0.10,
-        event_calendar_labels=("normal_calendar",),
-        credit_funding_label="credit_calm",
-        volume_liquidity_label="normal_volume",
-        config=cfg,
-    )
-
-    assert out.score is None
-    assert out.interpretation is None
-    assert out.components is None
-    assert out.missing_components == ("model_instability",)
+    with pytest.raises(RuntimeError, match="transition score missing components"):
+        compose_transition_score_for_session(
+            realized_vol_short=12.0,
+            realized_vol_long=10.0,
+            pct_above_50dma=0.45,
+            avg_pairwise_corr_percentile_504d=0.60,
+            drawdown_252d=-0.10,
+            event_calendar_labels=("normal_calendar",),
+            credit_funding_label="credit_calm",
+            volume_liquidity_label="normal_volume",
+            config=cfg,
+        )
 
 
-def test_transition_risk_series_forces_insufficient_data_when_model_evidence_cold_start() -> (
-    None
-):
+def test_transition_risk_series_raises_when_model_evidence_cold_start() -> None:
     session = date(2024, 1, 2)
     index = pd.DatetimeIndex([pd.Timestamp(session)])
     context = MarketContext.model_construct(
@@ -506,18 +494,15 @@ def test_transition_risk_series_forces_insufficient_data_when_model_evidence_col
         event_calendar=_event_calendar([session]),
     )
 
-    outputs = build_transition_risk_series(
-        context=context,
-        feature_store=feature_store,
-        axis_bundle=axis_bundle,
-    )
-
     # F-002: the seam is wired but the per-session 5-days-ago model values are absent
-    # on this single-session cold start, so transition_risk fails closed to
-    # insufficient_data rather than emitting a renormalized (model-evidence-free) score.
-    assert outputs[session].score is None
-    assert outputs[session].state == "insufficient_data"
-    assert outputs[session].score_components is None
+    # on this single-session cold start, so transition_risk fails loudly rather
+    # than emitting a renormalized (model-evidence-free) score.
+    with pytest.raises(RuntimeError, match="transition score missing components"):
+        build_transition_risk_series(
+            context=context,
+            feature_store=feature_store,
+            axis_bundle=axis_bundle,
+        )
 
 
 def test_transition_risk_series_requires_configured_model_evidence_seams() -> None:
@@ -642,6 +627,7 @@ def test_transition_risk_state_debounces_soft_state_changes() -> None:
             ),
         },
         transition_score_config=cfg,
+        initial_active_state=cfg.initial_active_state,
     )
 
     assert outputs[sessions[0]].state == "stable"

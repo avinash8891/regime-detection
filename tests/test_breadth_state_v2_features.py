@@ -15,6 +15,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from regime_detection.breadth_state import (
     BreadthV2Features,
@@ -23,6 +24,7 @@ from regime_detection.breadth_state import (
 from regime_detection.config import (
     BreadthV2Config,
     load_default_regime_config,
+    load_regime_config,
 )
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
@@ -242,26 +244,26 @@ def _sector_etf_closes_aligned_to_spy(
 
 
 def test_build_feature_store_populates_breadth_state_v2(
-    market_df_for_asof, v2_breadth_config
+    v2_market_df_for_asof, synthetic_v2_kwargs_for_market_data
 ):
-    cfg = load_default_regime_config()
-    market_df = market_df_for_asof(_INTEGRATION_AS_OF)
-    # First build a context without sector closes to discover the SPY index.
-    bootstrap_context = build_market_context(
-        end_date=_INTEGRATION_AS_OF,
-        market_data=market_df,
-        config=cfg,
-    )
-    sector_closes = _sector_etf_closes_aligned_to_spy(bootstrap_context.spy_ohlcv.index)
+    market_df = v2_market_df_for_asof(_INTEGRATION_AS_OF)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_df)
+    cfg = kwargs["config"]
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df,
         config=cfg,
-        sector_etf_closes=sector_closes,
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
-    # PIT inputs absent → V1 ETF-proxy fallback is allowed (spec §1D line 329),
-    # so no survivorship-bias gate fires; sector breadth still populates.
-    store = build_feature_store(context, breadth_state_v2_config=v2_breadth_config)
+    store = build_feature_store(context, **cfg.v2_feature_build_configs())
     assert store.breadth_state_v2 is not None
     assert isinstance(store.breadth_state_v2, BreadthV2Features)
     assert (store.breadth_state_v2.sector_breadth.index == store.spy_index).all()
@@ -270,50 +272,57 @@ def test_build_feature_store_populates_breadth_state_v2(
 
 
 def test_build_feature_store_graceful_when_sector_data_absent(
-    market_df_for_asof, v2_breadth_config
+    v2_market_df_for_asof, synthetic_v2_kwargs_for_market_data
 ):
-    """V2 config supplied but sector_etf_closes absent → breadth_state_v2 is None."""
-    cfg = load_default_regime_config()
+    """V2 config supplied but sector_etf_closes absent → fail loudly."""
+    market_df = v2_market_df_for_asof(_INTEGRATION_AS_OF)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_df)
+    cfg = kwargs["config"]
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
-        market_data=market_df_for_asof(_INTEGRATION_AS_OF),
+        market_data=market_df,
         config=cfg,
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
-    store = build_feature_store(context, breadth_state_v2_config=v2_breadth_config)
-    assert store.breadth_state_v2 is None
+    with pytest.raises(RuntimeError, match="sector_etf_closes"):
+        build_feature_store(context, **cfg.v2_feature_build_configs())
 
 
-def test_build_feature_store_none_when_v2_config_absent(market_df_for_asof):
-    """No v2 breadth config → breadth_state_v2 is None even if sector data present."""
+def test_build_feature_store_fails_when_v2_config_absent(market_df_for_asof):
+    """No v2 breadth config in a V2 config is invalid."""
     cfg = load_default_regime_config()
+    cfg_missing_breadth = cfg.model_copy(update={"breadth_state_v2": None})
+    with pytest.raises(
+        ValidationError, match="missing required V2 sections: breadth_state_v2"
+    ):
+        build_market_context(
+            end_date=_INTEGRATION_AS_OF,
+            market_data=market_df_for_asof(_INTEGRATION_AS_OF),
+            config=cfg_missing_breadth,
+        )
+
+
+def test_v1_config_path_leaves_breadth_state_v2_none(market_df_for_asof):
+    """V1 config keeps the V2 breadth feature seam absent."""
+    cfg_v1 = load_regime_config("src/regime_detection/configs/core3-v1.0.0.yaml")
     bootstrap = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
-        config=cfg,
+        config=cfg_v1,
     )
     sector_closes = _sector_etf_closes_aligned_to_spy(bootstrap.spy_ohlcv.index)
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
-        config=cfg,
-        sector_etf_closes=sector_closes,
-    )
-    store = build_feature_store(context)
-    assert store.breadth_state_v2 is None
-
-
-def test_v1_config_path_leaves_breadth_state_v2_none(market_df_for_asof):
-    """When breadth_state_v2 is None (no sector ETF data) the feature store's
-    breadth_state_v2 is None, but per-label hysteresis is still required via
-    the axis builder. This test verifies the feature_store seam is correctly
-    absent when sector data is absent — the timeline requires per-label
-    hysteresis config to be present even if the feature seam is off."""
-    cfg = load_default_regime_config()
-    cfg_v1 = cfg.model_copy(update={"breadth_state_v2": None})
-    context = build_market_context(
-        end_date=_INTEGRATION_AS_OF,
-        market_data=market_df_for_asof(_INTEGRATION_AS_OF),
         config=cfg_v1,
+        sector_etf_closes=sector_closes,
     )
     store = build_feature_store(context)
     assert store.breadth_state_v2 is None
@@ -342,23 +351,22 @@ def test_timeline_threads_breadth_state_v2_config(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_data,
         config=cfg,
+        event_calendar=kwargs["event_calendar"],
         macro_series=kwargs["macro_series"],
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],
         pit_constituent_intervals=kwargs["pit_constituent_intervals"],
         constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
     required = min(len(context.sessions), ENGINE_MINIMUM_HISTORY)
     working = slice_context_to_recent_sessions(
         context=context, required_sessions=required
     )
-    store = build_feature_store(
-        working,
-        network_fragility_config=cfg.network_fragility,
-        trend_direction_v2_config=cfg.trend_direction_v2,
-        volatility_state_v2_config=cfg.volatility_state_v2,
-        breadth_state_v2_config=cfg.breadth_state_v2,
-    )
+    store = build_feature_store(working, **cfg.v2_feature_build_configs())
     assert store.breadth_state_v2 is not None
     assert len(store.breadth_state_v2.sector_breadth) == len(store.spy_index)
 

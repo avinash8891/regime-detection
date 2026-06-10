@@ -1,13 +1,27 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
+import pandas as pd
 import pytest
 
-from regime_detection.engine import RegimeEngine
-from regime_detection.feature_store import _FEATURE_SPECS, _FeatureStoreBuildState
+from regime_detection.config import load_regime_config
+from regime_detection.feature_store import (
+    _FEATURE_SPECS,
+    _FeatureStoreBuildState,
+    build_feature_store,
+)
 from regime_detection.feature_store_runtime import FeatureSpec
 from regime_detection.market_context import build_market_context
+
+_V1_CONFIG_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "src"
+    / "regime_detection"
+    / "configs"
+    / "core3-v1.0.0.yaml"
+)
 
 
 def _spec_by_name(name: str) -> FeatureSpec:
@@ -32,7 +46,7 @@ def v1_minimal_state(market_df_for_asof) -> _FeatureStoreBuildState:
     context = build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
-        config=RegimeEngine().config,
+        config=load_regime_config(_V1_CONFIG_PATH),
     )
     return _FeatureStoreBuildState(
         context=context,
@@ -50,8 +64,8 @@ def test_trend_direction_resolve_returns_spy_close_kwargs(
     assert isinstance(
         resolved, dict
     ), f"trend_direction.resolve returned {type(resolved).__name__}, expected dict"
-    assert set(resolved.keys()) == {"spy_close"}
-    assert resolved["spy_close"] is v1_minimal_state.spy_close
+    assert set(resolved.keys()) == {"close"}
+    assert resolved["close"] is v1_minimal_state.spy_close
 
 
 def test_trend_character_resolve_returns_ohlcv_kwargs_v1_path(
@@ -104,8 +118,9 @@ def test_sma_50_resolve_returns_spy_close(
     resolved = spec.resolve(v1_minimal_state)
 
     assert isinstance(resolved, dict)
-    assert set(resolved.keys()) == {"spy_close"}
-    assert resolved["spy_close"] is v1_minimal_state.spy_close
+    assert set(resolved.keys()) == {"series", "window"}
+    assert resolved["series"] is v1_minimal_state.spy_close
+    assert resolved["window"] == 50
 
 
 def test_sentiment_score_resolve_missing_aaii_returns_unavailable(
@@ -408,6 +423,80 @@ def test_credit_funding_spec_required_inputs_matches_legacy() -> None:
     )
     assert spec.policy == "none"
     assert spec.report is True
+
+
+def test_credit_funding_resolve_does_not_depend_on_cpi_first_release(
+    v2_classify_kwargs_for_asof,
+) -> None:
+    kwargs = v2_classify_kwargs_for_asof(date(2023, 12, 14))
+    context = build_market_context(
+        end_date=date(2023, 12, 14),
+        market_data=kwargs["market_data"],
+        config=kwargs["config"],
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=None,
+    )
+    state = _FeatureStoreBuildState(
+        context=context,
+        spy_ohlcv=context.spy_ohlcv,
+        spy_close=context.spy_ohlcv["close"],
+        credit_funding_config=context.config.credit_funding,
+        inflation_growth_config=context.config.inflation_growth,
+    )
+
+    resolved = _spec_by_name("credit_funding").resolve(state)
+
+    assert isinstance(resolved, dict)
+    assert "cpi_first_release" not in resolved
+
+
+def test_build_feature_store_defaults_sentiment_score_config_from_context(
+    v2_classify_kwargs_for_asof,
+) -> None:
+    kwargs = v2_classify_kwargs_for_asof(date(2023, 12, 14))
+    stale_aaii = pd.DataFrame(
+        {
+            "publication_date": pd.date_range(
+                "2020-01-02",
+                periods=4,
+                freq="W-THU",
+            ),
+            "bull_bear_spread_8w_ma": [0.1, 0.2, 0.3, 0.4],
+        }
+    )
+    context = build_market_context(
+        end_date=date(2023, 12, 14),
+        market_data=kwargs["market_data"],
+        config=kwargs["config"],
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=stale_aaii,
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
+    )
+    feature_configs = context.config.v2_feature_build_configs()
+    feature_configs["sentiment_score_config"] = None
+
+    store = build_feature_store(context, **feature_configs)
+
+    assert store.trend_direction_v2 is not None
+    assert store.trend_direction_v2.sentiment_score is not None
+    assert pd.isna(
+        store.trend_direction_v2.sentiment_score.loc[pd.Timestamp(context.end_date)]
+    )
 
 
 def test_inflation_growth_resolve_missing_config_returns_unavailable(

@@ -35,6 +35,7 @@ def _integration_only_markexpr(markexpr: str) -> bool:
 
 
 def pytest_load_initial_conftests(early_config, parser, args) -> None:  # type: ignore[no-untyped-def]
+    del early_config  # Pytest hook signature requires this argument.
     if os.environ.get("SANTO_DOMINGO_FORCE_XDIST_AUTO") == "1":
         return
     if not _integration_only_markexpr(_last_markexpr(args)):

@@ -303,6 +303,64 @@ def test_followthrough_rate_breakout_level_tie_break_prefers_20d() -> None:
     assert rate.iloc[-1] == 1.0
 
 
+def test_followthrough_rate_is_pit_safe() -> None:
+    """A breakout's held status must not depend on future closes relative to
+    the session being scored.  For any session t, ft_rate computed on the full
+    series must equal ft_rate computed on close[:t+1] (truncated series).
+
+    If the implementation peeks ahead (e.g. uses close[b+1..b+hold] before
+    session b+hold has been observed at time t), the full-series and truncated
+    values will diverge.
+
+    We construct a synthetic series with deliberate breakouts placed so that
+    the hold window straddles the observation boundary, maximising the chance
+    of catching lookahead.
+    """
+    hold_sessions = 5
+    lookback_sessions = 60
+    window_count = 1  # low count so cold-start doesn't mask the bug
+
+    # Build 120 sessions: an uptrend with periodic breakouts.
+    n = 120
+    prices = np.empty(n)
+    prices[0] = 100.0
+    rng = np.random.default_rng(seed=7)
+    for i in range(1, n):
+        prices[i] = prices[i - 1] + rng.normal(0.3, 0.8)
+    idx = pd.bdate_range("2022-01-03", periods=n)
+    close_full = pd.Series(prices, index=idx, name="close")
+    breakout_full = _compute_breakout_20d_or_50d(close_full)
+
+    ft_full = _compute_followthrough_rate(
+        close_full,
+        breakout_full,
+        lookback_sessions=lookback_sessions,
+        window_count=window_count,
+        hold_sessions=hold_sessions,
+    )
+
+    # Check sessions 55..110 — enough history to be past cold-start, enough
+    # remaining to expose lookahead if it exists.
+    for t in range(55, 111):
+        close_trunc = close_full.iloc[: t + 1]
+        breakout_trunc = _compute_breakout_20d_or_50d(close_trunc)
+        ft_trunc = _compute_followthrough_rate(
+            close_trunc,
+            breakout_trunc,
+            lookback_sessions=lookback_sessions,
+            window_count=window_count,
+            hold_sessions=hold_sessions,
+        )
+        full_val = ft_full.iloc[t]
+        trunc_val = ft_trunc.iloc[t]
+        if np.isnan(full_val) and np.isnan(trunc_val):
+            continue
+        assert np.isclose(full_val, trunc_val, rtol=0.0, atol=0.0), (
+            f"PIT violation at session {t} ({idx[t].date()}): "
+            f"full={full_val}, truncated={trunc_val}"
+        )
+
+
 def test_compute_adx_14_matches_independent_wilder_ewm_reimplementation() -> None:
     # F-033: verify _compute_adx_14 against an INDEPENDENT inline reimplementation of
     # the §4.4 Wilder ADX using the pinned ewm(alpha=1/14, adjust=False,

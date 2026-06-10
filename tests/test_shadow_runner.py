@@ -35,22 +35,10 @@ def _write_sector_pit_intervals(path: Path) -> Path:
 
 
 def _write_shadow_test_config(tmp_path: Path) -> Path:
-    """Copy core3-v2-fast.yaml into tmp_path, stripped of credit_funding and
-    inflation_growth.
-
-    The shadow runner has no parameter for loading macro_series or full
-    cross_asset_closes from disk; the canonical fixture (`v2_daily_ohlcv.csv`)
-    is OHLCV-only. When credit_funding and inflation_growth are configured,
-    the ClassifyRequest validator (engine.py:259) refuses to run without
-    macro keys (sofr/iorb/nfci/cpi_all_items/pmi_manufacturing) and extra
-    cross_asset closes (KRE/XLY/XLI/XLP/XLU) that the runner can't supply.
-    Stripping these two axes keeps the shadow-runner tests scoped to the
-    artifact/ledger/duplicate-rejection behavior they actually exercise."""
+    """Copy a valid V1 config for runner tests scoped to ledger behavior."""
     repo_root = Path(__file__).resolve().parents[1]
-    src = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    src = repo_root / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
     config = yaml.safe_load(src.read_text())
-    config.pop("credit_funding", None)
-    config.pop("inflation_growth", None)
     dst = tmp_path / "shadow_test_config.yaml"
     dst.write_text(yaml.safe_dump(config))
     return dst
@@ -136,9 +124,9 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
     payload = json.loads(output_path.read_text())
     assert payload["as_of_date"] == "2026-05-13"
     assert payload["engine_version"].startswith("regime-engine-v")
-    from regime_detection.config import load_default_regime_config
+    from regime_detection.config import load_regime_config
 
-    assert payload["config_version"] == load_default_regime_config().config_version
+    assert payload["config_version"] == load_regime_config(config_path).config_version
 
     archive_market = out_root / "input_archives" / "2026-05-13" / "market_data.parquet"
     archived_df = pd.read_parquet(archive_market)
@@ -151,7 +139,7 @@ def test_shadow_runner_writes_expected_artifacts_and_ledger(tmp_path: Path) -> N
     assert "events.yaml" in checksums
 
 
-def test_shadow_runner_supplies_macro_series_for_configured_v2_axes(
+def test_shadow_runner_fails_loudly_without_required_v2_evidence(
     tmp_path: Path,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[1]
@@ -174,10 +162,10 @@ def test_shadow_runner_supplies_macro_series_for_configured_v2_axes(
         macro_parquet_path=macro_path,
     )
 
-    assert result["status"] == "success"
-    payload = json.loads((out_root / "outputs" / "2026-05-13.json").read_text())
-    assert payload["credit_funding_state"] is not None
-    assert payload["inflation_growth_state"] is not None
+    assert result["status"] == "failure"
+    assert "sentiment_score: aaii_sentiment" in result["failure_reason"]
+    assert "news_sentiment: news_sentiment" in result["failure_reason"]
+    assert "central_bank_text: central_bank_text_releases" in result["failure_reason"]
 
 
 def test_shadow_runner_v1_only_run_does_not_load_v2_macro_artifacts(

@@ -340,8 +340,10 @@ def _build_cluster_output(
     cluster_mapping_reason = "cluster_label_map_not_configured"
     if clustering_config is not None and cluster_label_map is None:
         if clustering_config.label_map_required_for_output:
-            cluster_mapping_status = "map_required_missing"
-            cluster_mapping_reason = "cluster_label_map_required_but_not_configured"
+            raise RuntimeError(
+                "cluster_label_map_required: clustering.label_map_required_for_output "
+                "is true but cluster_label_map is not configured"
+            )
     elif cluster_label_map is not None and clustering_config is not None:
         map_covers_clusters = set(cluster_label_map.keys()) == set(
             range(clustering_config.n_clusters)
@@ -354,21 +356,15 @@ def _build_cluster_output(
             cluster_mapping_status = "mapped"
             cluster_mapping_reason = "cluster_label_map_valid"
         elif not map_covers_clusters:
-            cluster_mapping_status = "map_invalid"
-            cluster_mapping_reason = "cluster_label_map_incomplete"
+            raise RuntimeError(
+                "cluster_label_map_invalid: cluster_label_map keys do not cover "
+                f"n_clusters={clustering_config.n_clusters}"
+            )
         else:
-            cluster_mapping_status = "model_version_mismatch"
-            cluster_mapping_reason = "cluster_label_map_model_version_mismatch"
-        if not map_covers_clusters or not version_matches:
-            if selected_day_index == 0:
-                _LOGGER.warning(
-                    "cluster_label_map skipped: map keys %s do not cover "
-                    "n_clusters=%d or model_version mismatch (map=%s, fit=%s)",
-                    sorted(cluster_label_map.keys()),
-                    clustering_config.n_clusters,
-                    clustering_config.model_version,
-                    aligned.cluster_model_version,
-                )
+            raise RuntimeError(
+                "cluster_label_map_model_version_mismatch: "
+                f"config={clustering_config.model_version}, fit={aligned.cluster_model_version}"
+            )
     return ClusterOutput(
         cluster_id=int(cid_val),
         distance_to_centroid=float(dist_val),
@@ -409,8 +405,10 @@ def _build_hmm_output(
     hmm_mapping_reason = "state_label_map_not_configured"
     if hmm_config is not None and hmm_label_map is None:
         if hmm_config.label_map_required_for_output:
-            hmm_mapping_status = "map_required_missing"
-            hmm_mapping_reason = "state_label_map_required_but_not_configured"
+            raise RuntimeError(
+                "state_label_map_required: hmm.label_map_required_for_output is true "
+                "but state_label_map is not configured"
+            )
     elif hmm_label_map is not None and hmm_config is not None:
         map_covers_states = set(hmm_label_map.keys()) == set(range(hmm_config.n_states))
         version_matches = (
@@ -421,21 +419,15 @@ def _build_hmm_output(
             hmm_mapping_status = "mapped"
             hmm_mapping_reason = "state_label_map_valid"
         elif not map_covers_states:
-            hmm_mapping_status = "map_invalid"
-            hmm_mapping_reason = "state_label_map_incomplete"
+            raise RuntimeError(
+                "state_label_map_invalid: state_label_map keys do not cover "
+                f"n_states={hmm_config.n_states}"
+            )
         else:
-            hmm_mapping_status = "model_version_mismatch"
-            hmm_mapping_reason = "state_label_map_model_version_mismatch"
-        if not map_covers_states or not version_matches:
-            if selected_day_index == 0:
-                _LOGGER.warning(
-                    "state_label_map skipped: map keys %s do not cover "
-                    "n_states=%d or model_version mismatch (map=%s, fit=%s)",
-                    sorted(hmm_label_map.keys()),
-                    hmm_config.n_states,
-                    hmm_config.model_version,
-                    aligned.hmm_model_version,
-                )
+            raise RuntimeError(
+                "state_label_map_model_version_mismatch: "
+                f"config={hmm_config.model_version}, fit={aligned.hmm_model_version}"
+            )
     return HmmOutput(
         top_state=int(hmm_state_val),
         top_state_prob=float(hmm_prob_val),
@@ -637,29 +629,9 @@ def build_regime_timeline(
         context=context,
         required_sessions=required_sessions,
     )
-    is_v2 = cfg.config_version != "core3-v1.0.0"
-    network_fragility_config = cfg.network_fragility if is_v2 else None
-    trend_direction_v2_config = cfg.trend_direction_v2 if is_v2 else None
-    volatility_state_v2_config = cfg.volatility_state_v2 if is_v2 else None
-    breadth_state_v2_config = cfg.breadth_state_v2 if is_v2 else None
-    volume_liquidity_v2_config = cfg.volume_liquidity_v2 if is_v2 else None
-    monetary_pressure_v2_config = cfg.monetary_pressure_v2 if is_v2 else None
-    credit_funding_config = cfg.credit_funding if is_v2 else None
-    inflation_growth_config = cfg.inflation_growth if is_v2 else None
-    central_bank_text_config = cfg.central_bank_text if is_v2 else None
-    news_sentiment_config = cfg.news_sentiment if is_v2 else None
     feature_store = build_feature_store(
         working_context,
-        network_fragility_config=network_fragility_config,
-        trend_direction_v2_config=trend_direction_v2_config,
-        volatility_state_v2_config=volatility_state_v2_config,
-        breadth_state_v2_config=breadth_state_v2_config,
-        volume_liquidity_v2_config=volume_liquidity_v2_config,
-        monetary_pressure_v2_config=monetary_pressure_v2_config,
-        credit_funding_config=credit_funding_config,
-        inflation_growth_config=inflation_growth_config,
-        central_bank_text_config=central_bank_text_config,
-        news_sentiment_config=news_sentiment_config,
+        **cfg.v2_feature_build_configs(),
     )
     axis_bundle = build_axis_series_bundle(
         context=working_context, feature_store=feature_store

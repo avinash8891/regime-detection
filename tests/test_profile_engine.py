@@ -933,6 +933,11 @@ def test_profile_trailing_status_reports_no_rule_fired_not_unknown() -> None:
     assert all("active_label=unknown" not in row for row in rows)
 
 
+def test_profile_engine_verification_issues_fail_loudly() -> None:
+    with pytest.raises(RuntimeError, match="profile verification issues"):
+        profile_engine._raise_on_verification_issues(["trailing V2 field missing"])
+
+
 def test_timed_inflation_growth_builder_patches_axis_builder_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

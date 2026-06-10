@@ -110,20 +110,20 @@ def _computed_default_clustering() -> ClusteringFeatures:
 # ---------------------------------------------------------------------------
 
 
-def test_compute_clustering_features_returns_none_when_any_input_is_none() -> None:
+def test_compute_clustering_features_raises_when_any_input_is_none() -> None:
     inputs = _synthetic_inputs()
     cfg = _default_clustering_config()
     for missing in inputs:
         call_kwargs = {k: (None if k == missing else v) for k, v in inputs.items()}
-        result = compute_clustering_features(config=cfg, **call_kwargs)
-        assert result is None, f"missing {missing} → expected None"
+        with pytest.raises(RuntimeError, match="GMM missing required inputs"):
+            compute_clustering_features(config=cfg, **call_kwargs)
 
 
-def test_compute_clustering_features_returns_none_when_insufficient_history() -> None:
+def test_compute_clustering_features_raises_when_insufficient_history() -> None:
     inputs = _synthetic_inputs(n_sessions=100)
     cfg = _default_clustering_config(training_window_days=1260)
-    result = compute_clustering_features(config=cfg, **inputs)
-    assert result is None
+    with pytest.raises(RuntimeError, match="GMM insufficient history"):
+        compute_clustering_features(config=cfg, **inputs)
 
 
 def test_compute_clustering_features_succeeds_on_synthetic_inputs(
@@ -193,7 +193,109 @@ def test_seed_determinism() -> None:
     )
 
 
-def test_compute_clustering_returns_none_on_singular_covariance() -> None:
+def test_cluster_ids_are_stable_across_pit_refit_boundary() -> None:
+    """Cluster IDs must not permute at PIT refit boundaries.
+
+    GMM component ordering is arbitrary after each fit. Without Hungarian
+    alignment, cluster 0 at checkpoint N can map to cluster 2 at
+    checkpoint N+1, corrupting cluster_label_map and causing spurious
+    cluster_flip = 1.0 at every refit boundary.
+
+    This test constructs data with 3 well-separated clusters cycling
+    through the entire series (so every training window sees all 3
+    clusters), runs with cadence=21, and asserts that points from
+    the same spatial cluster get a single consistent ID across all
+    refit checkpoints.
+    """
+    rng = np.random.default_rng(123)
+    n_sessions = 500
+    index = pd.bdate_range("2015-01-05", periods=n_sessions)
+
+    # Assign each session to one of 3 spatial clusters in a repeating
+    # pattern so every training window (100 sessions) sees all 3 clusters.
+    cluster_labels = np.array([i % 3 for i in range(n_sessions)])
+
+    # Three well-separated centroids in 7-dim feature space.
+    centroids = {
+        0: [0.05, 0.12, 0.08, -0.02, 15.0, 0.25, 0.80],
+        1: [-0.08, -0.15, 0.35, -0.25, 40.0, 0.70, 0.20],
+        2: [0.01, 0.02, 0.18, -0.10, 25.0, 0.45, 0.50],
+    }
+    # Tight spread relative to centroid separation.
+    scales = [0.003, 0.005, 0.003, 0.003, 0.5, 0.01, 0.01]
+
+    feature_names = [
+        "return_21d",
+        "return_63d",
+        "realized_vol_21d",
+        "drawdown_63d",
+        "adx_14",
+        "avg_pairwise_corr_63d",
+        "pct_above_50dma",
+    ]
+    data = np.empty((n_sessions, 7))
+    for i in range(n_sessions):
+        c = cluster_labels[i]
+        for j in range(7):
+            data[i, j] = rng.normal(loc=centroids[c][j], scale=scales[j])
+
+    inputs = {
+        name: pd.Series(data[:, j], index=index, name=name)
+        for j, name in enumerate(feature_names)
+    }
+
+    cfg = ClusteringConfig(
+        n_clusters=3,
+        training_window_days=100,
+        retrain_cadence_days=21,
+        random_state=42,
+    )
+
+    result = compute_clustering_features(config=cfg, **inputs)
+    assert result is not None
+
+    ids = result.cluster_id.dropna()
+    assert len(ids) > 0
+
+    # For each ground-truth cluster, the GMM should assign a single
+    # consistent ID across all refit checkpoints. If Hungarian alignment
+    # is missing, IDs permute at boundaries.
+    for gt_cluster in range(3):
+        # Use positional indexing aligned to the ids series.
+        gt_positions = np.where(
+            np.array([cluster_labels[i] for i in range(n_sessions)])[
+                ids.index.get_indexer(ids.index)
+            ]
+            == gt_cluster
+        )[0]
+        if len(gt_positions) == 0:
+            continue
+        cluster_ids_for_gt = ids.iloc[gt_positions]
+        dominant_id = cluster_ids_for_gt.mode().iloc[0]
+        consistency = (cluster_ids_for_gt == dominant_id).mean()
+        assert consistency >= 0.95, (
+            f"ground-truth cluster {gt_cluster}: ID consistency "
+            f"{consistency:.2%} < 95% — IDs permuted at refit boundary "
+            f"(unique IDs: {sorted(cluster_ids_for_gt.unique())})"
+        )
+
+    # The three ground-truth clusters must map to three DISTINCT IDs.
+    dominant_ids = set()
+    for gt_cluster in range(3):
+        gt_positions = np.where(
+            np.array([cluster_labels[i] for i in range(n_sessions)])[
+                ids.index.get_indexer(ids.index)
+            ]
+            == gt_cluster
+        )[0]
+        if len(gt_positions) > 0:
+            dominant_ids.add(int(ids.iloc[gt_positions].mode().iloc[0]))
+    assert (
+        len(dominant_ids) == 3
+    ), f"Expected 3 distinct cluster IDs, got {dominant_ids}"
+
+
+def test_compute_clustering_raises_on_singular_covariance() -> None:
     """Constant zero-variance inputs force a singular covariance failure."""
     index = pd.bdate_range("2010-01-04", periods=1500)
     constant_series = pd.Series(np.zeros(1500), index=index)
@@ -207,8 +309,8 @@ def test_compute_clustering_returns_none_on_singular_covariance() -> None:
         "pct_above_50dma": constant_series.copy(),
     }
     cfg = _default_clustering_config()
-    result = compute_clustering_features(config=cfg, **inputs)
-    assert result is None
+    with pytest.raises(RuntimeError, match="GMM fit failed"):
+        compute_clustering_features(config=cfg, **inputs)
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +322,6 @@ def test_feature_store_clustering_seam_none_when_config_absent(
     raw_market_frames: dict[str, pd.DataFrame],
 ) -> None:
     from regime_detection.config import load_default_regime_config
-    from regime_detection.feature_store import build_feature_store
     from regime_detection.market_context import build_market_context
     from regime_detection.calendar import require_nyse_trading_day
 
@@ -238,21 +339,12 @@ def test_feature_store_clustering_seam_none_when_config_absent(
         except Exception:
             last_session = last_session.fromordinal(last_session.toordinal() - 1)
     market_data = raw[raw["date"] <= last_session].copy().reset_index(drop=True)
-    context = build_market_context(
-        end_date=last_session,
-        market_data=market_data,
-        config=cfg,
-    )
-    feature_store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        trend_direction_v2_config=cfg.trend_direction_v2,
-        volatility_state_v2_config=cfg.volatility_state_v2,
-        breadth_state_v2_config=cfg.breadth_state_v2,
-        volume_liquidity_v2_config=cfg.volume_liquidity_v2,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-    )
-    assert feature_store.clustering is None
+    with pytest.raises(ValueError, match="missing required V2 sections: clustering"):
+        build_market_context(
+            end_date=last_session,
+            market_data=market_data,
+            config=cfg,
+        )
 
 
 def test_feature_store_clustering_seam_none_when_pct_above_50dma_absent(
@@ -284,18 +376,16 @@ def test_feature_store_clustering_seam_none_when_pct_above_50dma_absent(
         market_data=market_data,
         config=cfg,
     )
-    feature_store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        trend_direction_v2_config=cfg.trend_direction_v2,
-        volatility_state_v2_config=cfg.volatility_state_v2,
-        breadth_state_v2_config=cfg.breadth_state_v2,
-        volume_liquidity_v2_config=cfg.volume_liquidity_v2,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-    )
-    # No PIT inputs → breadth_state_v2 may exist but pct_above_50dma is None,
-    # or breadth_state_v2 itself is None. Either way clustering seam is None.
-    assert feature_store.clustering is None
+    with pytest.raises(RuntimeError, match="sentiment_score"):
+        build_feature_store(
+            context,
+            network_fragility_config=cfg.network_fragility,
+            trend_direction_v2_config=cfg.trend_direction_v2,
+            volatility_state_v2_config=cfg.volatility_state_v2,
+            breadth_state_v2_config=cfg.breadth_state_v2,
+            volume_liquidity_v2_config=cfg.volume_liquidity_v2,
+            monetary_pressure_v2_config=cfg.monetary_pressure_v2,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +432,7 @@ def test_regime_output_fails_loudly_when_transition_score_lacks_clustering(
     kwargs = v2_classify_kwargs_for_asof(last_session)
     kwargs["config"] = config
 
-    with pytest.raises(RuntimeError, match="model evidence feature_store.clustering"):
+    with pytest.raises(ValueError, match="missing required V2 sections: clustering"):
         engine.classify(
             as_of_date=last_session,
             **kwargs,

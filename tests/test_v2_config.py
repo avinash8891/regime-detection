@@ -397,7 +397,26 @@ def test_v2_config_rejects_volume_liquidity_without_volatility_v2(
 
     with pytest.raises(
         ValidationError,
-        match="volume_liquidity_state requires volatility_state_v2",
+        match="missing required V2 sections: volatility_state_v2",
+    ):
+        load_regime_config(bad_yaml)
+
+
+def test_v2_config_rejects_volume_liquidity_state_without_volume_liquidity_v2(
+    tmp_path: Path,
+) -> None:
+    pkg_file = importlib.resources.files("regime_detection").joinpath(
+        "configs/core3-v2.0.0.yaml"
+    )
+    data = yaml.safe_load(pkg_file.read_text(encoding="utf-8"))
+    data["volume_liquidity_v2"] = None
+
+    bad_yaml = tmp_path / "core3-v2.0.0-without-volume-liquidity-v2.yaml"
+    bad_yaml.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    with pytest.raises(
+        ValidationError,
+        match="missing required V2 sections: volume_liquidity_v2",
     ):
         load_regime_config(bad_yaml)
 

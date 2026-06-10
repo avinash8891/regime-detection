@@ -153,6 +153,8 @@ def _fetch_url_text_with_retries(
                 raise
 
         sleep = base_sleep_sec * (2 ** (attempt - 1))
-        sleep = sleep + random.uniform(0.0, min(1.0, sleep * 0.1))
+        sleep = sleep + random.uniform(  # noqa: S311 - non-cryptographic retry jitter.
+            0.0, min(1.0, sleep * 0.1)
+        )
         time.sleep(sleep)
     raise RuntimeError(f"{error_prefix}: {last_exc}") from last_exc

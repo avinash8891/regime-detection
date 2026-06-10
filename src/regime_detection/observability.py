@@ -206,8 +206,8 @@ def configure_error_tracking(
         "initialized": False,
     }
     if should_initialize_sentry:
-        assert sentry_sdk is not None
-        assert logging_integration_cls is not None
+        if sentry_sdk is None or logging_integration_cls is None:
+            raise RuntimeError("sentry backend selected without sentry bindings")
         logging_integration = logging_integration_cls(
             level=logging.INFO,
             event_level=logging.ERROR,

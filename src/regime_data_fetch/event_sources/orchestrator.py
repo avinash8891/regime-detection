@@ -9,7 +9,6 @@ from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.event_calendar import ScheduledEvent, US_EASTERN
 from regime_data_fetch.event_sources.models import (
     ApprovalRecord,
-    AmbiguityResolver,
     CandidateGenerator,
     EventCandidate,
     PrimaryAdapter,
@@ -30,13 +29,11 @@ class EventSourceOrchestrator:
         candidate_generators: list[CandidateGenerator] | None = None,
         validators: list[SecondaryValidator],
         approval_overlay: list[ApprovalRecord] | None = None,
-        resolver: AmbiguityResolver | None = None,
     ) -> None:
         self.primary_adapters = primary_adapters
         self.candidate_generators = candidate_generators or []
         self.validators = validators
         self.approval_overlay = approval_overlay or []
-        self.resolver = resolver
 
     def run(
         self,

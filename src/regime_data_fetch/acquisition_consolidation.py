@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
-from contextlib import closing
 
 from regime_data_fetch.acquisition_consolidation_normalized import (
     AGGREGATE_EPS_SNAPSHOT_ROWS_TABLE,
@@ -25,6 +25,7 @@ from regime_data_fetch.acquisition_consolidation_normalized import (
 )
 from regime_data_fetch.acquisition_store import AcquisitionStore
 from regime_data_fetch.local_daily_ohlcv_sqlite import _ensure_daily_ohlcv_table
+from regime_data_fetch.sqlite_identifiers import quote_sqlite_identifier
 
 LOGGER = logging.getLogger(__name__)
 FETCH_RUNS_TABLE = "fetch_runs"
@@ -52,6 +53,7 @@ _COUNTABLE_TABLES = frozenset(
         ALPACA_MARKET_ROWS_TABLE,
     }
 )
+_SQLITE_IDENTIFIER_ALLOWLIST = _COUNTABLE_TABLES
 
 
 class ConsolidationReport(TypedDict):
@@ -296,13 +298,16 @@ def _import_one_source(
 
         imported_daily_ohlcv_rows = 0
         if _table_exists(src_conn, DAILY_OHLCV_ROWS_TABLE):
+            daily_ohlcv_table = _quote_table_identifier(DAILY_OHLCV_ROWS_TABLE)
             rows = src_conn.execute(
-                f"SELECT * FROM {DAILY_OHLCV_ROWS_TABLE} ORDER BY symbol, date"
+                "SELECT * FROM "  # noqa: S608 - table identifier is allowlisted and quoted.
+                + daily_ohlcv_table
+                + " ORDER BY symbol, date"
             ).fetchall()
             if rows:
-                dst_conn.executemany(
-                    f"""
-                    INSERT OR REPLACE INTO {DAILY_OHLCV_ROWS_TABLE} (
+                insert_daily_ohlcv_sql = (
+                    "INSERT OR REPLACE INTO " + daily_ohlcv_table + """
+                    (
                         symbol,
                         date,
                         open,
@@ -313,7 +318,10 @@ def _import_one_source(
                         adjusted_close,
                         source_file
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
+                    """  # noqa: S608 - table identifier is allowlisted and quoted.
+                )
+                dst_conn.executemany(
+                    insert_daily_ohlcv_sql,
                     [
                         (
                             row["symbol"],
@@ -355,7 +363,19 @@ def _count_rows(conn: sqlite3.Connection, table_name: str) -> int:
         raise ValueError(f"Unexpected SQLite table for count: {table_name!r}")
     if not _table_exists(conn, table_name):
         return 0
-    return int(conn.execute(f"SELECT count(*) FROM {table_name}").fetchone()[0])
+    table_identifier = _quote_table_identifier(table_name)
+    return int(
+        conn.execute(
+            "SELECT count(*) FROM "  # noqa: S608 - table identifier is allowlisted and quoted.
+            + table_identifier
+        ).fetchone()[0]
+    )
+
+
+def _quote_table_identifier(table_name: str) -> str:
+    return quote_sqlite_identifier(
+        table_name, allowed_identifiers=_SQLITE_IDENTIFIER_ALLOWLIST
+    )
 
 
 def _merge_notes(existing: str | None, extra: str) -> str:

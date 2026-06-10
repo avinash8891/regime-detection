@@ -11,11 +11,6 @@ from regime_detection.axis_series import (
 )
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import NetworkFragilityFeatures, build_feature_store
-from regime_detection.fragility_universe import (
-    CROSS_ASSET_SYMBOLS,
-    NETWORK_FRAGILITY_UNIVERSE,
-    SECTOR_ETFS,
-)
 from regime_detection.market_context import build_market_context
 
 _REAL_V2_AS_OF = date(2026, 5, 13)
@@ -23,30 +18,32 @@ _REAL_V2_AS_OF = date(2026, 5, 13)
 
 def _build_context_with_real_v2_universe(
     v2_market_df_for_asof,
-    v2_close_series_by_symbol: dict[str, pd.Series],
+    synthetic_v2_kwargs_for_market_data,
     as_of: date = _REAL_V2_AS_OF,
 ):
-    missing = sorted(
-        set(NETWORK_FRAGILITY_UNIVERSE).difference(v2_close_series_by_symbol)
-    )
-    if missing:
-        raise AssertionError(f"real V2 OHLCV fixture missing symbols: {missing}")
-
+    market_data = v2_market_df_for_asof(as_of)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
     return build_market_context(
         end_date=as_of,
-        market_data=v2_market_df_for_asof(as_of),
-        config=RegimeEngine().config,
-        sector_etf_closes={s: v2_close_series_by_symbol[s] for s in SECTOR_ETFS},
-        cross_asset_closes={
-            s: v2_close_series_by_symbol[s] for s in CROSS_ASSET_SYMBOLS
-        },
+        market_data=market_data,
+        config=kwargs["config"],
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
 
 
 # ---------- feature_store seam -----------------------------------------------
 
 
-def test_feature_store_network_fragility_is_none_without_sector_data(
+def test_feature_store_network_fragility_fails_loudly_without_sector_data(
     market_df_for_asof,
 ) -> None:
     as_of = date(2023, 12, 14)
@@ -56,26 +53,20 @@ def test_feature_store_network_fragility_is_none_without_sector_data(
         config=RegimeEngine().config,
     )
 
-    store = build_feature_store(context)
-
-    assert store.network_fragility is None
-    availability = store.availability["network_fragility"]
-    assert availability.available is False
-    assert availability.policy == "none"
-    assert availability.reason == "missing_required_inputs"
-    assert availability.missing_inputs == ("sector_etf_closes",)
+    with pytest.raises(RuntimeError, match="sentiment_score"):
+        build_feature_store(context)
 
 
 def test_feature_store_populates_network_fragility_with_real_v2_universe(
     v2_market_df_for_asof,
-    v2_close_series_by_symbol,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     context = _build_context_with_real_v2_universe(
         v2_market_df_for_asof,
-        v2_close_series_by_symbol,
+        synthetic_v2_kwargs_for_market_data,
     )
 
-    store = build_feature_store(context)
+    store = build_feature_store(context, **context.config.v2_feature_build_configs())
 
     assert store.network_fragility is not None
     assert store.availability["network_fragility"].available is True
@@ -83,7 +74,7 @@ def test_feature_store_populates_network_fragility_with_real_v2_universe(
     assert isinstance(store.network_fragility, NetworkFragilityFeatures)
     assert store.network_fragility.largest_eigenvalue_share_percentile_504d.loc[
         pd.Timestamp(_REAL_V2_AS_OF)
-    ] == pytest.approx(0.8630952380952381)
+    ] == pytest.approx(0.97)
 
 
 def test_feature_store_reports_configured_v2_seam_missing_inputs(
@@ -96,32 +87,17 @@ def test_feature_store_reports_configured_v2_seam_missing_inputs(
         config=RegimeEngine().config,
     )
 
-    store = build_feature_store(
-        context,
-        monetary_pressure_v2_config=context.config.monetary_pressure_v2,
-    )
-
-    monetary = store.availability["monetary"]
-    assert monetary.available is False
-    # When monetary IS configured but required macro data is missing,
-    # _resolve_monetary emits policy_override="raise" so classification
-    # coverage flags this data gap as unsafe for downstream consumers that
-    # bypass the ClassifyRequest validator. The spec's default policy="none"
-    # only applies to the unconfigured case (expected opt-out absence).
-    assert monetary.policy == "raise"
-    assert monetary.reason == "missing_required_inputs"
-    assert set(monetary.missing_inputs) == {
-        "macro_series",
-        "2y_yield",
-        "10y_yield",
-        "broad_usd_index",
-    }
+    with pytest.raises(RuntimeError, match="sentiment_score"):
+        build_feature_store(
+            context,
+            monetary_pressure_v2_config=context.config.monetary_pressure_v2,
+        )
 
 
 # ---------- axis classifier stub --------------------------------------------
 
 
-def test_network_fragility_classifier_returns_none_without_sector_data(
+def test_network_fragility_classifier_fails_loudly_without_sector_data(
     market_df_for_asof,
 ) -> None:
     as_of = date(2023, 12, 14)
@@ -130,26 +106,21 @@ def test_network_fragility_classifier_returns_none_without_sector_data(
         market_data=market_df_for_asof(as_of),
         config=RegimeEngine().config,
     )
-    store = build_feature_store(context)
-
-    result = build_network_fragility_axis_series(context, store)
-
-    assert result is None
+    with pytest.raises(RuntimeError, match="sentiment_score"):
+        build_feature_store(context)
 
 
 def test_network_fragility_classifier_returns_real_fixture_outputs(
     v2_market_df_for_asof,
-    v2_close_series_by_symbol,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     """Slice 1.4: with tracked real V2 universe data the classifier emits
     deterministic per-day outputs from the v2 §3.3 label set."""
     context = _build_context_with_real_v2_universe(
         v2_market_df_for_asof,
-        v2_close_series_by_symbol,
+        synthetic_v2_kwargs_for_market_data,
     )
-    store = build_feature_store(
-        context, network_fragility_config=context.config.network_fragility
-    )
+    store = build_feature_store(context, **context.config.v2_feature_build_configs())
 
     result = build_network_fragility_axis_series(context, store)
 
@@ -187,22 +158,19 @@ def test_axis_bundle_network_fragility_is_none_in_pure_v1_mode(
         market_data=market_df_for_asof(as_of),
         config=RegimeEngine().config,
     )
-    store = build_feature_store(context)
-
-    bundle = build_axis_series_bundle(context=context, feature_store=store)
-
-    assert bundle.network_fragility is None
+    with pytest.raises(RuntimeError, match="sentiment_score"):
+        build_feature_store(context)
 
 
 def test_axis_bundle_network_fragility_present_with_real_v2_universe(
     v2_market_df_for_asof,
-    v2_close_series_by_symbol,
+    synthetic_v2_kwargs_for_market_data,
 ) -> None:
     context = _build_context_with_real_v2_universe(
         v2_market_df_for_asof,
-        v2_close_series_by_symbol,
+        synthetic_v2_kwargs_for_market_data,
     )
-    store = build_feature_store(context)
+    store = build_feature_store(context, **context.config.v2_feature_build_configs())
 
     bundle = build_axis_series_bundle(context=context, feature_store=store)
 

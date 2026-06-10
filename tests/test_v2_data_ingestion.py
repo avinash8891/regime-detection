@@ -663,36 +663,34 @@ def test_engine_classify_threads_aaii_sentiment_into_context(
     the per-session forward-fill respects V1 §2.2 stateless-replay."""
     as_of, market_data, kwargs = base_v2_market_and_kwargs_2023_12_14
 
-    # Two weekly AAII rows, both with publication_date <= as_of, so the
-    # session at as_of inherits the most recent one's bull_bear_spread_8w_ma.
+    # Eight weekly AAII rows, all with publication_date <= as_of, so the
+    # sentiment seam is warmed and the session at as_of inherits the most
+    # recent one's bull_bear_spread_8w_ma.
+    aaii_dates = pd.date_range(end=pd.Timestamp(as_of), periods=8, freq="7D")
     aaii_sentiment = pd.DataFrame(
         [
             {
-                "date": pd.Timestamp("2023-12-07"),
-                "publication_date": pd.Timestamp("2023-12-07"),
-                "bullish": 0.45,
+                "date": publication_date,
+                "publication_date": publication_date,
+                "bullish": 0.50 if publication_date == aaii_dates[-1] else 0.45,
                 "neutral": 0.30,
                 "bearish": 0.25,
-                "bull_bear_spread": 20.0,
-                "bull_bear_spread_8w_ma": 18.0,
-            },
-            {
-                "date": pd.Timestamp("2023-12-14"),
-                "publication_date": pd.Timestamp("2023-12-14"),
-                "bullish": 0.50,
-                "neutral": 0.25,
-                "bearish": 0.25,
-                "bull_bear_spread": 25.0,
-                "bull_bear_spread_8w_ma": 22.0,
-            },
+                "bull_bear_spread": (
+                    25.0 if publication_date == aaii_dates[-1] else 20.0
+                ),
+                "bull_bear_spread_8w_ma": (
+                    22.0 if publication_date == aaii_dates[-1] else 18.0
+                ),
+            }
+            for publication_date in aaii_dates
         ]
     )
 
+    kwargs = {**kwargs, "aaii_sentiment": aaii_sentiment}
     out = RegimeEngine().classify(
         as_of_date=as_of,
         market_data=market_data,
         **kwargs,
-        aaii_sentiment=aaii_sentiment,
     )
 
     # V1 wire fields remain stable when the new V2 aaii_sentiment kwarg is

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib.resources
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypedDict
 
 import yaml
 from pydantic import model_validator
@@ -43,6 +43,7 @@ from regime_detection._config_layer2 import (
     MonetaryPressureV2FeaturesConfig,
     MonetaryPressureV2RulesConfig,
     NewsSentimentConfig,
+    SentimentScoreConfig,
 )
 from regime_detection._config_evidence_strategy import (
     ChangePointConfig,
@@ -88,6 +89,7 @@ __all__ = [
     "NewsSentimentConfig",
     "NoFlipFlopConfig",
     "RegimeConfig",
+    "SentimentScoreConfig",
     "StrategyFamilyConstraintsConfig",
     "StrategyEventModifierRule",
     "StrategyEventModifiersConfig",
@@ -95,6 +97,7 @@ __all__ = [
     "TrendCharacterV2Config",
     "TrendDirectionV2Config",
     "TrendDirectionV2RulesConfig",
+    "V2FeatureBuildConfigs",
     "VolatilityV2Config",
     "VolatilityV2RulesConfig",
     "VolumeLiquidityConfig",
@@ -103,6 +106,20 @@ __all__ = [
     "load_default_regime_config",
     "load_regime_config",
 ]
+
+
+class V2FeatureBuildConfigs(TypedDict):
+    network_fragility_config: NetworkFragilityConfig | None
+    trend_direction_v2_config: TrendDirectionV2Config | None
+    volatility_state_v2_config: VolatilityV2Config | None
+    breadth_state_v2_config: BreadthV2Config | None
+    volume_liquidity_v2_config: VolumeLiquidityV2Config | None
+    monetary_pressure_v2_config: MonetaryPressureV2FeaturesConfig | None
+    credit_funding_config: CreditFundingConfig | None
+    inflation_growth_config: InflationGrowthConfig | None
+    central_bank_text_config: CentralBankTextConfig | None
+    news_sentiment_config: NewsSentimentConfig | None
+    sentiment_score_config: SentimentScoreConfig | None
 
 
 class RegimeConfig(StrictBaseModel):
@@ -144,6 +161,9 @@ class RegimeConfig(StrictBaseModel):
     # v2 §1A SF Fed news sentiment evidence config. Evidence only —
     # never read by the `euphoria` rule.
     news_sentiment: NewsSentimentConfig | None = None
+    # AAII sentiment staleness guard — prevents unbounded ffill from
+    # keeping stale euphoria readings alive indefinitely.
+    sentiment_score: SentimentScoreConfig | None = None
     inflation_growth: InflationGrowthConfig | None = None
     credit_funding: CreditFundingConfig | None = None
     hmm: HMMConfig | None = None
@@ -160,16 +180,93 @@ class RegimeConfig(StrictBaseModel):
 
     @model_validator(mode="after")
     def _validate_v2_cross_section_dependencies(self) -> "RegimeConfig":
+        if self.config_version == "core3-v2.0.0":
+            required_v2_sections = (
+                "network_fragility",
+                "trend_direction_v2",
+                "volatility_state_v2",
+                "breadth_state_v2",
+                "volume_liquidity_v2",
+                "volume_liquidity_state",
+                "transition_score",
+                "trend_character_v2",
+                "monetary_pressure_v2",
+                "monetary_pressure_state",
+                "central_bank_text",
+                "news_sentiment",
+                "sentiment_score",
+                "inflation_growth",
+                "credit_funding",
+                "hmm",
+                "clustering",
+                "change_point",
+                "no_flip_flop",
+                "cohort_routing",
+                "strategy_family_constraints",
+                "strategy_event_modifiers",
+            )
+            missing = [
+                section
+                for section in required_v2_sections
+                if getattr(self, section) is None
+            ]
+            if missing:
+                raise ValueError(
+                    "core3-v2.0.0 config missing required V2 sections: "
+                    + ", ".join(missing)
+                )
         if (
             self.config_version == "core3-v2.0.0"
             and self.volume_liquidity_state is not None
-            and self.volatility_state_v2 is None
         ):
-            raise ValueError(
-                "volume_liquidity_state requires volatility_state_v2 because "
-                "liquidity_gap_behavior consumes volatility-v2 gap/range percentiles"
-            )
+            if self.volume_liquidity_v2 is None:
+                raise ValueError(
+                    "volume_liquidity_state requires volume_liquidity_v2 because "
+                    "the volume/liquidity axis consumes volume z-score features"
+                )
+            if self.volatility_state_v2 is None:
+                raise ValueError(
+                    "volume_liquidity_state requires volatility_state_v2 because "
+                    "liquidity_gap_behavior consumes volatility-v2 gap/range percentiles"
+                )
         return self
+
+    def v2_feature_build_configs(self) -> V2FeatureBuildConfigs:
+        """Return V2 feature config kwargs for ``build_feature_store``.
+
+        All 10 V2 optional seam configs are returned as a single dict
+        suitable for ``**``-unpacking into ``build_feature_store``.  When
+        ``config_version`` is ``core3-v1.0.0`` every value is ``None`` so
+        V1 byte-identity is preserved without the caller having to re-derive
+        the version gate.
+        """
+        if self.config_version == "core3-v1.0.0":
+            return {
+                "network_fragility_config": None,
+                "trend_direction_v2_config": None,
+                "volatility_state_v2_config": None,
+                "breadth_state_v2_config": None,
+                "volume_liquidity_v2_config": None,
+                "monetary_pressure_v2_config": None,
+                "credit_funding_config": None,
+                "inflation_growth_config": None,
+                "central_bank_text_config": None,
+                "news_sentiment_config": None,
+                "sentiment_score_config": None,
+            }
+        return {
+            "network_fragility_config": self.network_fragility,
+            "trend_direction_v2_config": self.trend_direction_v2,
+            "volatility_state_v2_config": self.volatility_state_v2,
+            "breadth_state_v2_config": self.breadth_state_v2,
+            "volume_liquidity_v2_config": self.volume_liquidity_v2,
+            "monetary_pressure_v2_config": self.monetary_pressure_v2,
+            "credit_funding_config": self.credit_funding,
+            "inflation_growth_config": self.inflation_growth,
+            "central_bank_text_config": self.central_bank_text,
+            "news_sentiment_config": self.news_sentiment,
+            "sentiment_score_config": self.sentiment_score,
+        }
 
 
 def load_regime_config(path: str | Path) -> RegimeConfig:

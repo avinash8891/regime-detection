@@ -236,9 +236,9 @@ def _read_symbol_ohlcv(tree_root: Path, symbol: str) -> pd.DataFrame:
 
 def _load_optional_aaii_sentiment(path: Path | None) -> pd.DataFrame | None:
     if path is None:
-        return None
+        raise FileNotFoundError("aaii_sentiment path is required")
     if not path.exists():
-        return None
+        raise FileNotFoundError(f"aaii_sentiment file not found at {path}")
     frame = pd.read_parquet(path)
     required_cols = {"bull_bear_spread_8w_ma"}
     missing = sorted(required_cols - set(frame.columns))
@@ -255,13 +255,10 @@ def _load_event_calendar(
     allow_missing_event_calendar: bool,
 ) -> pd.DataFrame | None:
     if not path.exists():
-        if not allow_missing_event_calendar:
-            raise FileNotFoundError(
-                f"event_calendar file not found at {path}; "
-                "materialize the manifest event_calendar artifact, pass --event-calendar, "
-                "or use --allow-missing-event-calendar for debug-only profiling."
-            )
-        return None
+        raise FileNotFoundError(
+            f"event_calendar file not found at {path}; "
+            "materialize the manifest event_calendar artifact or pass --event-calendar."
+        )
     return load_event_calendar(path)
 
 
@@ -274,18 +271,18 @@ def _resolve_news_sentiment_path(path: Path) -> Path:
 
 def _load_optional_news_sentiment(path: Path | None) -> pd.Series | None:
     if path is None:
-        return None
+        raise FileNotFoundError("news_sentiment path is required")
     path = _resolve_news_sentiment_path(path)
     if not path.exists():
-        return None
+        raise FileNotFoundError(f"news_sentiment file not found at {path}")
     return load_news_sentiment_series(path)
 
 
 def _load_optional_cpi_first_release(path: Path | None) -> pd.Series | None:
     if path is None:
-        return None
+        raise FileNotFoundError("cpi_first_release path is required")
     if not path.exists():
-        return None
+        raise FileNotFoundError(f"cpi_first_release file not found at {path}")
     return load_cpi_vintages_first_release(path)
 
 
@@ -294,16 +291,20 @@ def _load_optional_central_bank_text_releases(
     fomc_path: Path | None,
     powell_path: Path | None,
 ) -> pd.DataFrame | None:
+    if fomc_path is None:
+        raise FileNotFoundError("fomc_minutes path is required")
+    if powell_path is None:
+        raise FileNotFoundError("powell_speeches path is required")
+    if not fomc_path.exists():
+        raise FileNotFoundError(f"fomc_minutes file not found at {fomc_path}")
+    if not powell_path.exists():
+        raise FileNotFoundError(f"powell_speeches file not found at {powell_path}")
     releases = load_central_bank_text_score(
-        fomc_minutes_source=(
-            fomc_path if fomc_path is not None and fomc_path.exists() else None
-        ),
-        powell_speeches_source=(
-            powell_path if powell_path is not None and powell_path.exists() else None
-        ),
+        fomc_minutes_source=fomc_path,
+        powell_speeches_source=powell_path,
     )
     if releases.empty:
-        return None
+        raise ValueError("central_bank_text releases loader returned 0 rows")
     return releases
 
 
@@ -768,6 +769,12 @@ def _emit_manifest_resolution_failure(
     _write_json_report(args.json_output, failure_report)
 
 
+def _raise_on_verification_issues(verification_issues: list[str]) -> None:
+    if verification_issues:
+        formatted = "; ".join(verification_issues)
+        raise RuntimeError(f"profile verification issues: {formatted}")
+
+
 def main() -> int:
     args = _parse_args()
     if not logging.getLogger().handlers:
@@ -1076,6 +1083,7 @@ def main() -> int:
     print(f"trace_id={current_trace_id()}")
     print(f"observability_metrics={get_metrics_collector().snapshot()}")
     print(f"bottom_line_total_wall_clock_seconds={total_wall_clock:.6f}")
+    _raise_on_verification_issues(verification_issues)
     return 0
 
 

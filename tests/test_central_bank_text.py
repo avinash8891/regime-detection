@@ -235,23 +235,22 @@ def test_to_daily_score_series_forward_fills_per_v1_replay_rule() -> None:
     assert daily.loc["2024-04-01"] == -1.0
 
 
-def test_to_daily_score_series_empty_releases_returns_all_nan() -> None:
+def test_to_daily_score_series_empty_releases_raises() -> None:
     sessions = pd.date_range("2024-01-01", "2024-01-10", freq="B")
-    daily = to_daily_score_series(
-        pd.DataFrame(
-            columns=[
-                "release_date",
-                "hawkish_count",
-                "dovish_count",
-                "total_tokens",
-                "net_score",
-                "source",
-            ]
-        ),
-        session_index=sessions,
-    )
-    assert daily.isna().all()
-    assert daily.name == "central_bank_text_score"
+    with pytest.raises(ValueError, match="central_bank_text releases are required"):
+        to_daily_score_series(
+            pd.DataFrame(
+                columns=[
+                    "release_date",
+                    "hawkish_count",
+                    "dovish_count",
+                    "total_tokens",
+                    "net_score",
+                    "source",
+                ]
+            ),
+            session_index=sessions,
+        )
 
 
 def test_to_daily_score_series_dedupes_same_date_picks_higher_token_row() -> None:
@@ -453,9 +452,9 @@ def test_load_central_bank_text_score_integrates_fomc_and_powell_frames() -> Non
     assert set(out["source"]) == {"fomc_minutes", "powell_speech"}
 
 
-def test_load_central_bank_text_score_empty_inputs_returns_empty_frame() -> None:
-    out = load_central_bank_text_score()
-    assert out.empty
+def test_load_central_bank_text_score_empty_inputs_raises() -> None:
+    with pytest.raises(ValueError, match="central_bank_text source is required"):
+        load_central_bank_text_score()
 
 
 def test_load_central_bank_text_score_respects_max_release_age() -> None:
@@ -477,7 +476,7 @@ def test_load_central_bank_text_score_respects_max_release_age() -> None:
     assert out.iloc[0]["release_date"] == dt.date(2024, 1, 31)
 
 
-def test_to_daily_score_series_max_release_age_can_drop_all_releases() -> None:
+def test_to_daily_score_series_max_release_age_raises_when_all_releases_stale() -> None:
     scored = pd.DataFrame(
         [
             {
@@ -491,14 +490,15 @@ def test_to_daily_score_series_max_release_age_can_drop_all_releases() -> None:
         ]
     )
     sessions = pd.date_range("2024-12-30", "2024-12-31", freq="B")
-    daily = to_daily_score_series(
-        scored,
-        session_index=sessions,
-        smoothing_window_sessions=1,
-        max_release_age_days=365,
-    )
-    assert daily.isna().all()
-    assert daily.name == "central_bank_text_score"
+    with pytest.raises(
+        ValueError, match="central_bank_text releases are stale for session window"
+    ):
+        to_daily_score_series(
+            scored,
+            session_index=sessions,
+            smoothing_window_sessions=1,
+            max_release_age_days=365,
+        )
 
 
 def test_to_daily_score_series_applies_trailing_smoothing_window() -> None:

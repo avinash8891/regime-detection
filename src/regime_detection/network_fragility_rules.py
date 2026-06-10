@@ -14,8 +14,8 @@ If none match, the label falls through to ``unknown`` with an
 ``unpartitioned_rule_space`` diagnostic.
 
 Cross-axis inputs:
-    - ``breadth_label`` from V1 ``BreadthLabel`` (regime_detection.breadth_state)
-    - ``volatility_label`` from V1 ``VolatilityLabel`` (regime_detection.volatility_state)
+    - ``breadth_label`` from ``BreadthLabel`` (regime_detection.breadth_state_rules)
+    - ``volatility_label`` from ``VolatilityLabel`` (regime_detection.volatility_state_rules)
     - ``credit_funding_label`` from V2 §2C credit/funding axis.
       When ``credit_funding_label is None`` but the systemic market-stress
       conditions are otherwise present, precedence fails closed by emitting
@@ -45,7 +45,11 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from regime_detection._rolling_stats import rolling_ols_slope
+from regime_detection._rolling_stats import (
+    rolling_drawdown as _rolling_drawdown,
+    rolling_ols_slope,
+    rolling_stability as _rolling_stability,
+)
 from regime_detection._rule_helpers import (
     any_nan as _any_nan,
     scalar_at as _scalar_at,
@@ -53,11 +57,7 @@ from regime_detection._rule_helpers import (
 from regime_detection.axis_output_models import NetworkFragilityLabel
 from regime_detection.breadth_state_rules import BreadthLabel
 from regime_detection.config import NetworkFragilityRulesConfig
-from regime_detection.network_fragility import (
-    NetworkFragilityFeatures,
-    rolling_drawdown_series as _rolling_drawdown_series,
-    rolling_stability_series as _rolling_stability_series,
-)
+from regime_detection.network_fragility import NetworkFragilityFeatures
 from regime_detection.volatility_state_rules import VolatilityLabel
 
 # v2 §3.3 labels — the closed NetworkFragilityLabel Literal is the single source of
@@ -195,11 +195,11 @@ def build_rule_inputs_for_date(
     largest_eig_slope = rolling_ols_slope(
         features.largest_eigenvalue_share, window=_SPEC_SLOPE_WINDOW_DAYS
     )
-    eff_rank_stability = _rolling_stability_series(
-        features.effective_rank, _SPEC_STABILITY_WINDOW_DAYS
+    eff_rank_stability = _rolling_stability(
+        features.effective_rank, window=_SPEC_STABILITY_WINDOW_DAYS
     )
-    drawdown = _rolling_drawdown_series(
-        spy_close.reindex(index), _SPEC_DRAWDOWN_WINDOW_DAYS
+    drawdown = _rolling_drawdown(
+        spy_close.reindex(index), window=_SPEC_DRAWDOWN_WINDOW_DAYS
     )
     return NetworkFragilityRuleInputs(
         avg_pairwise_corr_percentile_504d=float(
@@ -246,11 +246,11 @@ def build_rule_inputs_by_date(
     largest_eig_slope = rolling_ols_slope(
         features.largest_eigenvalue_share, window=_SPEC_SLOPE_WINDOW_DAYS
     )
-    eff_rank_stability = _rolling_stability_series(
-        features.effective_rank, _SPEC_STABILITY_WINDOW_DAYS
+    eff_rank_stability = _rolling_stability(
+        features.effective_rank, window=_SPEC_STABILITY_WINDOW_DAYS
     )
-    drawdown = _rolling_drawdown_series(
-        spy_close.reindex(index), _SPEC_DRAWDOWN_WINDOW_DAYS
+    drawdown = _rolling_drawdown(
+        spy_close.reindex(index), window=_SPEC_DRAWDOWN_WINDOW_DAYS
     )
     realized_vol = realized_vol_percentile_252d.reindex(index)
     realized_vol_raw = (

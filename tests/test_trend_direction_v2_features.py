@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import math
 from datetime import date
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection.config import TrendDirectionV2Config, load_default_regime_config
+from regime_detection.config import (
+    TrendDirectionV2Config,
+    load_regime_config,
+)
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import build_market_context
@@ -28,6 +32,15 @@ from regime_detection.trend_direction import (
 )
 
 # ---------- Shared fixtures ---------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_V1_CONFIG_PATH = (
+    _REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+)
+
+
+def _v1_config():
+    return load_regime_config(_V1_CONFIG_PATH)
 
 
 @pytest.fixture
@@ -357,7 +370,7 @@ _INTEGRATION_AS_OF = date(2023, 12, 14)
 def test_build_feature_store_populates_trend_direction_v2(
     market_df_for_asof, v2_trend_config
 ):
-    cfg = load_default_regime_config()
+    cfg = _v1_config()
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
@@ -378,7 +391,7 @@ def test_build_feature_store_populates_trend_direction_v2(
 
 
 def test_build_feature_store_none_when_config_absent(market_df_for_asof):
-    cfg = load_default_regime_config()
+    cfg = _v1_config()
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
@@ -391,7 +404,10 @@ def test_build_feature_store_none_when_config_absent(market_df_for_asof):
 # ---------- End-to-end wire test (AGENTS rule A) -----------------------------
 
 
-def test_engine_classify_window_threads_trend_direction_v2_config(market_df_for_asof):
+def test_engine_classify_window_threads_trend_direction_v2_config(
+    v2_market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
+):
     """Confirms the top-level engine entry point threads
     TrendDirectionV2Config through to the feature store. This locks in
     that future classifier wiring will have the features available."""
@@ -407,10 +423,23 @@ def test_engine_classify_window_threads_trend_direction_v2_config(market_df_for_
     )
     from regime_detection.timeline import ENGINE_MINIMUM_HISTORY
 
+    market_data = v2_market_df_for_asof(_INTEGRATION_AS_OF)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    cfg = kwargs["config"]
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
-        market_data=market_df_for_asof(_INTEGRATION_AS_OF),
+        market_data=market_data,
         config=cfg,
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
     required = min(len(context.sessions), ENGINE_MINIMUM_HISTORY)
     working = slice_context_to_recent_sessions(
@@ -418,8 +447,7 @@ def test_engine_classify_window_threads_trend_direction_v2_config(market_df_for_
     )
     store = build_feature_store(
         working,
-        network_fragility_config=cfg.network_fragility,
-        trend_direction_v2_config=cfg.trend_direction_v2,
+        **cfg.v2_feature_build_configs(),
     )
     assert store.trend_direction_v2 is not None
     assert len(store.trend_direction_v2.efficiency_ratio_20d) == len(store.spy_index)

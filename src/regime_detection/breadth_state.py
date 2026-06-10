@@ -547,7 +547,8 @@ def _compute_upvol_downvol_ratio(
     decline_vol_mask = decline_mask & membership_mask
     upvol = volume_frame.where(advance_vol_mask, other=0.0).sum(axis=1)
     downvol = volume_frame.where(decline_vol_mask, other=0.0).sum(axis=1)
-    ratio = upvol / downvol.where(downvol > 0, other=1.0)
+    total = upvol + downvol
+    ratio = upvol / total.where(total > 0)
     ratio.name = "upvol_downvol_ratio"
     return ratio
 

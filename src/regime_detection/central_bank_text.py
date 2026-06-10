@@ -396,17 +396,11 @@ def to_daily_score_series(
     single-document outliers; mirrors the AAII 8-week MA pattern §1A
     uses for ``sentiment_score``.
 
-    Returns an all-NaN series on the session index when no releases are
-    available (lets the monetary evidence emit NaN per the spec
-    "evidence only — never a standalone label" contract).
+    Missing, empty, or fully stale releases are treated as broken evidence
+    dependencies and raise loudly.
     """
     if scored_releases is None or scored_releases.empty:
-        return pd.Series(
-            float("nan"),
-            index=session_index,
-            name="central_bank_text_score",
-            dtype=float,
-        )
+        raise ValueError("central_bank_text releases are required")
     working = scored_releases
     if max_release_age_days is not None and len(session_index) > 0:
         latest_session = session_index.max()
@@ -414,12 +408,7 @@ def to_daily_score_series(
         release_dates = pd.to_datetime(working["release_date"])
         working = working[release_dates >= cutoff].copy()
         if working.empty:
-            return pd.Series(
-                float("nan"),
-                index=session_index,
-                name="central_bank_text_score",
-                dtype=float,
-            )
+            raise ValueError("central_bank_text releases are stale for session window")
     deduped = _aggregate_same_date_rows(
         working, same_date_aggregation=same_date_aggregation
     )

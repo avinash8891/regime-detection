@@ -218,6 +218,9 @@ def test_fragile_bull_override_threshold_is_config_driven() -> None:
             history=history,
             transition_score_inputs_by_date=inputs_by_date,
             transition_score_config=config,
+            state_confirmation_days={
+                state: 1 for state in config.state_confirmation_days
+            },
         )
         return outputs[day].state
 
@@ -306,6 +309,8 @@ def test_compose_score_is_byte_identical_under_default_scales() -> None:
         spy_close=400.0,
         spy_sma_50=420.0,
         absorption_ratio_top3=0.90,
+        credit_funding_label="credit_calm",
+        volume_liquidity_label="normal_volume",
         volume_zscore_20d=2.0,
         hmm_top_state_prob_now=0.50,
         hmm_top_state_prob_5d_ago=0.50,
@@ -386,19 +391,17 @@ def _confirmation_windows() -> dict[str, int]:
     return _default_transition_score_config().state_confirmation_days
 
 
-def test_first_session_bypass_is_preserved_when_initial_active_state_unset() -> None:
-    # Default behavior: the first session's raw state is accepted immediately
-    # even when its confirmation window is > 1. This is the documented
-    # historical behavior and golden fixtures depend on it.
+def test_first_session_bypass_requires_initial_active_state_seed() -> None:
+    # A missing seed lets restart/direct callers accept the first raw state
+    # immediately. That restart-unsafe path must fail loudly.
     sessions = [date(2024, 1, 2), date(2024, 1, 3)]
     raw = {sessions[0]: _raw("weakening"), sessions[1]: _raw("weakening")}
-    debounced = _apply_transition_state_debounce(
-        sessions=sessions,
-        raw_outputs=raw,
-        state_confirmation_days=_confirmation_windows(),
-    )
-    assert debounced[sessions[0]].state == "weakening"
-    assert debounced[sessions[0]].triggered_rules == []
+    with pytest.raises(RuntimeError, match="initial_active_state is required"):
+        _apply_transition_state_debounce(
+            sessions=sessions,
+            raw_outputs=raw,
+            state_confirmation_days=_confirmation_windows(),
+        )
 
 
 def test_initial_active_state_seed_forces_first_session_confirmation() -> None:
@@ -444,7 +447,5 @@ def test_config_initial_active_state_unknown_state_rejected() -> None:
         TransitionScoreConfig(**base)
 
 
-def test_default_config_initial_active_state_is_none() -> None:
-    # The shipping YAML does not declare initial_active_state; default must
-    # remain None so backfill behavior is unchanged.
-    assert _default_transition_score_config().initial_active_state is None
+def test_default_config_initial_active_state_is_seeded() -> None:
+    assert _default_transition_score_config().initial_active_state == "stable"

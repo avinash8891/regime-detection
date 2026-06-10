@@ -60,4 +60,4 @@ def test_rule_provenance_payload_uses_supplied_config() -> None:
     payload = rule_provenance_payload(config=cfg)
 
     assert "config.monetary_pressure_v2.enabled" not in payload
-    assert "config.monetary_pressure_state.max_unknown_freeze_days" not in payload
+    assert "config.monetary_pressure_state.max_unknown_freeze_days" in payload

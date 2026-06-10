@@ -106,7 +106,7 @@ def _computed_default_hmm() -> HMMFeatures:
 # ---------------------------------------------------------------------------
 
 
-def test_compute_hmm_features_returns_none_when_any_input_is_none() -> None:
+def test_compute_hmm_features_raises_when_any_input_is_none() -> None:
     inputs = _synthetic_inputs()
     cfg = _default_hmm_config()
     for missing in (
@@ -117,15 +117,15 @@ def test_compute_hmm_features_returns_none_when_any_input_is_none() -> None:
         "avg_pairwise_corr_63d",
     ):
         call_kwargs = {k: (None if k == missing else v) for k, v in inputs.items()}
-        result = compute_hmm_features(config=cfg, **call_kwargs)
-        assert result is None, f"missing {missing} → expected None"
+        with pytest.raises(RuntimeError, match="HMM missing required inputs"):
+            compute_hmm_features(config=cfg, **call_kwargs)
 
 
-def test_compute_hmm_features_returns_none_when_insufficient_history() -> None:
+def test_compute_hmm_features_raises_when_insufficient_history() -> None:
     inputs = _synthetic_inputs(n_sessions=100)
     cfg = _default_hmm_config(training_window_days=1260)
-    result = compute_hmm_features(config=cfg, **inputs)
-    assert result is None
+    with pytest.raises(RuntimeError, match="HMM insufficient history"):
+        compute_hmm_features(config=cfg, **inputs)
 
 
 def test_compute_hmm_features_succeeds_on_synthetic_inputs_with_full_history(
@@ -170,7 +170,7 @@ def test_state_probabilities_sum_to_one_per_session(
     np.testing.assert_allclose(row_sums.to_numpy(), 1.0, atol=1e-6)
 
 
-def test_compute_hmm_features_returns_none_when_hmm_fit_fails() -> None:
+def test_compute_hmm_features_raises_when_hmm_fit_fails() -> None:
     """Constant (zero-variance) inputs force a singular covariance failure."""
     index = pd.bdate_range("2010-01-04", periods=1500)
     constant_series = pd.Series(np.zeros(1500), index=index)
@@ -182,11 +182,27 @@ def test_compute_hmm_features_returns_none_when_hmm_fit_fails() -> None:
         "avg_pairwise_corr_63d": constant_series.copy(),
     }
     cfg = _default_hmm_config()
-    result = compute_hmm_features(config=cfg, **inputs)
-    assert result is None
+    with pytest.raises(RuntimeError, match="HMM fit failed"):
+        compute_hmm_features(config=cfg, **inputs)
 
 
-def test_compute_hmm_features_returns_none_when_hmm_fit_is_non_monotonic(
+def test_compute_hmm_features_raises_on_programming_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Programming bugs (KeyError, TypeError, etc.) must propagate, not be swallowed."""
+    inputs = _synthetic_inputs(n_sessions=1500)
+    cfg = _default_hmm_config()
+
+    def _exploding_seed(*args, **kwargs):
+        raise KeyError("programming bug")
+
+    monkeypatch.setattr("regime_detection.hmm_state._fit_single_seed", _exploding_seed)
+
+    with pytest.raises(KeyError, match="programming bug"):
+        compute_hmm_features(config=cfg, **inputs)
+
+
+def test_compute_hmm_features_raises_when_hmm_fit_is_non_monotonic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     inputs = _synthetic_inputs(n_sessions=1500)
@@ -211,7 +227,8 @@ def test_compute_hmm_features_returns_none_when_hmm_fit_is_non_monotonic(
 
     monkeypatch.setattr("regime_detection.hmm_state.GaussianHMM", FakeGaussianHMM)
 
-    assert compute_hmm_features(config=cfg, **inputs) is None
+    with pytest.raises(RuntimeError, match="HMM fit failed"):
+        compute_hmm_features(config=cfg, **inputs)
 
 
 def test_strict_convergence_monitor_does_not_treat_non_monotonic_fit_as_converged() -> (
@@ -395,66 +412,40 @@ def test_hmm_uses_real_default_config_n_states() -> None:
 
 
 def test_feature_store_hmm_seam_lit_when_all_inputs_present(
-    golden_rows: list[dict[str, object]],
+    v2_classify_kwargs_for_asof,
 ) -> None:
     """Sanity wire-in: the engine's golden-date classify path must light the
     HMM seam — verified indirectly by inspecting one classify call's
     feature_store via the engine."""
-    from regime_detection.engine import RegimeEngine
     from regime_detection.feature_store import build_feature_store
     from regime_detection.market_context import build_market_context
 
-    # Use the latest golden date — that is far enough out to have >= 1260
-    # sessions of trailing history under the bundled fixture.
-    latest = max(date.fromisoformat(str(row["as_of_date"])) for row in golden_rows)
-    engine = RegimeEngine()
-    # Pull the matching market_data slice from the fixture (re-load via
-    # conftest helpers is heavy; instead read the parquet directly).
-    from pathlib import Path
-
-    repo_root = Path(__file__).resolve().parents[1]
-    raw_dir = repo_root / "tests" / "fixtures" / "raw"
-    market_parquet = raw_dir / "market_data.parquet"
-    if market_parquet.exists():
-        raw = pd.read_parquet(market_parquet)
-    else:
-        parts = [
-            pd.read_csv(raw_dir / f"{symbol}.csv") for symbol in ("SPY", "RSP", "VIXY")
-        ]
-        raw = pd.concat(parts, ignore_index=True)
-    raw = cow_safe_assign(raw, {"date": pd.to_datetime(raw["date"]).dt.date})
-    market_data = raw[raw["date"] <= latest].copy().reset_index(drop=True)
+    latest = date(2026, 5, 13)
+    kwargs = v2_classify_kwargs_for_asof(latest)
+    config = kwargs["config"]
     context = build_market_context(
         end_date=latest,
-        market_data=market_data,
-        config=engine.config,
+        market_data=kwargs["market_data"],
+        config=config,
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
-    feature_store = build_feature_store(
-        context,
-        network_fragility_config=engine.config.network_fragility,
-        trend_direction_v2_config=engine.config.trend_direction_v2,
-        volatility_state_v2_config=engine.config.volatility_state_v2,
-        breadth_state_v2_config=engine.config.breadth_state_v2,
-        volume_liquidity_v2_config=engine.config.volume_liquidity_v2,
-        monetary_pressure_v2_config=engine.config.monetary_pressure_v2,
-    )
-    # network_fragility is None in this fixture (no sector ETFs), so HMM
-    # seam should be None — accept either outcome but assert behavior is
-    # gated on input availability per the predicate.
-    if (
-        feature_store.network_fragility is None
-        or feature_store.volume_liquidity_v2 is None
-    ):
-        assert feature_store.hmm is None
-    else:
-        assert feature_store.hmm is not None
+    feature_store = build_feature_store(context, **config.v2_feature_build_configs())
+    assert feature_store.hmm is not None
 
 
 def test_feature_store_hmm_seam_none_when_hmm_config_absent(
     raw_market_frames: dict[str, pd.DataFrame],
 ) -> None:
     from regime_detection.config import load_default_regime_config
-    from regime_detection.feature_store import build_feature_store
     from regime_detection.market_context import build_market_context
 
     cfg = load_default_regime_config().model_copy(update={"hmm": None})
@@ -476,21 +467,12 @@ def test_feature_store_hmm_seam_none_when_hmm_config_absent(
         except Exception:
             last_session = last_session.fromordinal(last_session.toordinal() - 1)
     market_data = raw[raw["date"] <= last_session].copy().reset_index(drop=True)
-    context = build_market_context(
-        end_date=last_session,
-        market_data=market_data,
-        config=cfg,
-    )
-    feature_store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        trend_direction_v2_config=cfg.trend_direction_v2,
-        volatility_state_v2_config=cfg.volatility_state_v2,
-        breadth_state_v2_config=cfg.breadth_state_v2,
-        volume_liquidity_v2_config=cfg.volume_liquidity_v2,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-    )
-    assert feature_store.hmm is None
+    with pytest.raises(ValueError, match="missing required V2 sections: hmm"):
+        build_market_context(
+            end_date=last_session,
+            market_data=market_data,
+            config=cfg,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -712,3 +694,108 @@ def test_compute_hmm_features_parameter_drift_is_none_with_single_checkpoint() -
     result = compute_hmm_features(config=cfg, **inputs)
     assert result is not None
     assert result.parameter_drift is None
+
+
+# ---------------------------------------------------------------------------
+# Finding #3 / #4 — HMM state IDs must be stable across PIT refit boundaries
+# ---------------------------------------------------------------------------
+
+
+def test_hmm_state_ids_are_stable_across_pit_refit_boundary() -> None:
+    """State IDs assigned by consecutive PIT refit checkpoints must be
+    consistent: the same physical regime must keep the same integer label
+    across the refit boundary. Without Hungarian alignment of HMM state
+    ordering, hmmlearn's arbitrary ID assignment can swap state labels at
+    each checkpoint, corrupting mapped_label and state_persistence_days.
+
+    Strategy: build 800 sessions split into alternating calm/stress blocks
+    (each 200 sessions), with a 252-day training window that always spans
+    both regimes. The window ensures the HMM learns both states in every
+    refit, and the 21-day cadence creates several checkpoints per block.
+    We verify state IDs stay consistent deep within each block.
+    """
+    rng = np.random.default_rng(42)
+    n_sessions = 800
+    index = pd.bdate_range("2012-01-03", periods=n_sessions)
+
+    # Two alternating regime blocks: calm (0-199, 400-599), stress (200-399, 600-799)
+    returns = np.empty(n_sessions)
+    vol_z = np.empty(n_sessions)
+    corr_vals = np.empty(n_sessions)
+    for block_start in range(0, n_sessions, 200):
+        block_end = block_start + 200
+        is_stress = (block_start // 200) % 2 == 1
+        if is_stress:
+            returns[block_start:block_end] = rng.normal(
+                loc=-0.003, scale=0.030, size=200
+            )
+            vol_z[block_start:block_end] = rng.normal(loc=2.0, scale=0.3, size=200)
+            corr_vals[block_start:block_end] = rng.normal(
+                loc=0.75, scale=0.03, size=200
+            ).clip(0.0, 0.95)
+        else:
+            returns[block_start:block_end] = rng.normal(
+                loc=0.001, scale=0.005, size=200
+            )
+            vol_z[block_start:block_end] = rng.normal(loc=-0.5, scale=0.3, size=200)
+            corr_vals[block_start:block_end] = rng.normal(
+                loc=0.20, scale=0.03, size=200
+            ).clip(0.0, 0.95)
+
+    return_1d = pd.Series(returns, index=index, name="return_1d")
+    realized_vol_21d = return_1d.rolling(21).std() * np.sqrt(252)
+    realized_vol_21d.name = "realized_vol_21d"
+    price = (1.0 + return_1d).cumprod() * 100.0
+    peak = price.rolling(63, min_periods=63).max()
+    drawdown_63d = (price / peak - 1.0).rename("drawdown_63d")
+    volume_zscore_20d = pd.Series(vol_z, index=index, name="volume_zscore_20d")
+    avg_pairwise_corr_63d = pd.Series(
+        corr_vals, index=index, name="avg_pairwise_corr_63d"
+    )
+
+    cfg = HMMConfig(
+        n_states=2,
+        training_window_days=252,
+        retrain_cadence_days=21,
+        random_state=42,
+        standardize_inputs=True,
+        covariance_type="full",
+        min_covar=0.001,
+        random_seeds=(42, 101, 202),
+    )
+
+    result = compute_hmm_features(
+        config=cfg,
+        return_1d=return_1d,
+        realized_vol_21d=realized_vol_21d,
+        drawdown_63d=drawdown_63d,
+        volume_zscore_20d=volume_zscore_20d,
+        avg_pairwise_corr_63d=avg_pairwise_corr_63d,
+    )
+    assert result is not None
+
+    # Extract the top state (argmax of posterior) for each session.
+    top_state = result.state_probabilities.idxmax(axis=1)
+
+    # Second calm block: sessions 420-580 (well inside, past warm-up).
+    calm_states = top_state.iloc[420:580].dropna()
+    assert len(calm_states) > 0, "calm block should have assigned states"
+    calm_id = calm_states.mode().iloc[0]
+    calm_agreement = (calm_states == calm_id).mean()
+    assert (
+        calm_agreement >= 0.90
+    ), f"calm block should be consistently one state, got {calm_agreement:.0%} agreement"
+
+    # Second stress block: sessions 620-780 (well inside stress).
+    stress_states = top_state.iloc[620:780].dropna()
+    assert len(stress_states) > 0, "stress block should have assigned states"
+    stress_id = stress_states.mode().iloc[0]
+    stress_agreement = (stress_states == stress_id).mean()
+    assert (
+        stress_agreement >= 0.90
+    ), f"stress block should be consistently one state, got {stress_agreement:.0%} agreement"
+
+    # The two regimes must have DIFFERENT state IDs.
+    assert (
+        calm_id != stress_id
+    ), f"calm and stress regimes must have different state IDs, both got {calm_id}"

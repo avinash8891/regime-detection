@@ -62,6 +62,13 @@ NETWORK_FRAGILITY_UNIVERSE: Final[tuple[str, ...]] = (
     *CROSS_ASSET_SYMBOLS,
 )
 
-assert (
-    len(NETWORK_FRAGILITY_UNIVERSE) == 24
-), "Network fragility universe must be 24 symbols per v2 spec §3.1."
+
+def _validate_network_fragility_universe(universe: tuple[str, ...]) -> tuple[str, ...]:
+    if len(universe) != 24:
+        raise RuntimeError(
+            "Network fragility universe must be 24 symbols per v2 spec §3.1."
+        )
+    return universe
+
+
+_validate_network_fragility_universe(NETWORK_FRAGILITY_UNIVERSE)

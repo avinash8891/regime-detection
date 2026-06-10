@@ -22,7 +22,7 @@ GDELT_DAILY_EXPORT_URL_TEMPLATE = (
     "http://data.gdeltproject.org/gdeltv2/{date:%Y%m%d}*.export.CSV.zip"
 )
 ACLED_READ_URL = "https://acleddata.com/api/acled/read"
-ACLED_TOKEN_URL = "https://acleddata.com/oauth/token"
+ACLED_OAUTH_URL = "https://acleddata.com/oauth/token"
 UCDP_GED_CANDIDATE_URL = "https://ucdpapi.pcr.uu.se/api/gedevents/26.0.3"
 GPR_MONTHLY_URL = "https://www.matteoiacoviello.com/gpr_files/data_gpr_export.xls"
 AI_GPR_DAILY_URL = "https://www.matteoiacoviello.com/ai_gpr_files/ai_gpr_data_daily.csv"
@@ -268,7 +268,7 @@ def _acled_access_token() -> str | None:
         }
     ).encode()
     token_text = fetch_text(
-        ACLED_TOKEN_URL,
+        ACLED_OAUTH_URL,
         data=body,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,

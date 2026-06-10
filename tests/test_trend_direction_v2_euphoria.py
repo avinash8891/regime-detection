@@ -178,7 +178,7 @@ def test_sentiment_score_is_nan_until_four_weekly_readings() -> None:
     """v2 §1A cold-start (spec lines 231-233 / F-006): sentiment_score is NaN until
     at least 4 weekly AAII readings exist on or before the session, even though the
     fetcher's min_periods=1 8w-MA exposes a value from week 1."""
-    from regime_detection.feature_store import _build_sentiment_score_series
+    from regime_detection._feature_specs import _build_sentiment_score_series
 
     aaii = pd.DataFrame(
         {
@@ -205,7 +205,7 @@ def test_sentiment_warmup_counts_distinct_weeks_not_duplicate_rows() -> None:
     """CR-008: the 4-reading warmup counts DISTINCT weekly publication dates, not raw
     AAII rows. A duplicated publication date must not warm sentiment_score early (which
     would let euphoria fire on only 3 distinct weeks), and must not break the ffill."""
-    from regime_detection.feature_store import _build_sentiment_score_series
+    from regime_detection._feature_specs import _build_sentiment_score_series
 
     aaii = pd.DataFrame(
         {
@@ -232,7 +232,7 @@ def test_sentiment_dedupe_deterministically_keeps_last_source_row() -> None:
     # duplicate on the most-recent week (value 20.0 then 21.0) so the kept value is the
     # active ffill read at a warm session; assert it is 21.0 (the last source row), and
     # that two independent calls produce byte-identical series (replay safety).
-    from regime_detection.feature_store import _build_sentiment_score_series
+    from regime_detection._feature_specs import _build_sentiment_score_series
 
     aaii = pd.DataFrame(
         {
@@ -269,7 +269,7 @@ def test_euphoria_suppressed_during_sentiment_warmup_then_fires_when_warm(
     +25 sentiment value at the session, euphoria must NOT fire while fewer than 4
     AAII readings exist (sentiment masked to NaN), and MUST fire once a 4th reading
     lands — proving the cold-start mask is the gating factor, not a value change."""
-    from regime_detection.feature_store import _build_sentiment_score_series
+    from regime_detection._feature_specs import _build_sentiment_score_series
 
     dt = pd.Timestamp("2024-03-15")
     idx = pd.bdate_range(
@@ -592,7 +592,7 @@ def test_build_sentiment_score_series_forward_fills_from_publication_date() -> N
     stateless-replay — never consult a future-dated reading. Three earlier
     readings warm the §1A 4-reading cold-start gate (F-006) so the forward-fill
     between the last two readings is observable."""
-    from regime_detection.feature_store import _build_sentiment_score_series
+    from regime_detection._feature_specs import _build_sentiment_score_series
 
     aaii = pd.DataFrame(
         [
@@ -633,13 +633,10 @@ def test_build_sentiment_score_series_forward_fills_from_publication_date() -> N
     assert score.loc[pd.Timestamp("2024-03-15")] == 22.0
 
 
-def test_build_sentiment_score_series_returns_none_when_no_aaii() -> None:
-    """Optional input contract: when AAII is None, helper returns None and
-    the euphoria predicate falsifies via the sentiment_score=None branch."""
-    from regime_detection.feature_store import _build_sentiment_score_series
+def test_build_sentiment_score_series_raises_when_no_aaii() -> None:
+    """AAII is required for the direct helper; absence must fail loudly."""
+    from regime_detection._feature_specs import _build_sentiment_score_series
 
     sessions = pd.bdate_range(start="2024-03-01", end="2024-03-15", freq="B")
-    assert (
+    with pytest.raises(ValueError, match="aaii_sentiment is required"):
         _build_sentiment_score_series(aaii_sentiment=None, session_index=sessions)
-        is None
-    )

@@ -33,7 +33,9 @@ def shadow_root_template(
     )
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
-    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = (
+        repo_root / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+    )
     out_root = tmp_path_factory.mktemp("shadow_replay_template")
     result = runner.run_shadow(
         as_of_date=date(2023, 12, 14),
@@ -76,7 +78,11 @@ def test_shadow_replay_check_records_exact_match(
     )
     out_root = _prepare_shadow_root(tmp_path, shadow_root_template)
     config_path = (
-        Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "regime_detection"
+        / "configs"
+        / "core3-v1.0.0.yaml"
     )
 
     result = replay_mod.run_replay_check(
@@ -116,7 +122,11 @@ def test_shadow_replay_check_records_mismatch_with_diff(
     )
     out_root = _prepare_shadow_root(tmp_path, shadow_root_template)
     config_path = (
-        Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "regime_detection"
+        / "configs"
+        / "core3-v1.0.0.yaml"
     )
 
     output_path = out_root / "outputs" / "2023-12-14.json"
@@ -177,7 +187,11 @@ def test_shadow_replay_contracts_only_drift_breaks_window_via_replay_mismatch(
     )
     out_root = _prepare_shadow_root(tmp_path, shadow_root_template)
     config_path = (
-        Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "regime_detection"
+        / "configs"
+        / "core3-v1.0.0.yaml"
     )
 
     output_path = out_root / "outputs" / "2023-12-14.json"
@@ -256,7 +270,11 @@ def test_shadow_replay_check_uses_only_archived_inputs(
     )
     out_root = _prepare_shadow_root(tmp_path, shadow_root_template)
     config_path = (
-        Path(__file__).resolve().parent / "fixtures" / "configs" / "core3-v2-fast.yaml"
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "regime_detection"
+        / "configs"
+        / "core3-v1.0.0.yaml"
     )
 
     archive_dir = out_root / "input_archives" / "2023-12-14"

@@ -52,6 +52,7 @@ from regime_detection.fragility_universe import (
 )
 from regime_detection.hysteresis import apply_per_label_asymmetric_hysteresis
 from regime_detection.market_context import build_market_context
+from conftest import synthetic_v2_evidence_kwargs_for_market_data
 
 # --- Synthetic fixtures ------------------------------------------------------
 
@@ -235,10 +236,32 @@ def _build_full_synthetic_context(
     )
 
     sector_etf_closes = {s: universe_prices[s] for s in SECTOR_ETFS}
+    pit_constituent_intervals = pd.DataFrame(
+        {
+            "ticker": list(SECTOR_ETFS),
+            "start_date": [idx[0].date()] * len(SECTOR_ETFS),
+            "end_date": [None] * len(SECTOR_ETFS),
+        }
+    )
+    constituent_ohlcv = {
+        symbol: pd.DataFrame(
+            {
+                "open": series,
+                "high": series,
+                "low": series,
+                "close": series,
+                "volume": pd.Series(1_000_000, index=series.index),
+                "adjusted_close": series,
+            }
+        )
+        for symbol, series in sector_etf_closes.items()
+    }
     # Add KRE on cross_asset_closes alongside the §3.1 cross-asset symbols.
     kre_series = _make_random_walk(idx, seed=_SEED + 99, start=50.0, sigma=0.012)
     cross_asset_closes = {s: universe_prices[s] for s in CROSS_ASSET_SYMBOLS}
     cross_asset_closes["KRE"] = kre_series
+    for symbol in ("XLY", "XLI", "XLP", "XLU"):
+        cross_asset_closes[symbol] = universe_prices[symbol]
 
     # HYG truncation: zero out the last N sessions of HYG to simulate staleness.
     if hyg_truncate_sessions is not None:
@@ -296,6 +319,12 @@ def _build_full_synthetic_context(
         # Add yield series for monetary slice compatibility.
         "2y_yield": _make_constant_series(idx, 4.5, "2y_yield"),
         "10y_yield": _make_constant_series(idx, 4.0, "10y_yield"),
+        # Add inflation/growth macro series so full V2 feature-store builds
+        # do not fail before the credit/funding assertions run.
+        "cpi_all_items": _make_random_walk(
+            idx, seed=_SEED + 103, start=300.0, sigma=0.0005
+        ),
+        "pmi_manufacturing": _make_constant_series(idx, 50.5, "pmi_manufacturing"),
     }
     if omit_oas_series:
         macro_series.pop("hy_oas")
@@ -322,6 +351,7 @@ def _build_full_synthetic_context(
                     "n_states": 2,
                     "training_window_days": 100,
                     "random_seeds": (42, 7, 13),
+                    "state_label_map": {0: "test_low_risk", 1: "test_high_risk"},
                 }
             ),
             "clustering": config.clustering.model_copy(
@@ -339,18 +369,16 @@ def _build_full_synthetic_context(
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         macro_series=macro_series,
+        pit_constituent_intervals=pit_constituent_intervals,
+        constituent_ohlcv=constituent_ohlcv,
+        **synthetic_v2_evidence_kwargs_for_market_data(market_data),
     )
     return context
 
 
 def _build_store_and_outputs(context):
     cfg = context.config
-    store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-        credit_funding_config=cfg.credit_funding,
-    )
+    store = build_feature_store(context, **cfg.v2_feature_build_configs())
     return store, build_credit_funding_axis_series(context, store)
 
 
@@ -370,7 +398,11 @@ def _build_real_v2_credit_context(
     v2_close_series_by_symbol: dict[str, pd.Series],
     v2_macro_series_by_key: dict[str, pd.Series],
 ):
-    required_symbols = set(SECTOR_ETFS) | set(CROSS_ASSET_SYMBOLS) | {"KRE"}
+    required_symbols = (
+        set(SECTOR_ETFS)
+        | set(CROSS_ASSET_SYMBOLS)
+        | {"KRE", "XLY", "XLI", "XLP", "XLU"}
+    )
     missing = required_symbols - set(v2_close_series_by_symbol)
     assert not missing, f"V2 OHLCV fixture missing symbols: {sorted(missing)}"
     sector_etf_closes = {
@@ -378,15 +410,17 @@ def _build_real_v2_credit_context(
     }
     cross_asset_closes = {
         symbol: v2_close_series_by_symbol[symbol]
-        for symbol in set(CROSS_ASSET_SYMBOLS) | {"KRE"}
+        for symbol in set(CROSS_ASSET_SYMBOLS) | {"KRE", "XLY", "XLI", "XLP", "XLU"}
     }
+    market_data = v2_market_df_for_asof(as_of)
     return build_market_context(
         end_date=as_of,
-        market_data=v2_market_df_for_asof(as_of),
+        market_data=market_data,
         config=RegimeEngine().config,
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
         macro_series=v2_macro_series_by_key,
+        **synthetic_v2_evidence_kwargs_for_market_data(market_data, as_of=as_of),
     )
 
 
@@ -565,12 +599,7 @@ def test_effective_credit_funding_falls_back_to_proxy_when_oas_unavailable() -> 
 def test_credit_funding_proxy_builds_when_oas_series_are_absent() -> None:
     context = _build_full_synthetic_context(omit_oas_series=True)
     cfg = context.config
-    store = build_feature_store(
-        context,
-        network_fragility_config=cfg.network_fragility,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-        credit_funding_config=cfg.credit_funding,
-    )
+    store = build_feature_store(context, **cfg.v2_feature_build_configs())
     real = build_credit_funding_axis_series(context, store)
     proxy = build_credit_funding_proxy_axis_series(context, store)
 
@@ -879,11 +908,29 @@ def test_feature_store_credit_funding_seam_none_without_kre_in_cross_asset_close
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=stripped,
         macro_series=context.macro_series,
+        pit_constituent_intervals=context.pit_constituent_intervals,
+        constituent_ohlcv=context.constituent_ohlcv,
+        **synthetic_v2_evidence_kwargs_for_market_data(
+            pd.DataFrame(
+                [
+                    {
+                        "date": ts.date(),
+                        "symbol": "SPY",
+                        "open": float(context.spy_ohlcv["open"].loc[ts]),
+                        "high": float(context.spy_ohlcv["high"].loc[ts]),
+                        "low": float(context.spy_ohlcv["low"].loc[ts]),
+                        "close": float(context.spy_ohlcv["close"].loc[ts]),
+                        "volume": float(context.spy_ohlcv["volume"].loc[ts]),
+                    }
+                    for ts in context.spy_ohlcv.index
+                ]
+            )
+        ),
     )
-    store = build_feature_store(
-        new_context, credit_funding_config=new_context.config.credit_funding
-    )
-    assert store.credit_funding is None
+    with pytest.raises(RuntimeError, match="credit_funding"):
+        build_feature_store(
+            new_context, **new_context.config.v2_feature_build_configs()
+        )
 
 
 def test_feature_store_credit_funding_seam_lit_with_all_inputs(
@@ -972,6 +1019,7 @@ def test_regime_output_carries_real_fixture_credit_funding_state_when_configured
 
 def test_regime_output_carries_credit_funding_state_when_configured(
     default_credit_context,
+    event_calendar_df,
 ) -> None:
     """End-to-end: classify_window populates RegimeOutput.credit_funding_state."""
     context = default_credit_context
@@ -996,46 +1044,50 @@ def test_regime_output_carries_credit_funding_state_when_configured(
         )
         for symbol, series in context.sector_etf_closes.items()
     }
-    config = context.config.model_copy(update={"inflation_growth": None})
+    request_market_data = pd.DataFrame(
+        [
+            {
+                "date": ts.date(),
+                "symbol": "SPY",
+                "open": float(context.spy_ohlcv["open"].loc[ts]),
+                "high": float(context.spy_ohlcv["high"].loc[ts]),
+                "low": float(context.spy_ohlcv["low"].loc[ts]),
+                "close": float(context.spy_ohlcv["close"].loc[ts]),
+                "volume": float(context.spy_ohlcv["volume"].loc[ts]),
+            }
+            for ts in context.spy_ohlcv.index
+        ]
+        + [
+            {
+                "date": ts.date(),
+                "symbol": "RSP",
+                "open": float(context.rsp_close.loc[ts]),
+                "high": float(context.rsp_close.loc[ts]),
+                "low": float(context.rsp_close.loc[ts]),
+                "close": float(context.rsp_close.loc[ts]),
+                "volume": 500_000,
+            }
+            for ts in context.spy_ohlcv.index
+        ]
+    )
     timeline = engine.classify_window(
         end_date=context.end_date,
-        market_data=pd.DataFrame(
-            [
-                {
-                    "date": ts.date(),
-                    "symbol": "SPY",
-                    "open": float(context.spy_ohlcv["open"].loc[ts]),
-                    "high": float(context.spy_ohlcv["high"].loc[ts]),
-                    "low": float(context.spy_ohlcv["low"].loc[ts]),
-                    "close": float(context.spy_ohlcv["close"].loc[ts]),
-                    "volume": float(context.spy_ohlcv["volume"].loc[ts]),
-                }
-                for ts in context.spy_ohlcv.index
-            ]
-            + [
-                {
-                    "date": ts.date(),
-                    "symbol": "RSP",
-                    "open": float(context.rsp_close.loc[ts]),
-                    "high": float(context.rsp_close.loc[ts]),
-                    "low": float(context.rsp_close.loc[ts]),
-                    "close": float(context.rsp_close.loc[ts]),
-                    "volume": 500_000,
-                }
-                for ts in context.spy_ohlcv.index
-            ]
-        ),
+        market_data=request_market_data,
         lookback_days=1,
-        config=config,
+        config=context.config,
         vix_data=pd.DataFrame(
             {"date": [ts.date() for ts in context.spy_ohlcv.index], "close": 20.0}
         ),
-        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
+        event_calendar=event_calendar_df,
         sector_etf_closes=context.sector_etf_closes,
         cross_asset_closes=context.cross_asset_closes,
         macro_series=context.macro_series,
         pit_constituent_intervals=pit_intervals,
         constituent_ohlcv=constituent_ohlcv,
+        aaii_sentiment=context.aaii_sentiment,
+        news_sentiment=context.news_sentiment,
+        central_bank_text_releases=context.central_bank_text_releases,
+        cpi_first_release=context.cpi_first_release,
     )
     out = timeline.outputs[-1]
     assert out.credit_funding_state is not None
@@ -1116,14 +1168,28 @@ def test_feature_store_routes_fedfunds_ioer_legacy_to_splice() -> None:
         sector_etf_closes=base_context.sector_etf_closes,
         cross_asset_closes=base_context.cross_asset_closes,
         macro_series=patched_macro,
+        pit_constituent_intervals=base_context.pit_constituent_intervals,
+        constituent_ohlcv=base_context.constituent_ohlcv,
+        **synthetic_v2_evidence_kwargs_for_market_data(
+            pd.DataFrame(
+                [
+                    {
+                        "date": ts.date(),
+                        "symbol": "SPY",
+                        "open": float(base_context.spy_ohlcv["open"].loc[ts]),
+                        "high": float(base_context.spy_ohlcv["high"].loc[ts]),
+                        "low": float(base_context.spy_ohlcv["low"].loc[ts]),
+                        "close": float(base_context.spy_ohlcv["close"].loc[ts]),
+                        "volume": float(base_context.spy_ohlcv["volume"].loc[ts]),
+                    }
+                    for ts in idx
+                ]
+            )
+        ),
     )
 
     cfg = patched_context.config
-    store = build_feature_store(
-        patched_context,
-        network_fragility_config=cfg.network_fragility,
-        credit_funding_config=cfg.credit_funding,
-    )
+    store = build_feature_store(patched_context, **cfg.v2_feature_build_configs())
     assert store.credit_funding is not None, "credit_funding seam should be lit"
 
     spread = store.credit_funding.sofr_iorb_spread

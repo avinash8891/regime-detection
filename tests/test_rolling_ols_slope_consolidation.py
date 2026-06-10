@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regime_detection._rolling_stats import rolling_ols_slope
+from regime_detection._rolling_stats import rolling_ols_slope, rolling_stability
 
 pytestmark = pytest.mark.unit
 
@@ -193,20 +193,25 @@ class TestRollingOlsSlopeConsolidation:
     def test_shared_helper_bit_identical_to_centered_form(
         self, production_series: pd.Series, window: int
     ) -> None:
-        """The shared helper IS credit_funding's centered form → bit-identical."""
+        """The shared helper agrees with credit_funding's centered form.
+
+        The consolidated implementation uses a vectorized sliding_window_view
+        path (matmul) instead of rolling().apply(), so floating-point operation
+        order differs at ULP level. We assert NaN-alignment is exact and finite
+        values agree within 1e-14 (well inside double-precision noise floor).
+        """
         new = rolling_ols_slope(production_series, window=window)
         old = _credit_funding_centered_form(production_series, window=window)
-        # Both NaN-aligned on cold-start
         new_arr = new.to_numpy()
         old_arr = old.to_numpy()
         new_nan = np.isnan(new_arr)
         old_nan = np.isnan(old_arr)
         assert np.array_equal(new_nan, old_nan), "NaN positions diverge"
-        # Bit-identity on finite values
         finite = ~new_nan
-        assert np.array_equal(
-            new_arr[finite], old_arr[finite]
-        ), "Centered-form bodies must produce bit-identical results"
+        max_diff = np.abs(new_arr[finite] - old_arr[finite]).max()
+        assert (
+            max_diff <= 1e-14
+        ), f"Centered-form bodies diverge beyond ULP noise: max_diff={max_diff}"
 
     @pytest.mark.parametrize("window", _PRODUCTION_WINDOWS)
     def test_shared_helper_within_tolerance_of_uncentered_form(
@@ -260,3 +265,17 @@ class TestRollingOlsSlopeConsolidation:
             "Centered form is canonical; uncentered form must be deleted, "
             "but production behavior must agree on these series."
         )
+
+
+def test_rolling_stability_writes_valid_windows_to_output_positions() -> None:
+    series = pd.Series(
+        [1.0, 2.0, 3.0, float("nan"), 5.0, 6.0, 7.0],
+        index=_date_index(7),
+    )
+
+    out = rolling_stability(series, window=3)
+
+    expected = pd.Series([float("nan")] * len(series), index=series.index)
+    expected.iloc[2] = float(np.std([1.0, 2.0, 3.0], ddof=0) / 2.0)
+    expected.iloc[6] = float(np.std([5.0, 6.0, 7.0], ddof=0) / 6.0)
+    pd.testing.assert_series_equal(out, expected)

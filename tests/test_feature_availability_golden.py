@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 
-from regime_detection.engine import RegimeEngine
+from regime_detection.config import load_regime_config
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import build_market_context
+
+_V1_CONFIG_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "src"
+    / "regime_detection"
+    / "configs"
+    / "core3-v1.0.0.yaml"
+)
 
 
 @pytest.fixture(scope="module")
@@ -21,7 +30,7 @@ def v1_minimal_availability(market_df_for_asof) -> dict[str, dict[str, object]]:
     context = build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
-        config=RegimeEngine().config,
+        config=load_regime_config(_V1_CONFIG_PATH),
     )
     store = build_feature_store(context)
     return {name: avail.model_dump() for name, avail in store.availability.items()}
@@ -134,7 +143,11 @@ def test_availability_dict_pure_v1_context_snapshot(
                 "volume_liquidity_v2",
                 "network_fragility",
             ),
-            "missing_inputs": ("volume_liquidity_v2", "network_fragility"),
+            "missing_inputs": (
+                "hmm_config",
+                "volume_liquidity_v2",
+                "network_fragility",
+            ),
         },
         "clustering": {
             "feature": "clustering",
@@ -148,6 +161,7 @@ def test_availability_dict_pure_v1_context_snapshot(
                 "trend_direction_v2",
             ),
             "missing_inputs": (
+                "clustering_config",
                 "breadth_state_v2.pct_above_50dma",
                 "network_fragility",
                 "trend_direction_v2",
@@ -157,9 +171,9 @@ def test_availability_dict_pure_v1_context_snapshot(
             "feature": "change_point",
             "available": False,
             "policy": "none",
-            "reason": "not_configured",
+            "reason": "missing_required_inputs",
             "required_inputs": ("change_point_config", "realized_vol_21d"),
-            "missing_inputs": (),
+            "missing_inputs": ("change_point_config",),
         },
         "credit_funding": {
             "feature": "credit_funding",

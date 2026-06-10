@@ -88,6 +88,12 @@ class NewsSentimentConfig(StrictBaseModel):
     # NYSE sessions ≈ 1 month — short enough to react to material
     # narrative shifts, long enough to dampen single-day noise.
     smoothing_window_sessions: int = Field(default=21, gt=0)
+    # Max-staleness guard: NaN-out forward-filled sessions when the last
+    # real SF Fed news-sentiment observation is older than this many NYSE
+    # sessions. Default 63 ≈ 3 months — prevents the news-sentiment evidence
+    # from persisting through prolonged data gaps. Mirrors the AAII guard in
+    # SentimentScoreConfig.max_staleness_sessions.
+    max_staleness_sessions: int = Field(default=63, gt=0)
 
 
 class CentralBankTextConfig(StrictBaseModel):
@@ -246,6 +252,21 @@ class InflationGrowthConfig(StrictBaseModel):
     # Cleveland Fed nowcast cadence is monthly/current-period; stale nowcast
     # suppresses only the optional inflation-surprise limb.
     nowcast_stale_calendar_days: int = Field(default=60, ge=1)
+
+
+class SentimentScoreConfig(StrictBaseModel):
+    """Max-staleness guard for AAII sentiment forward-fill.
+
+    After ``_build_sentiment_score_series`` forward-fills the weekly AAII
+    bull-bear-spread 8w-MA onto the NYSE session index, sessions whose last
+    *real* (non-ffilled) reading is older than ``max_staleness_sessions``
+    sessions are NaN-ed out. This prevents the ``euphoria`` gate from firing
+    on arbitrarily stale AAII data if the survey stops publishing.
+
+    Default 40 sessions ≈ 8 weeks (≈ 2 monthly AAII releases).
+    """
+
+    max_staleness_sessions: int = Field(default=40, gt=0)
 
 
 class CreditFundingRulesConfig(StrictBaseModel):

@@ -149,7 +149,7 @@ def _fit_single_seed(
         # Fitted parameters for the §6.1 calibration-drift monitor (F-025).
         # means_ are in the per-window standardized space; the caller
         # de-standardizes before comparing checkpoints. getattr keeps the
-        # monitor fail-open if a fitter does not expose the parameters.
+        # drift metric skip-safe if a fitter does not expose the parameters.
         "means": None if non_monotonic else getattr(model, "means_", None),
         "transmat": None if non_monotonic else getattr(model, "transmat_", None),
     }
@@ -172,13 +172,11 @@ def compute_hmm_features(
     checkpoint's forward segment. Sessions with any NaN input are masked
     to NaN in the output (cold-start + missing-data safe).
 
-    Returns ``None`` when:
+    Raises when:
       - any required input is ``None``
       - the joined non-NaN inputs have fewer than ``training_window_days``
         rows
-      - the HMM fit fails (e.g. singular covariance, non-convergence):
-        return None (evidence absent) rather than crash the whole
-        classify call (fail-open seam).
+      - the HMM fit fails for every checkpoint / seed.
 
     Permutation invariance: ``top_state_prob = posterior.max(axis=1)``
     is invariant to state-index permutation. The
@@ -192,14 +190,17 @@ def compute_hmm_features(
         "volume_zscore_20d": volume_zscore_20d,
         "avg_pairwise_corr_63d": avg_pairwise_corr_63d,
     }
-    if any(series is None for series in inputs.values()):
-        return None
+    missing_inputs = [name for name, series in inputs.items() if series is None]
+    if missing_inputs:
+        raise RuntimeError(f"HMM missing required inputs: {missing_inputs}")
 
     # mypy/pyright: filtered above; safe to narrow.
     frame = pd.DataFrame({k: v for k, v in inputs.items()}).dropna(how="any")
     n_train = config.training_window_days
     if len(frame) < n_train:
-        return None
+        raise RuntimeError(
+            f"HMM insufficient history: need {n_train} rows, got {len(frame)}"
+        )
 
     state_prob_frame = pd.DataFrame(
         float("nan"),
@@ -207,6 +208,9 @@ def compute_hmm_features(
         columns=list(range(config.n_states)),
     )
     latest_fit: dict[str, Any] | None = None
+    # Findings #3/#4: align HMM state ordering across PIT refit checkpoints
+    # so that state IDs are stable (mapped_label, state_persistence_days).
+    reference_hmm_means: np.ndarray | None = None
     # F-025: §6.1 calibration drift between consecutive PIT refit checkpoints.
     previous_raw_means: np.ndarray | None = None
     previous_transmat: np.ndarray | None = None
@@ -219,42 +223,38 @@ def compute_hmm_features(
     # effect; otherwise dispatch the seed sweep across processes.
     is_patched = getattr(GaussianHMM, "__module__", "") != "hmmlearn.hmm"
     n_workers = 1 if is_patched else min(len(config.random_seeds), os.cpu_count() or 1)
-    try:
-        train_end_positions = list(
-            range(n_train - 1, len(frame), max(1, config.retrain_cadence_days))
-        )
-        if train_end_positions[-1] != len(frame) - 1:
-            train_end_positions.append(len(frame) - 1)
-        backend = "threading" if is_patched else "loky"
-        with Parallel(n_jobs=n_workers, backend=backend, batch_size=1) as parallel:
-            for offset, train_end_pos in enumerate(train_end_positions):
-                train_frame = frame.iloc[
-                    train_end_pos - n_train + 1 : train_end_pos + 1
-                ]
-                next_train_end_pos = (
-                    train_end_positions[offset + 1]
-                    if offset + 1 < len(train_end_positions)
-                    else len(frame)
+    train_end_positions = list(
+        range(n_train - 1, len(frame), max(1, config.retrain_cadence_days))
+    )
+    if train_end_positions[-1] != len(frame) - 1:
+        train_end_positions.append(len(frame) - 1)
+    backend = "threading" if is_patched else "loky"
+    with Parallel(n_jobs=n_workers, backend=backend, batch_size=1) as parallel:
+        for offset, train_end_pos in enumerate(train_end_positions):
+            train_frame = frame.iloc[train_end_pos - n_train + 1 : train_end_pos + 1]
+            next_train_end_pos = (
+                train_end_positions[offset + 1]
+                if offset + 1 < len(train_end_positions)
+                else len(frame)
+            )
+            segment_frame = frame.iloc[train_end_pos:next_train_end_pos]
+            fit_frame, predict_frame = _prepare_hmm_frames(
+                train_frame=train_frame,
+                full_frame=segment_frame,
+                standardize_inputs=config.standardize_inputs,
+            )
+            if not _has_sufficient_distinct_rows(fit_frame, n_states=config.n_states):
+                _LOGGER.warning(
+                    "GaussianHMM training window has fewer distinct rows than "
+                    "configured states; HMM seam skips checkpoint: "
+                    "checkpoint=%s distinct_rows=%s n_states=%s",
+                    train_end_pos,
+                    len(np.unique(fit_frame, axis=0)),
+                    config.n_states,
                 )
-                segment_frame = frame.iloc[train_end_pos:next_train_end_pos]
-                fit_frame, predict_frame = _prepare_hmm_frames(
-                    train_frame=train_frame,
-                    full_frame=segment_frame,
-                    standardize_inputs=config.standardize_inputs,
-                )
-                if not _has_sufficient_distinct_rows(
-                    fit_frame, n_states=config.n_states
-                ):
-                    _LOGGER.warning(
-                        "GaussianHMM training window has fewer distinct rows than "
-                        "configured states; HMM seam skips checkpoint: "
-                        "checkpoint=%s distinct_rows=%s n_states=%s",
-                        train_end_pos,
-                        len(np.unique(fit_frame, axis=0)),
-                        config.n_states,
-                    )
-                    continue
-                best: dict[str, Any] | None = None
+                continue
+            best: dict[str, Any] | None = None
+            try:
                 seed_results = parallel(
                     delayed(_fit_single_seed)(
                         fit_frame=fit_frame,
@@ -267,100 +267,113 @@ def compute_hmm_features(
                     )
                     for seed in config.random_seeds
                 )
-                for result in seed_results:
-                    if result["non_monotonic"]:
-                        # Recoverable per-seed rejection is DEBUG-only; the
-                        # no-usable-seed path below remains WARNING.
-                        _LOGGER.debug(
-                            "GaussianHMM skipped non-monotonic seed: "
-                            "checkpoint=%s seed=%s log_likelihood=%s "
-                            "previous_log_likelihood=%s delta=%s",
+            except (np.linalg.LinAlgError, ValueError) as exc:
+                _LOGGER.warning(
+                    "GaussianHMM fit/predict failed at checkpoint %s; " "skipping: %s",
+                    train_end_pos,
+                    exc,
+                )
+                continue
+            for result in seed_results:
+                if result["non_monotonic"]:
+                    # Recoverable per-seed rejection is DEBUG-only; the
+                    # no-usable-seed path below remains WARNING.
+                    _LOGGER.debug(
+                        "GaussianHMM skipped non-monotonic seed: "
+                        "checkpoint=%s seed=%s log_likelihood=%s "
+                        "previous_log_likelihood=%s delta=%s",
+                        train_end_pos,
+                        result["seed"],
+                        result["log_likelihood"],
+                        result["previous_log_likelihood"],
+                        result["delta"],
+                    )
+                    all_skipped.append(
+                        (
                             train_end_pos,
                             result["seed"],
                             result["log_likelihood"],
                             result["previous_log_likelihood"],
                             result["delta"],
                         )
-                        all_skipped.append(
-                            (
-                                train_end_pos,
-                                result["seed"],
-                                result["log_likelihood"],
-                                result["previous_log_likelihood"],
-                                result["delta"],
-                            )
-                        )
-                        continue
-                    if (
-                        best is None
-                        or result["log_likelihood"] > best["log_likelihood"]
-                    ):
-                        best = result
-                if best is None:
+                    )
                     continue
-                state_prob_frame.loc[segment_frame.index, :] = best["posterior"]
-                latest_fit = best
+                if best is None or result["log_likelihood"] > best["log_likelihood"]:
+                    best = result
+            if best is None:
+                continue
 
-                # §6.1 drift monitor (F-025): de-standardize this checkpoint's
-                # state means back to raw feature units (model.means_ live in the
-                # per-window standardized space), then compare to the previous
-                # checkpoint. Transition probabilities are scale-invariant.
-                # Fail-open: skip silently if a fitter did not expose params.
-                if best["means"] is not None and best["transmat"] is not None:
-                    raw_means = best["means"]
-                    if config.standardize_inputs:
-                        train_means = train_frame.mean().to_numpy(dtype=float)
-                        train_stds = (
-                            train_frame.std(ddof=0)
-                            .replace(0.0, 1.0)
-                            .to_numpy(dtype=float)
+            # De-standardize state means to raw feature units BEFORE
+            # alignment so the Hungarian cost matrix uses a scale that
+            # is comparable across windows (findings #3, #4).
+            raw_means: np.ndarray | None = None
+            if best["means"] is not None:
+                raw_means = best["means"]
+                if config.standardize_inputs:
+                    train_means = train_frame.mean().to_numpy(dtype=float)
+                    train_stds = (
+                        train_frame.std(ddof=0).replace(0.0, 1.0).to_numpy(dtype=float)
+                    )
+                    raw_means = best["means"] * train_stds + train_means
+
+            # Align state ordering to previous checkpoint so IDs are
+            # stable across refit boundaries (findings #3, #4).
+            if reference_hmm_means is not None and raw_means is not None:
+                aligned_post, aligned_raw = _align_posterior_to_reference(
+                    best["posterior"], raw_means, reference_hmm_means
+                )
+                best["posterior"] = aligned_post
+                raw_means = aligned_raw
+            if raw_means is not None:
+                reference_hmm_means = raw_means
+
+            state_prob_frame.loc[segment_frame.index, :] = best["posterior"]
+            latest_fit = best
+
+            # §6.1 drift monitor (F-025): compare de-standardized,
+            # aligned state means to the previous checkpoint.
+            # Transition probabilities are scale-invariant.
+            # Skip only the advisory drift metric if a fitter did not expose params.
+            if raw_means is not None and best["transmat"] is not None:
+                if previous_raw_means is not None and previous_transmat is not None:
+                    latest_drift = compute_hmm_parameter_drift(
+                        previous_state_means=previous_raw_means,
+                        current_state_means=raw_means,
+                        previous_transition_matrix=previous_transmat,
+                        current_transition_matrix=best["transmat"],
+                    )
+                    # F-039: surface the §6.1 quarterly-review alerts. The drift
+                    # seam was computed and exposed on HmmOutput but never logged,
+                    # so the >20% state-mean / >30% transition-prob thresholds
+                    # passed silently. Emit a WARNING the moment a refit crosses
+                    # either threshold so the operational review receives it.
+                    if (
+                        latest_drift.state_mean_drift_alert
+                        or latest_drift.transition_prob_review_flag
+                    ):
+                        _LOGGER.warning(
+                            "HMM parameter drift alert: state_mean_drift=%.4f "
+                            "(alert=%s, threshold=%.2f), max_transition_prob_shift="
+                            "%.4f (review=%s, threshold=%.2f)",
+                            latest_drift.parameter_drift,
+                            latest_drift.state_mean_drift_alert,
+                            _STATE_MEAN_DRIFT_ALERT_THRESHOLD,
+                            latest_drift.max_transition_prob_shift,
+                            latest_drift.transition_prob_review_flag,
+                            _TRANSITION_PROB_REVIEW_THRESHOLD,
                         )
-                        raw_means = best["means"] * train_stds + train_means
-                    if previous_raw_means is not None and previous_transmat is not None:
-                        latest_drift = compute_hmm_parameter_drift(
-                            previous_state_means=previous_raw_means,
-                            current_state_means=raw_means,
-                            previous_transition_matrix=previous_transmat,
-                            current_transition_matrix=best["transmat"],
-                        )
-                        # F-039: surface the §6.1 quarterly-review alerts. The drift
-                        # seam was computed and exposed on HmmOutput but never logged,
-                        # so the >20% state-mean / >30% transition-prob thresholds
-                        # passed silently. Emit a WARNING the moment a refit crosses
-                        # either threshold so the operational review receives it.
-                        if (
-                            latest_drift.state_mean_drift_alert
-                            or latest_drift.transition_prob_review_flag
-                        ):
-                            _LOGGER.warning(
-                                "HMM parameter drift alert: state_mean_drift=%.4f "
-                                "(alert=%s, threshold=%.2f), max_transition_prob_shift="
-                                "%.4f (review=%s, threshold=%.2f)",
-                                latest_drift.parameter_drift,
-                                latest_drift.state_mean_drift_alert,
-                                _STATE_MEAN_DRIFT_ALERT_THRESHOLD,
-                                latest_drift.max_transition_prob_shift,
-                                latest_drift.transition_prob_review_flag,
-                                _TRANSITION_PROB_REVIEW_THRESHOLD,
-                            )
-                    previous_raw_means = raw_means
-                    previous_transmat = best["transmat"]
-    except Exception as exc:  # noqa: BLE001
-        # Fail-open: degenerate inputs (singular covariance, etc.) should
-        # not crash the engine — the seam goes None and downstream falls
-        # back to the 5-component transition score.
-        _LOGGER.warning(
-            "GaussianHMM fit/predict failed; HMM seam returns None: %s", exc
-        )
-        return None
+                previous_raw_means = raw_means
+                previous_transmat = best["transmat"]
     if latest_fit is None:
         _LOGGER.warning(
             "GaussianHMM produced no PIT monotonic fit across %d seed(s); "
-            "HMM seam returns None. skipped=%s",
+            "HMM seam fails loudly. skipped=%s",
             len(config.random_seeds),
             all_skipped[:5],
         )
-        return None
+        raise RuntimeError(
+            "HMM fit failed: no PIT monotonic fit produced model evidence"
+        )
 
     # Re-align to the canonical SPY index (return_1d carries it). Sessions
     # dropped by .dropna() get NaN both in the state_probabilities frame
@@ -395,6 +408,35 @@ def _prepare_hmm_frames(
     train = ((train_frame - means) / stds).to_numpy(dtype=float)
     full = ((full_frame - means) / stds).to_numpy(dtype=float)
     return train, full
+
+
+def _align_posterior_to_reference(
+    posterior: np.ndarray,
+    current_means: np.ndarray,
+    reference_means: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Align HMM state ordering to a reference checkpoint via Hungarian matching.
+
+    HMM state IDs from ``hmmlearn`` are arbitrary after each refit. This
+    finds the optimal permutation mapping the current states to the
+    reference states (minimising pairwise Euclidean distance on state
+    means), then reorders posterior columns and means accordingly.
+
+    Returns ``(permuted_posterior, permuted_means)``.
+    """
+    cost = np.linalg.norm(
+        current_means[:, np.newaxis, :] - reference_means[np.newaxis, :, :],
+        axis=2,
+    )
+    row_ind, col_ind = linear_sum_assignment(cost)
+
+    # col_ind[i] = which reference slot new state i maps to.
+    # Invert: perm[j] = which new state fills reference slot j.
+    n = len(col_ind)
+    perm = np.empty(n, dtype=int)
+    perm[col_ind] = row_ind
+
+    return posterior[:, perm], current_means[perm]
 
 
 def _has_sufficient_distinct_rows(frame: np.ndarray, *, n_states: int) -> bool:

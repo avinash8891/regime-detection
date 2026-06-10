@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from regime_detection.config import TransitionScoreConfig, load_default_regime_config
@@ -123,7 +121,7 @@ def test_macro_event_audit_ignores_non_scoring_calendar_labels(
     assert out.macro_event_labels == ("fed_week", "cpi_week")
 
 
-def test_compute_transition_score_reweights_available_components(
+def test_compute_transition_score_rejects_missing_components(
     transition_score_config: TransitionScoreConfig,
 ) -> None:
     weights = transition_score_config.weights
@@ -138,49 +136,32 @@ def test_compute_transition_score_reweights_available_components(
         "model_instability": 0.20,
     }
 
-    score, present, missing, coverage = compute_transition_score(
-        components=components,
-        weights=weights,
-        minimum_component_weight_coverage=transition_score_config.minimum_component_weight_coverage,
-    )
-
-    present_weight = sum(
-        weights[key] for key, value in components.items() if value is not None
-    )
-    expected = sum(
-        components[key] * weights[key] / present_weight
-        for key, value in components.items()
-        if value is not None
-    )
-    assert score == pytest.approx(expected)
-    assert present is not None
-    assert "credit_stress" not in present
-    assert missing == ("credit_stress",)
-    assert coverage == pytest.approx(present_weight / sum(weights.values()))
+    with pytest.raises(RuntimeError, match="transition score missing components"):
+        compute_transition_score(
+            components=components,
+            weights=weights,
+            minimum_component_weight_coverage=transition_score_config.minimum_component_weight_coverage,
+        )
 
 
-def test_compute_transition_score_returns_none_when_component_coverage_too_low(
+def test_compute_transition_score_rejects_low_coverage_missing_components(
     transition_score_config: TransitionScoreConfig,
 ) -> None:
-    score, present, missing, coverage = compute_transition_score(
-        components={
-            "trend_break": 0.50,
-            "volatility_acceleration": 1.00,
-            "breadth_deterioration": 0.25,
-            "correlation_fragility": 0.75,
-            "credit_stress": None,
-            "liquidity_stress": None,
-            "macro_event": 0.00,
-            "model_instability": None,
-        },
-        weights=transition_score_config.weights,
-        minimum_component_weight_coverage=transition_score_config.minimum_component_weight_coverage,
-    )
-
-    assert score is None
-    assert present is None
-    assert missing == ("credit_stress", "liquidity_stress", "model_instability")
-    assert coverage < transition_score_config.minimum_component_weight_coverage
+    with pytest.raises(RuntimeError, match="transition score missing components"):
+        compute_transition_score(
+            components={
+                "trend_break": 0.50,
+                "volatility_acceleration": 1.00,
+                "breadth_deterioration": 0.25,
+                "correlation_fragility": 0.75,
+                "credit_stress": None,
+                "liquidity_stress": None,
+                "macro_event": 0.00,
+                "model_instability": None,
+            },
+            weights=transition_score_config.weights,
+            minimum_component_weight_coverage=transition_score_config.minimum_component_weight_coverage,
+        )
 
 
 def test_compute_transition_score_rejects_unconfigured_component_key(
@@ -212,26 +193,14 @@ def test_interpret_transition_score_uses_configured_band_boundaries(
     assert interpret_transition_score(score, transition_score_config.bands) == expected
 
 
-def test_compose_transition_score_exposes_only_present_components(
+def test_compose_transition_score_rejects_missing_credit_component(
     transition_score_config: TransitionScoreConfig,
 ) -> None:
-    out = _compose(
-        transition_score_config,
-        credit_funding_label=None,
-    )
-
-    assert out.score is not None
-    assert out.components is not None
-    assert set(out.components) == set(transition_score_config.weights) - {
-        "credit_stress"
-    }
-    assert out.missing_components == ("credit_stress",)
-    assert (
-        out.component_weight_coverage
-        >= transition_score_config.minimum_component_weight_coverage
-    )
-    for value in out.components.values():
-        assert not math.isnan(value)
+    with pytest.raises(RuntimeError, match="credit_stress"):
+        _compose(
+            transition_score_config,
+            credit_funding_label=None,
+        )
 
 
 @pytest.mark.parametrize(
@@ -244,43 +213,67 @@ def test_compose_transition_score_exposes_only_present_components(
         "cluster_id_5d_ago",
     ],
 )
-def test_compose_transition_score_forces_insufficient_data_on_missing_model_evidence(
+def test_compose_transition_score_raises_on_missing_model_evidence(
     transition_score_config: TransitionScoreConfig,
     missing_field: str,
 ) -> None:
     """F-002 / §4.2 / §4.0 / §10 rule 3: once the transition_score seam is enabled,
     per-session model evidence (HMM probability, change-point score, cluster id) is
-    MANDATORY. A missing per-session value must force ``insufficient_data`` (score=None)
-    — it must NEVER be silently renormalized away into a normal score. The whole-seam-
-    absent build error is raised earlier in ``transition_risk_series``; this guards the
-    per-session-missing case on the (only) emitted V2 path. Fails if reverted."""
-    out = _compose(transition_score_config, **{missing_field: None})
-
-    assert out.score is None
-    assert out.interpretation is None
-    assert out.components is None
-    assert out.missing_components == ("model_instability",)
+    MANDATORY. A missing per-session value must fail loudly — it must NEVER be
+    silently renormalized away into a normal score or hidden behind a concrete
+    transition-risk state."""
+    with pytest.raises(RuntimeError, match="transition score missing components"):
+        _compose(transition_score_config, **{missing_field: None})
 
 
-def test_compose_transition_score_returns_insufficient_when_many_components_missing(
+def test_cluster_flip_does_not_fire_on_same_aligned_id(
     transition_score_config: TransitionScoreConfig,
 ) -> None:
-    out = _compose(
-        transition_score_config,
-        drawdown_252d=None,
-        spy_close=None,
-        spy_sma_50=None,
-        credit_funding_label=None,
-        volume_liquidity_label=None,
-        volume_zscore_20d=None,
-        gap_frequency_percentile_252d=None,
-        intraday_range_percentile_252d=None,
-    )
+    """Regression: cluster_flip must be 0.0 when cluster_id_now == cluster_id_5d_ago
+    (same aligned ID = no genuine regime flip) and 1.0 when IDs differ.
 
-    assert out == ComposedTransitionScore(
-        score=None,
-        interpretation=None,
-        components=None,
-        missing_components=("trend_break", "credit_stress", "liquidity_stress"),
-        component_weight_coverage=pytest.approx(0.60),
+    After Task 1 stabilised cluster IDs across refit boundaries, this comparison
+    is meaningful. Locks the fix so a revert cannot silently break it."""
+    no_flip = _compose(
+        transition_score_config,
+        cluster_id_now=2,
+        cluster_id_5d_ago=2,
+        # Zero out all other model-instability sub-signals so cluster_flip drives
+        # the component value directly.
+        hmm_top_state_prob_now=0.50,
+        hmm_top_state_prob_5d_ago=0.50,
+        change_point_score=0.0,
     )
+    assert no_flip.components is not None
+    assert no_flip.components["model_instability"] == pytest.approx(0.0)
+
+    genuine_flip = _compose(
+        transition_score_config,
+        cluster_id_now=2,
+        cluster_id_5d_ago=5,
+        hmm_top_state_prob_now=0.50,
+        hmm_top_state_prob_5d_ago=0.50,
+        change_point_score=0.0,
+    )
+    assert genuine_flip.components is not None
+    assert genuine_flip.components["model_instability"] == pytest.approx(1.0)
+
+
+def test_compose_transition_score_rejects_many_missing_components(
+    transition_score_config: TransitionScoreConfig,
+) -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="trend_break, credit_stress, liquidity_stress",
+    ):
+        _compose(
+            transition_score_config,
+            drawdown_252d=None,
+            spy_close=None,
+            spy_sma_50=None,
+            credit_funding_label=None,
+            volume_liquidity_label=None,
+            volume_zscore_20d=None,
+            gap_frequency_percentile_252d=None,
+            intraday_range_percentile_252d=None,
+        )

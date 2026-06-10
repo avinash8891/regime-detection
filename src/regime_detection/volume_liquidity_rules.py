@@ -22,7 +22,7 @@ If none match (or any required input is NaN), the label falls through to
 This module ships ``panic_volume`` (§1E lines 409-413), ``normal_volume``
 (§1E lines 421-423), and ``liquidity_gap_behavior`` (§1E lines 415-419) live.
 The 252d percentile of ``gap_frequency_20d`` comes from
-``regime_detection.volatility_state_v2.gap_frequency_percentile_252d``.
+``regime_detection.volatility_state.gap_frequency_percentile_252d``.
 
 All numeric thresholds are config-driven via
 ``VolumeLiquidityRulesConfig``; this module is magic-number free per
@@ -163,7 +163,7 @@ def evaluate_liquidity_gap_behavior(
     so the V2 §9.1 walk-forward calibration may retune.
 
     Implements the feature-placement decision: the 252d percentile of `gap_frequency_20d` now
-    ships from `regime_detection.volatility_state_v2` (in the same
+    ships from `regime_detection.volatility_state` (in the same
     commit that flipped this predicate from `return False`), so both
     rule inputs are available at evaluation time.
     """
