@@ -55,6 +55,7 @@ audit = [
 ]
 dev = [
   "black==26.5.1",
+  "defusedxml==0.7.1",
   "pytest==9.0.3",
   "pytest-cov==7.1.0",
   "pytest-mock==3.15.1",
@@ -105,6 +106,7 @@ exclude = "tests/*,.venv/*,venv/*"
 [tool.deptry]
 extend_exclude = [
   "tests",
+  "scripts",
 ]
 known_first_party = [
   "regime_detection",
@@ -121,6 +123,9 @@ optional_dependencies_dev_groups = [
   "audit",
 ]
 package_module_name_map = { "alpaca-py" = ["alpaca"], "ruamel.yaml" = ["ruamel"] }
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["datasets", "ruamel.yaml"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
