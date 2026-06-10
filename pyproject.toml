@@ -18,6 +18,9 @@ dependencies = [
   "openpyxl==3.1.5",
   "xlrd==2.0.2",
   "hmmlearn==0.3.3",
+  "joblib==1.5.3",
+  "scikit-learn==1.8.0",
+  "scipy==1.17.1",
   "opentelemetry-api==1.36.0",
   "sentry-sdk==2.60.0",
   # Adapter in regime_detection.change_point uses
@@ -52,6 +55,7 @@ audit = [
 ]
 dev = [
   "black==26.5.1",
+  "defusedxml==0.7.1",
   "pytest==9.0.3",
   "pytest-cov==7.1.0",
   "pytest-mock==3.15.1",
@@ -118,6 +122,10 @@ optional_dependencies_dev_groups = [
   "audit",
 ]
 package_module_name_map = { "alpaca-py" = ["alpaca"], "ruamel.yaml" = ["ruamel"] }
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["datasets", "ruamel.yaml"]
+DEP004 = ["defusedxml"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
