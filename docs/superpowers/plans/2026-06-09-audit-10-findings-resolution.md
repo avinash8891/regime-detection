@@ -876,7 +876,7 @@ Replace the outer `try/except Exception` (lines 222-355) with per-checkpoint try
     # Remove the outer try/except at line 222 and 348-355.
     # Inside the per-checkpoint loop (around line 258-302), wrap only the
     # fit/predict section:
-    
+
                 try:
                     seed_results = parallel(
                         delayed(_fit_single_seed)(

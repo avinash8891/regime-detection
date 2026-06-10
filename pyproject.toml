@@ -106,7 +106,6 @@ exclude = "tests/*,.venv/*,venv/*"
 [tool.deptry]
 extend_exclude = [
   "tests",
-  "scripts",
 ]
 known_first_party = [
   "regime_detection",
@@ -126,6 +125,7 @@ package_module_name_map = { "alpaca-py" = ["alpaca"], "ruamel.yaml" = ["ruamel"]
 
 [tool.deptry.per_rule_ignores]
 DEP002 = ["datasets", "ruamel.yaml"]
+DEP004 = ["defusedxml"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

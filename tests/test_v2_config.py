@@ -416,7 +416,7 @@ def test_v2_config_rejects_volume_liquidity_state_without_volume_liquidity_v2(
 
     with pytest.raises(
         ValidationError,
-        match="volume_liquidity_state requires volume_liquidity_v2",
+        match="missing required V2 sections.*volume_liquidity_v2",
     ):
         load_regime_config(bad_yaml)
 
