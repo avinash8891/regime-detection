@@ -1,0 +1,45 @@
+src/regime_detection/hmm_state.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 152,175,179,193-195,201-203,336,370,374-375
+src/regime_detection/transition_risk_history.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 29-33
+src/regime_detection/_rolling_stats.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 105,131
+src/regime_detection/_rule_helpers.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 52-55
+src/regime_detection/monetary_pressure_rules.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 27-28,38,111-112,114-121
+src/regime_detection/_feature_specs.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 241-243,246,248,250,255,922-930
+tests/test_hmm_state.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 109,120-121,124,127-128,173,185-186,205,230-231,415,423-425,428-439,441-442,470-475
+tests/test_transition_score_v2.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 124,139-144,147,150-164,196,199-203,216,222-226,262,265-279
+src/regime_detection/transition_risk_series.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 19-24,140-144,241-245,263-291,537,615-617,620,635,637-682,726-738,740-760,782-786
+tests/test_feature_store_refactors.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 10-11,14,152,155,160-168,184-185,193,232-243,248-250,263-297,299-300,303-304,307-308,318-319
+tests/test_trend_direction_v2_euphoria.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 636-637,641
+tests/test_volume_liquidity_classifier.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 13-14,17,23,33,37-44,122,125-126,131-140,153,167-171,178-180,190-192,195-196,217-219,222-223,231-233,236-237,244-246,250-251,266-268,276-277,288-297,299,325-327,332-333,338-347,349,401,404-405,410-427,430-432,434,443
+tests/test_clustering.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 113,118-119,122,125-126,298,312-313,342-347,379-388,435
+src/regime_detection/feature_store.py
+  s_3579a11c274b3d::t_ca7d7a98800cdf 185-189,204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "21c22685938bd851191d5d1fe6b7c0a0648f51d3",
+  "prompts": {},
+  "sessions": {
+    "s_3579a11c274b3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4ff0dba7-5695-4f37-858c-5161163327a0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
