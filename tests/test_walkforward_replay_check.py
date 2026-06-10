@@ -28,7 +28,9 @@ def test_walkforward_replay_matches_then_detects_corruption(
     repo_root = Path(__file__).resolve().parents[1]
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
-    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = (
+        repo_root / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+    )
     out_root = tmp_path / "walkforward"
 
     runner = _load(

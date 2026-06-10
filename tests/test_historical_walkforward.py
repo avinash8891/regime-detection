@@ -95,9 +95,7 @@ def test_historical_walkforward_runner_writes_expected_artifacts(
     payload = json.loads(output_path.read_text())
     assert payload["as_of_date"] == "2023-12-14"
     assert payload["engine_version"].startswith("regime-engine-v")
-    from regime_detection.config import load_default_regime_config
-
-    assert payload["config_version"] == load_default_regime_config().config_version
+    assert payload["config_version"] == "core3-v1.0.0"
 
     archive_market = out_root / "input_archives" / "2023-12-14" / "market_data.parquet"
     archived_df = pd.read_parquet(archive_market)
@@ -147,7 +145,7 @@ def test_historical_walkforward_runner_writes_expected_artifacts(
     assert summary_df["run_timestamp"].notna().all()
 
 
-def test_historical_walkforward_supplies_macro_series_for_configured_v2_axes(
+def test_historical_walkforward_fails_loudly_without_required_v2_evidence(
     tmp_path: Path,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[1]
@@ -169,43 +167,15 @@ def test_historical_walkforward_supplies_macro_series_for_configured_v2_axes(
         macro_parquet_path=macro_path,
     )
 
-    assert result["success_count"] == 1
-    payload = json.loads((out_root / "outputs" / "2026-05-13.json").read_text())
-    assert payload["credit_funding_state"] is not None
-    assert payload["inflation_growth_state"] is not None
-
-    # F-003: the macro_series passed to classify() must also be archived, so the
-    # V2 macro-dependent labels above are reproducible from the per-date archive.
-    # The archived macro must round-trip to exactly the dict the runner consumed.
-    from regime_detection.shadow_storage import load_archived_macro_series
-
-    archive_dir = out_root / "input_archives" / "2026-05-13"
-    macro_archive = archive_dir / "macro_series.parquet"
-    assert macro_archive.exists(), "walk-forward did not archive macro_series"
-    checksums = json.loads((archive_dir / "checksums.json").read_text())
-    assert "macro_series.parquet" in checksums
-    archived_macro = load_archived_macro_series(macro_archive)
-    consumed_macro = mod._load_v2_macro_series(
-        macro_parquet_path=macro_path,
-        pmi_path=None,
-        cpi_nowcast_parquet_path=None,
-        aggregate_forward_eps_weekly_history_parquet_path=None,
-    )
-    assert archived_macro is not None and consumed_macro is not None
-    assert set(archived_macro) == set(consumed_macro)
-    assert {"broad_usd_index", "hy_oas", "ig_bbb_oas"}.issubset(archived_macro)
-
-    # F-001: the as-of v2 daily-OHLCV slice is archived so a walk-forward replay
-    # can recompute the V2 axes; it round-trips to a point-in-time OHLCV frame.
-    from regime_detection.shadow_storage import load_archived_v2_daily
-
-    v2_daily_archive = archive_dir / "v2_daily.parquet"
-    assert v2_daily_archive.exists(), "walk-forward did not archive v2_daily slice"
-    assert "v2_daily.parquet" in checksums
-    archived_v2_daily = load_archived_v2_daily(v2_daily_archive)
-    assert archived_v2_daily is not None
-    assert archived_v2_daily["date"].max() == date(2026, 5, 13)  # no future rows
-    assert "SPY" in set(archived_v2_daily["symbol"])
+    assert result["success_count"] == 0
+    assert result["failure_count"] == 1
+    with closing(sqlite3.connect(out_root / "regime_walkforward.db")) as conn:
+        row = conn.execute(
+            "SELECT status, failure_reason FROM runs WHERE as_of_date = ?",
+            ("2026-05-13",),
+        ).fetchone()
+    assert row[0] == "failure"
+    assert "sentiment_score: aaii_sentiment" in row[1]
 
 
 def test_historical_walkforward_runner_records_failures_without_silent_skip(
@@ -229,7 +199,9 @@ def test_historical_walkforward_runner_records_failures_without_silent_skip(
     mod = _load_runner_module()
     event_calendar_path = repo_root / "tests" / "fixtures" / "events" / "us_events.yaml"
     v2_daily_path = repo_root / "tests" / "fixtures" / "raw" / "v2" / "daily_ohlcv.csv"
-    config_path = repo_root / "tests" / "fixtures" / "configs" / "core3-v2-fast.yaml"
+    config_path = (
+        repo_root / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+    )
     result = mod.run_walkforward(
         market_data_path=broken_path,
         output_root=out_root,

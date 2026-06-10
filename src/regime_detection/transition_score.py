@@ -1,7 +1,8 @@
 """Transition-pressure score composer.
 
-Computes normalized component scores, dynamically reweights available
-components, and returns a single 0..1 pressure score with component evidence.
+Computes normalized component scores and returns a single 0..1 pressure score
+with component evidence. Every configured component is required; missing inputs
+raise instead of being reweighted away.
 """
 
 from __future__ import annotations
@@ -101,6 +102,8 @@ def compute_transition_score(
     if total_weight <= 0.0:
         raise ValueError("transition score weights must sum to a positive value")
     coverage = present_weight / total_weight
+    if missing:
+        raise RuntimeError("transition score missing components: " + ", ".join(missing))
     if coverage < minimum_component_weight_coverage:
         return None, None, missing, coverage
 
@@ -272,21 +275,8 @@ def compose_transition_score_for_session(
         weights=config.weights,
         minimum_component_weight_coverage=config.minimum_component_weight_coverage,
     )
-    # F-002 / §4.2 / §4.0 / §10 rule 3: model evidence is MANDATORY once the
-    # transition_score seam is enabled. A missing per-session HMM probability,
-    # change-point score, or cluster id (any of which nulls model_instability above)
-    # must force insufficient_data — it is NEVER renormalized away into a normal
-    # score. This function runs only on the V2 seam-present path; the whole-seam-
-    # absent build error is raised earlier in transition_risk_series.
-    if "model_instability" in missing:
-        return ComposedTransitionScore(
-            score=None,
-            interpretation=None,
-            components=None,
-            missing_components=missing,
-            component_weight_coverage=coverage,
-            macro_event_labels=macro_event_labels,
-        )
+    # compute_transition_score raises if any configured component is missing.
+    # This guard remains for defensive misconfigured coverage thresholds.
     if score is None or components is None:
         return ComposedTransitionScore(
             score=None,

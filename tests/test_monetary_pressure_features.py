@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 from datetime import date
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -25,6 +26,7 @@ import pytest
 from regime_detection.config import (
     MonetaryPressureV2FeaturesConfig,
     load_default_regime_config,
+    load_regime_config,
 )
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import build_market_context
@@ -40,6 +42,13 @@ _NORMALIZER_WINDOW = 1260
 # First valid index = lookback + normalizer - 1 (verified in
 # test_first_valid_index_matches_spec_defaults below).
 _FIRST_VALID_T = _LOOKBACK_DAYS + _NORMALIZER_WINDOW - 1
+_V1_CONFIG_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "src"
+    / "regime_detection"
+    / "configs"
+    / "core3-v1.0.0.yaml"
+)
 
 
 # ---------- Shared fixtures ---------------------------------------------------
@@ -56,6 +65,18 @@ def v2_monetary_config() -> MonetaryPressureV2FeaturesConfig:
 
 def _index_n(n: int) -> pd.DatetimeIndex:
     return pd.bdate_range(end="2024-12-31", periods=n)
+
+
+def _isolated_monetary_test_config():
+    cfg = load_default_regime_config()
+    return cfg.model_copy(
+        update={
+            "config_version": "core3-v1.0.0",
+            "hmm": None,
+            "clustering": None,
+            "change_point": None,
+        }
+    )
 
 
 def _fred_like_yield_series(*, n: int, seed: int, base: float) -> pd.Series:
@@ -325,7 +346,7 @@ def _macro_series_for_spy_index(
 
 
 def test_build_feature_store_populates_monetary(market_df_for_asof, v2_monetary_config):
-    cfg = load_default_regime_config()
+    cfg = _isolated_monetary_test_config()
     market_data = market_df_for_asof(_INTEGRATION_AS_OF)
     # Build the context once with no macro_series so we can size the
     # synthetic FRED series to the SPY index.
@@ -359,7 +380,7 @@ def test_build_feature_store_graceful_degradation_no_macro(
     market_df_for_asof, v2_monetary_config
 ):
     """No macro_series on context → monetary is None, no exception raised."""
-    cfg = load_default_regime_config()
+    cfg = _isolated_monetary_test_config()
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
@@ -370,19 +391,19 @@ def test_build_feature_store_graceful_degradation_no_macro(
     assert store.monetary is None
 
 
-def test_v1_config_path_leaves_monetary_none(market_df_for_asof):
-    """Transition-score configs fail loudly when required score inputs are absent."""
-    cfg = load_default_regime_config()
-    cfg_v1 = cfg.model_copy(update={"monetary_pressure_v2": None})
+def test_v1_config_path_leaves_monetary_none(market_df_for_asof, event_calendar_df):
+    """Real V1 config leaves the monetary V2 seam absent."""
+    cfg_v1 = load_regime_config(_V1_CONFIG_PATH)
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
         config=cfg_v1,
+        event_calendar=event_calendar_df,
     )
     store = build_feature_store(context)
     assert store.monetary is None
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
-        build_regime_timeline(context=context, lookback_days=5, config=cfg_v1)
+    timeline = build_regime_timeline(context=context, lookback_days=5, config=cfg_v1)
+    assert {out.monetary_pressure_state for out in timeline.outputs} == {None}
 
 
 def test_timeline_threads_monetary_pressure_v2_config(
@@ -403,16 +424,22 @@ def test_timeline_threads_monetary_pressure_v2_config(
         market_data=market_data,
         config=cfg,
     )
-    macro = _macro_series_for_spy_index(context_no_macro.spy_ohlcv.index)
+    macro = dict(kwargs["macro_series"])
+    macro.update(_macro_series_for_spy_index(context_no_macro.spy_ohlcv.index))
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_data,
         config=cfg,
+        event_calendar=kwargs["event_calendar"],
         macro_series=macro,
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],
         pit_constituent_intervals=kwargs["pit_constituent_intervals"],
         constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
 
     timeline = build_regime_timeline(context=context, lookback_days=5, config=cfg)
@@ -428,10 +455,7 @@ def test_timeline_threads_monetary_pressure_v2_config(
     working = slice_context_to_recent_sessions(
         context=context, required_sessions=required
     )
-    store = build_feature_store(
-        working,
-        monetary_pressure_v2_config=cfg.monetary_pressure_v2,
-    )
+    store = build_feature_store(working, **cfg.v2_feature_build_configs())
     assert store.monetary is not None
     assert len(store.monetary.yield_change_zscore_2y_63d) >= len(store.spy_index)
     assert len(store.monetary.yield_change_zscore_10y_63d) >= len(store.spy_index)

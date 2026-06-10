@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -17,9 +18,14 @@ from regime_detection.axis_series import (
     _validate_axis_dependency_order,
     build_axis_series_bundle,
 )
-from regime_detection.engine import RegimeEngine
+from regime_detection.config import load_regime_config
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import build_market_context
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_V1_CONFIG_PATH = (
+    _REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+)
 
 
 def test_axis_series_bundle_contract_names_every_timeline_axis() -> None:
@@ -167,12 +173,14 @@ def test_contract_graph_captures_label_only_credit_edge_semantics() -> None:
 
 def test_build_axis_series_bundle_emits_session_keyed_outputs_for_core_axes(
     market_df_for_asof,
+    event_calendar_df,
 ) -> None:
     as_of = date(2023, 12, 14)
     context = build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
-        config=RegimeEngine().config,
+        config=load_regime_config(_V1_CONFIG_PATH),
+        event_calendar=event_calendar_df,
     )
     feature_store = build_feature_store(context)
 

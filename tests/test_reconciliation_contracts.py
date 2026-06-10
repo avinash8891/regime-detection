@@ -35,6 +35,11 @@ def _reconciliation_fixture_config():
                     "n_states": 2,
                     "training_window_days": 100,
                     "random_seeds": (42, 7, 13),
+                    "model_version": "hmm_2state_test_v1.0",
+                    "state_label_map": {
+                        0: "test_low_risk",
+                        1: "test_high_risk",
+                    },
                 }
             ),
             "clustering": cfg.clustering.model_copy(
@@ -43,7 +48,6 @@ def _reconciliation_fixture_config():
             "change_point": cfg.change_point.model_copy(
                 update={"training_window_days": 100}
             ),
-            "transition_score": None,
         }
     )
 
@@ -168,7 +172,7 @@ def test_breadth_data_quality_does_not_block_pit_breadth_when_rsp_gaps(
     )
 
 
-def test_trend_direction_data_quality_insufficient_data_can_override_non_unknown_label(
+def test_trend_direction_data_quality_insufficient_data_fails_loudly(
     v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
@@ -180,22 +184,19 @@ def test_trend_direction_data_quality_insufficient_data_can_override_non_unknown
 
     from regime_detection.engine import RegimeEngine
 
-    out = RegimeEngine().classify(
-        as_of_date=as_of,
-        market_data=market_df,
-        vix_data=_vix_data_from_market_data(market_df),
-        config=_reconciliation_fixture_config(),
-        **_synthetic_kwargs_without_config(
-            synthetic_v2_kwargs_for_market_data, market_df
-        ),
-    )
-
-    assert out.trend_direction.active_label == "unknown"
-    assert out.trend_direction.data_quality.status == "insufficient_data"
-    assert out.trend_direction.data_quality.reason == "insufficient_data"
+    with pytest.raises(RuntimeError, match="transition score inputs not ready"):
+        RegimeEngine().classify(
+            as_of_date=as_of,
+            market_data=market_df,
+            vix_data=_vix_data_from_market_data(market_df),
+            config=_reconciliation_fixture_config(),
+            **_synthetic_kwargs_without_config(
+                synthetic_v2_kwargs_for_market_data, market_df
+            ),
+        )
 
 
-def test_trend_direction_data_quality_stale_data_overrides_insufficient_history(
+def test_trend_direction_data_quality_stale_data_fails_loudly(
     v2_market_df_for_asof,
     synthetic_v2_kwargs_for_market_data,
 ) -> None:
@@ -207,16 +208,13 @@ def test_trend_direction_data_quality_stale_data_overrides_insufficient_history(
 
     from regime_detection.engine import RegimeEngine
 
-    out = RegimeEngine().classify(
-        as_of_date=as_of,
-        market_data=market_df,
-        vix_data=_vix_data_from_market_data(market_df),
-        config=_reconciliation_fixture_config(),
-        **_synthetic_kwargs_without_config(
-            synthetic_v2_kwargs_for_market_data, market_df
-        ),
-    )
-
-    assert out.trend_direction.active_label == "unknown"
-    assert out.trend_direction.data_quality.status == "stale_data"
-    assert out.trend_direction.data_quality.reason == "stale_data"
+    with pytest.raises(RuntimeError, match="transition score inputs not ready"):
+        RegimeEngine().classify(
+            as_of_date=as_of,
+            market_data=market_df,
+            vix_data=_vix_data_from_market_data(market_df),
+            config=_reconciliation_fixture_config(),
+            **_synthetic_kwargs_without_config(
+                synthetic_v2_kwargs_for_market_data, market_df
+            ),
+        )

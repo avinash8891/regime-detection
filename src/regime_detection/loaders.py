@@ -149,7 +149,7 @@ def load_sector_etf_closes(
         universe=universe,
     )
     if not result:
-        LOGGER.warning("load_sector_etf_closes returned 0 symbols from source")
+        raise ValueError("load_sector_etf_closes returned 0 symbols from source")
     return result
 
 
@@ -171,7 +171,7 @@ def load_cross_asset_closes(
         universe=universe,
     )
     if not result:
-        LOGGER.warning("load_cross_asset_closes returned 0 symbols from source")
+        raise ValueError("load_cross_asset_closes returned 0 symbols from source")
     return result
 
 
@@ -240,7 +240,7 @@ def load_macro_series(
             )
 
     if not out:
-        LOGGER.warning("load_macro_series returned 0 series from source")
+        raise ValueError("load_macro_series returned 0 series from source")
     return out
 
 
@@ -306,9 +306,8 @@ def load_central_bank_text_score(
     Returns a per-release frame with columns ``release_date``,
     ``hawkish_count``, ``dovish_count``, ``total_tokens``, ``net_score``,
     ``source`` — the input to
-    ``central_bank_text.to_daily_score_series``. When neither source is
-    supplied, returns the empty frame (the engine then sees all-NaN
-    daily series and the §2A evidence column is silent).
+    ``central_bank_text.to_daily_score_series``. Missing or empty source data
+    is a broken dependency and raises loudly.
 
     Per V2 §2A line 2950 the score feeds ``monetary_pressure.evidence``
     only — this loader has no awareness of rule predicates.
@@ -319,6 +318,8 @@ def load_central_bank_text_score(
     )
 
     frames: list[pd.DataFrame] = []
+    if fomc_minutes_source is None and powell_speeches_source is None:
+        raise ValueError("central_bank_text source is required")
     if fomc_minutes_source is not None:
         df = _read_source(fomc_minutes_source)
         # FOMC parquet column from regime_data_fetch.fomc_minutes is
@@ -348,7 +349,7 @@ def load_central_bank_text_score(
         )
     combined = combine_release_frames(*frames)
     if combined.empty:
-        return combined
+        raise ValueError("central_bank_text loader returned 0 rows")
     if max_release_age_days is not None and as_of_date is not None:
         cutoff = (
             pd.Timestamp(as_of_date).date()
@@ -416,8 +417,7 @@ def load_cpi_vintages_first_release(
     date*, not the reference date). Historical replay then looks up
     each ``as_of_date`` against the release-date index and forward-fills.
 
-    Falls back to a release-date-keyed Series of NaN when the source
-    is empty.
+    Empty vintage sources are treated as a broken dependency and raise loudly.
     """
     df = _read_source(source)
     required = {"date", "value", "realtime_start"}
@@ -425,7 +425,7 @@ def load_cpi_vintages_first_release(
     if missing:
         raise ValueError(f"cpi_vintages source missing required columns: {missing}")
     if df.empty:
-        return pd.Series([], dtype=float, name="cpi_first_release")
+        raise ValueError("cpi_vintages source must not be empty")
     work = df.copy()
     work.loc[:, "date"] = parse_datetime_series(
         column_values(work, "date"),

@@ -129,6 +129,9 @@ def test_build_transition_risk_outputs_surfaces_score_components_and_state(
         ),
         transition_score_inputs_by_date={session: score_inputs},
         transition_score_config=transition_score_config,
+        state_confirmation_days={
+            state: 1 for state in transition_score_config.state_confirmation_days
+        },
     )
 
     out = outputs[session]

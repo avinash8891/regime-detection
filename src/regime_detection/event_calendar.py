@@ -149,9 +149,11 @@ def compute_event_calendar_outputs(
     label_bits = {label: 1 << idx for idx, label in enumerate(_PRECEDENCE)}
     match_masks = [0] * len(sessions_tuple)
 
+    if normalized_event_calendar is None:
+        raise ValueError("event_calendar is required and must not be None")
     event_rows = (
         []
-        if normalized_event_calendar is None or normalized_event_calendar.empty
+        if normalized_event_calendar.empty
         else list(normalized_event_calendar.itertuples(index=False))
     )
     first_session = sessions_tuple[0]
@@ -268,16 +270,7 @@ def _normalized_events(
     event_calendar: pd.DataFrame | None, *, market: str
 ) -> pd.DataFrame:
     if event_calendar is None:
-        return pd.DataFrame(
-            columns=[
-                "date",
-                "market",
-                "type",
-                "importance",
-                "publication_date",
-                "approved_label",
-            ]
-        )
+        raise ValueError("event_calendar is required and must not be None")
     return load_event_calendar(event_calendar, market=market)
 
 
@@ -302,9 +295,8 @@ def compute_event_window_just_passed(
     recognized window (or whose publication_date is after ``t``) are
     skipped.
 
-    When ``normalized_event_calendar`` is ``None`` or empty, the returned
-    Series is all-False — ``vol_crush`` then cannot fire, which is the
-    correct degraded, V1-byte-identity-preserving behavior.
+    ``normalized_event_calendar`` must be non-empty; absent event data is a
+    broken dependency and must fail loudly instead of suppressing ``vol_crush``.
 
     Only V1 window types (``FOMC``/``CPI``/``NFP``) drive
     ``event_window_just_passed`` per ADR 0005 Q3. V2 event types
@@ -319,7 +311,7 @@ def compute_event_window_just_passed(
     if not session_tuple:
         return result
     if normalized_event_calendar is None or normalized_event_calendar.empty:
-        return result
+        raise ValueError("event_calendar is required for event_window_just_passed")
 
     event_rows = list(normalized_event_calendar.itertuples(index=False))
     if not event_rows:

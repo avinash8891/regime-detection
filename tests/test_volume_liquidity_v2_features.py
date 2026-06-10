@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 from datetime import date
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -22,7 +23,7 @@ import pytest
 
 from regime_detection.config import (
     VolumeLiquidityV2Config,
-    load_default_regime_config,
+    load_regime_config,
 )
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
@@ -34,6 +35,15 @@ from regime_detection.volume_liquidity import (
 )
 
 # ---------- Shared fixtures ---------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_V1_CONFIG_PATH = (
+    _REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+)
+
+
+def _v1_config():
+    return load_regime_config(_V1_CONFIG_PATH)
 
 
 @pytest.fixture
@@ -184,7 +194,7 @@ _INTEGRATION_AS_OF = date(2023, 12, 14)
 def test_build_feature_store_populates_volume_liquidity_v2(
     market_df_for_asof, v2_volume_config
 ):
-    cfg = load_default_regime_config()
+    cfg = _v1_config()
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
@@ -201,7 +211,7 @@ def test_build_feature_store_populates_volume_liquidity_v2(
 
 
 def test_build_feature_store_none_when_config_absent(market_df_for_asof):
-    cfg = load_default_regime_config()
+    cfg = _v1_config()
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
@@ -235,11 +245,16 @@ def test_timeline_threads_volume_liquidity_v2_config(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_data,
         config=cfg,
+        event_calendar=kwargs["event_calendar"],
         macro_series=kwargs["macro_series"],
         sector_etf_closes=kwargs["sector_etf_closes"],
         cross_asset_closes=kwargs["cross_asset_closes"],
         pit_constituent_intervals=kwargs["pit_constituent_intervals"],
         constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
     required = min(len(context.sessions), ENGINE_MINIMUM_HISTORY)
     working = slice_context_to_recent_sessions(
@@ -247,10 +262,7 @@ def test_timeline_threads_volume_liquidity_v2_config(
     )
     store = build_feature_store(
         working,
-        network_fragility_config=cfg.network_fragility,
-        trend_direction_v2_config=cfg.trend_direction_v2,
-        volatility_state_v2_config=cfg.volatility_state_v2,
-        volume_liquidity_v2_config=cfg.volume_liquidity_v2,
+        **cfg.v2_feature_build_configs(),
     )
     assert store.volume_liquidity_v2 is not None
     assert len(store.volume_liquidity_v2.volume_zscore_20d) == len(store.spy_index)
@@ -260,16 +272,16 @@ def test_timeline_threads_volume_liquidity_v2_config(
     assert len(timeline.outputs) == 5
 
 
-def test_v1_config_path_leaves_volume_liquidity_v2_none(market_df_for_asof):
+def test_v1_config_path_leaves_volume_liquidity_v2_none(
+    market_df_for_asof, event_calendar_df
+):
     """Transition-score configs fail loudly when required score inputs are absent."""
-    cfg = load_default_regime_config()
-    cfg_v1 = cfg.model_copy(update={"volume_liquidity_v2": None})
+    cfg_v1 = _v1_config()
     context = build_market_context(
         end_date=_INTEGRATION_AS_OF,
         market_data=market_df_for_asof(_INTEGRATION_AS_OF),
         config=cfg_v1,
+        event_calendar=event_calendar_df,
     )
-    with pytest.raises(RuntimeError, match="transition_risk requires score inputs"):
-        build_regime_timeline(context=context, lookback_days=5, config=cfg_v1)
     store = build_feature_store(context)
     assert store.volume_liquidity_v2 is None

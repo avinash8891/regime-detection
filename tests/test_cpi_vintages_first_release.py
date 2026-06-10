@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from regime_detection.config import InflationGrowthRulesConfig
 from regime_detection.inflation_growth import (
@@ -106,10 +107,10 @@ def test_load_cpi_vintages_first_release_deduplicates_release_dates() -> None:
     assert out.tolist() == [309.7]
 
 
-def test_load_cpi_vintages_first_release_empty_returns_empty_series() -> None:
+def test_load_cpi_vintages_first_release_empty_raises() -> None:
     empty = pd.DataFrame(columns=["date", "value", "realtime_start"])
-    out = load_cpi_vintages_first_release(empty)
-    assert out.empty
+    with pytest.raises(ValueError, match="cpi_vintages source must not be empty"):
+        load_cpi_vintages_first_release(empty)
 
 
 def test_load_cpi_vintages_first_release_missing_columns_raises() -> None:

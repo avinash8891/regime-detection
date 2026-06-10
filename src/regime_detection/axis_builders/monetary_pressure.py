@@ -80,6 +80,7 @@ def build_monetary_pressure_axis_series(
     required_inputs: list[pd.Series] = [
         features.yield_change_zscore_2y_63d,
         features.yield_change_zscore_10y_63d,
+        features.broad_usd_index_zscore_63d,
         features.yield_change_zscore_21d_2y,
         features.yield_change_zscore_21d_10y,
     ]

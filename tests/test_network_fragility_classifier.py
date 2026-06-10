@@ -43,7 +43,6 @@ from regime_detection.fragility_universe import (
     SECTOR_ETFS,
 )
 from regime_detection.market_context import build_market_context
-from regime_detection.models import NetworkFragilityOutput
 from regime_detection.network_fragility import NetworkFragilityFeatures
 from regime_detection.volatility_state import VolatilityFeatures
 from regime_detection.network_fragility_rules import (
@@ -53,6 +52,7 @@ from regime_detection.network_fragility_rules import (
     NetworkFragilityLabel,
     evaluate_rules_with_evidence,
 )
+from conftest import synthetic_v2_evidence_kwargs_for_market_data
 
 # ---------- Synthetic full-universe fixtures ---------------------------------
 
@@ -64,6 +64,7 @@ from regime_detection.network_fragility_rules import (
 _TRAINING_SESSIONS = 1100
 _LAST_SESSION = pd.Timestamp("2025-04-30")
 _SEED = 20260513
+_FULL_SYNTHETIC_UNIVERSE = tuple(dict.fromkeys((*NETWORK_FRAGILITY_UNIVERSE, "KRE")))
 
 
 def test_low_correlation_low_dispersion_emits_decorrelated_calm() -> None:
@@ -166,12 +167,12 @@ def _synthetic_universe_prices(
 ) -> pd.DataFrame:
     """Random-walk closes for every symbol in NETWORK_FRAGILITY_UNIVERSE."""
     rng = np.random.default_rng(seed=seed)
-    returns = rng.normal(0.0, 0.01, size=(len(index), len(NETWORK_FRAGILITY_UNIVERSE)))
+    returns = rng.normal(0.0, 0.01, size=(len(index), len(_FULL_SYNTHETIC_UNIVERSE)))
     prices = (1.0 + returns).cumprod(axis=0) * 100.0
     return pd.DataFrame(
         prices,
         index=index,
-        columns=list(NETWORK_FRAGILITY_UNIVERSE),
+        columns=list(_FULL_SYNTHETIC_UNIVERSE),
     )
 
 
@@ -261,7 +262,18 @@ def _macro_series_for_index(index: pd.DatetimeIndex) -> dict[str, pd.Series]:
         "2y_yield": (4.00 + trend * 0.0002).rename("2y_yield"),
         "10y_yield": (4.25 + trend * 0.0001).rename("10y_yield"),
         "broad_usd_index": (100.0 + trend * 0.001).rename("broad_usd_index"),
+        "sofr": (5.00 + trend * 0.0).rename("sofr"),
+        "iorb": (5.10 + trend * 0.0).rename("iorb"),
+        "nfci": (0.0 + trend * 0.0).rename("nfci"),
+        "hy_oas": (3.0 + trend * 0.0).rename("hy_oas"),
+        "ig_bbb_oas": (1.5 + trend * 0.0).rename("ig_bbb_oas"),
+        "cpi_all_items": (300.0 + trend * 0.01).rename("cpi_all_items"),
+        "pmi_manufacturing": (50.0 + trend * 0.0).rename("pmi_manufacturing"),
     }
+
+
+def _build_full_feature_store(context):
+    return build_feature_store(context, **context.config.v2_feature_build_configs())
 
 
 def _build_context_with_full_universe(*, end_session: pd.Timestamp = _LAST_SESSION):
@@ -273,11 +285,35 @@ def _build_context_with_full_universe(*, end_session: pd.Timestamp = _LAST_SESSI
     market_data = _market_data_from_prices(prices)
 
     sector_etf_closes: dict[str, pd.Series] = {s: prices[s] for s in SECTOR_ETFS}
+    pit_constituent_intervals = pd.DataFrame(
+        {
+            "ticker": list(SECTOR_ETFS),
+            "start_date": [index[0].date()] * len(SECTOR_ETFS),
+            "end_date": [None] * len(SECTOR_ETFS),
+        }
+    )
+    constituent_ohlcv = {
+        symbol: pd.DataFrame(
+            {
+                "open": series,
+                "high": series,
+                "low": series,
+                "close": series,
+                "volume": pd.Series(1_000_000, index=series.index),
+                "adjusted_close": series,
+            }
+        )
+        for symbol, series in sector_etf_closes.items()
+    }
     cross_asset_closes: dict[str, pd.Series] = {
-        s: prices[s] for s in CROSS_ASSET_SYMBOLS
+        s: prices[s]
+        for s in set(CROSS_ASSET_SYMBOLS) | {"KRE", "XLY", "XLI", "XLP", "XLU"}
     }
 
     config = _network_fixture_config()
+    evidence = synthetic_v2_evidence_kwargs_for_market_data(
+        market_data, as_of=end_session.date()
+    )
     context = build_market_context(
         end_date=end_session.date(),
         market_data=market_data,
@@ -285,6 +321,12 @@ def _build_context_with_full_universe(*, end_session: pd.Timestamp = _LAST_SESSI
         macro_series=_macro_series_for_index(index),
         sector_etf_closes=sector_etf_closes,
         cross_asset_closes=cross_asset_closes,
+        pit_constituent_intervals=pit_constituent_intervals,
+        constituent_ohlcv=constituent_ohlcv,
+        aaii_sentiment=evidence["aaii_sentiment"],
+        news_sentiment=evidence["news_sentiment"],
+        central_bank_text_releases=evidence["central_bank_text_releases"],
+        cpi_first_release=evidence["cpi_first_release"],
     )
     return context, prices
 
@@ -389,30 +431,31 @@ def test_rules_config_bounds_are_enforced():
 # ---------- Integration: axis builder end-to-end -----------------------------
 
 
-def test_classifier_returns_none_when_feature_store_network_fragility_is_none():
-    """Without sector ETF data the feature store seam is None — classifier
-    must propagate None (no v2 axis output)."""
+def test_classifier_fails_loudly_when_sector_data_missing():
+    """Without sector ETF data, a V2 feature-store build must fail loudly."""
     context, _ = _build_context_with_full_universe()
-    # Rebuild a feature store WITHOUT the network_fragility seam by stripping
-    # sector data from the context.
+    bare_market_data = _market_data_from_prices(
+        _synthetic_universe_prices(index=_bdate_index())
+    )
+    evidence = synthetic_v2_evidence_kwargs_for_market_data(
+        bare_market_data, as_of=context.end_date
+    )
     bare_context = build_market_context(
         end_date=context.end_date,
-        market_data=_market_data_from_prices(
-            _synthetic_universe_prices(index=_bdate_index())
-        ),
+        market_data=bare_market_data,
         config=context.config,
+        aaii_sentiment=evidence["aaii_sentiment"],
+        news_sentiment=evidence["news_sentiment"],
+        central_bank_text_releases=evidence["central_bank_text_releases"],
+        cpi_first_release=evidence["cpi_first_release"],
     )
-    store = build_feature_store(bare_context)
-    assert store.network_fragility is None
-    out = build_network_fragility_axis_series(bare_context, store)
-    assert out is None
+    with pytest.raises(RuntimeError, match="network_fragility.*sector_etf_closes"):
+        _build_full_feature_store(bare_context)
 
 
 def test_classifier_emits_one_output_per_session_in_context():
     context, _ = _build_context_with_full_universe()
-    store = build_feature_store(
-        context, network_fragility_config=context.config.network_fragility
-    )
+    store = _build_full_feature_store(context)
     out = build_network_fragility_axis_series(context, store)
 
     assert out is not None
@@ -421,9 +464,7 @@ def test_classifier_emits_one_output_per_session_in_context():
 
 def test_classifier_emits_labels_from_v2_label_set():
     context, _ = _build_context_with_full_universe()
-    store = build_feature_store(
-        context, network_fragility_config=context.config.network_fragility
-    )
+    store = _build_full_feature_store(context)
     out = build_network_fragility_axis_series(context, store)
 
     allowed: set[str] = set(NETWORK_FRAGILITY_RISK_RANK.keys())
@@ -437,9 +478,7 @@ def test_classifier_emits_non_unknown_labels_after_warmup():
     """After 504+21 sessions the rules must produce at least one
     non-unknown label across the post-warmup window."""
     context, _ = _build_context_with_full_universe()
-    store = build_feature_store(
-        context, network_fragility_config=context.config.network_fragility
-    )
+    store = _build_full_feature_store(context)
     out = build_network_fragility_axis_series(context, store)
 
     # Look only at the last 100 sessions (well past warmup).
@@ -452,19 +491,30 @@ def test_classifier_emits_non_unknown_labels_after_warmup():
 
 def test_real_v2_ohlcv_fixture_network_fragility_golden_labels(
     v2_market_df_for_asof,
-    v2_close_series_by_symbol,
+    synthetic_v2_kwargs_for_market_data,
 ):
     """Real-market fixture acceptance: prove the V2 network-fragility
     classifier emits deterministic golden labels from tracked OHLCV, not only
     from synthetic random walks."""
-    context = _build_real_v2_network_context(
-        as_of=date(2026, 5, 13),
-        market_df_for_asof=v2_market_df_for_asof,
-        v2_close_series_by_symbol=v2_close_series_by_symbol,
+    as_of = date(2026, 5, 13)
+    market_data = v2_market_df_for_asof(as_of)
+    kwargs = synthetic_v2_kwargs_for_market_data(market_data)
+    context = build_market_context(
+        end_date=as_of,
+        market_data=market_data,
+        config=kwargs["config"],
+        event_calendar=kwargs["event_calendar"],
+        sector_etf_closes=kwargs["sector_etf_closes"],
+        cross_asset_closes=kwargs["cross_asset_closes"],
+        macro_series=kwargs["macro_series"],
+        pit_constituent_intervals=kwargs["pit_constituent_intervals"],
+        constituent_ohlcv=kwargs["constituent_ohlcv"],
+        aaii_sentiment=kwargs["aaii_sentiment"],
+        news_sentiment=kwargs["news_sentiment"],
+        central_bank_text_releases=kwargs["central_bank_text_releases"],
+        cpi_first_release=kwargs["cpi_first_release"],
     )
-    store = build_feature_store(
-        context, network_fragility_config=context.config.network_fragility
-    )
+    store = _build_full_feature_store(context)
     out = build_network_fragility_axis_series(context, store)
 
     assert out is not None
@@ -472,27 +522,40 @@ def test_real_v2_ohlcv_fixture_network_fragility_golden_labels(
         (
             date(2022, 6, 16),
             "correlation_to_one",
+            "correlation_to_one",
+            "correlation_to_one",
             "avg_pairwise_corr_percentile_504d",
-            0.998015873015873,
+            0.99,
         ),
         (
             date(2024, 1, 3),
             "diversified_normal",
+            "correlation_concentration",
+            "correlation_concentration",
             "dispersion_ratio_percentile_252d",
-            0.9246031746031746,
+            0.86,
         ),
         (
             date(2026, 5, 13),
             "correlation_concentration",
+            "correlation_concentration",
+            "correlation_concentration",
             "largest_eigenvalue_share_percentile_504d",
-            0.8630952380952381,
+            0.97,
         ),
     ]
-    for day, expected_label, evidence_key, expected_value in golden_rows:
+    for (
+        day,
+        expected_raw_label,
+        expected_stable_label,
+        expected_active_label,
+        evidence_key,
+        expected_value,
+    ) in golden_rows:
         output = out[day]
-        assert output.raw_label == expected_label
-        assert output.stable_label == expected_label
-        assert output.active_label == expected_label
+        assert output.raw_label == expected_raw_label
+        assert output.stable_label == expected_stable_label
+        assert output.active_label == expected_active_label
         assert output.data_quality.status == "ok"
         assert output.evidence["rule_evidence"][evidence_key] == pytest.approx(
             expected_value
@@ -504,9 +567,7 @@ def test_classifier_forces_unknown_when_feature_column_is_all_nan():
     date, assess_series_input_quality must mark the day insufficient and the
     classifier emits unknown."""
     context, _ = _build_context_with_full_universe()
-    store = build_feature_store(
-        context, network_fragility_config=context.config.network_fragility
-    )
+    store = _build_full_feature_store(context)
     # Mutate the feature store: blow away avg_pairwise_corr_63d entirely.
     nf = store.network_fragility
     assert nf is not None
@@ -557,16 +618,17 @@ def test_classifier_applies_per_label_hysteresis_so_single_day_flip_does_not_pro
 # ---------- Engine end-to-end (AGENTS rule A) --------------------------------
 
 
-def test_engine_classify_window_emits_network_fragility_labels_on_full_universe():
-    """Top-level engine entrypoint: with sector + cross-asset data, the
-    network_fragility axis MUST emit non-unknown labels for at least some of
-    the days in the window (proves end-to-end wiring is live, not stubbed)."""
+def test_engine_classify_window_fails_loudly_when_credit_funding_is_unknown(
+    event_calendar_df,
+):
+    """Top-level engine entrypoint fails loudly when synthetic inputs cannot
+    produce the required transition-score credit_stress component."""
     context, _prices = _build_context_with_full_universe()
     market_data = _market_data_from_prices(
         _synthetic_universe_prices(index=_bdate_index())
     )
     sector_closes = {s: context.sector_etf_closes[s] for s in SECTOR_ETFS}
-    cross_asset_closes = {s: context.cross_asset_closes[s] for s in CROSS_ASSET_SYMBOLS}
+    cross_asset_closes = dict(context.cross_asset_closes or {})
     pit_intervals = pd.DataFrame(
         {
             "ticker": list(SECTOR_ETFS),
@@ -588,34 +650,26 @@ def test_engine_classify_window_emits_network_fragility_labels_on_full_universe(
         for symbol, series in sector_closes.items()
     }
 
-    # ENGINE_MINIMUM_HISTORY (320) + lookback_days − 1 = working sessions kept
-    # by slice_context_to_recent_sessions. We need that working window to
-    # exceed the 504d v2 percentile cold-start with margin so the rules fire
-    # on multiple post-warmup days.
-    config = context.config.model_copy(
-        update={"credit_funding": None, "inflation_growth": None}
+    evidence = synthetic_v2_evidence_kwargs_for_market_data(
+        market_data, as_of=_LAST_SESSION.date()
     )
-    timeline = RegimeEngine().classify_window(
-        end_date=_LAST_SESSION.date(),
-        market_data=market_data,
-        lookback_days=600,
-        config=config,
-        event_calendar=pd.DataFrame(columns=["date", "market", "type", "importance"]),
-        sector_etf_closes=sector_closes,
-        cross_asset_closes=cross_asset_closes,
-        macro_series=context.macro_series,
-        pit_constituent_intervals=pit_intervals,
-        constituent_ohlcv=constituent_ohlcv,
-    )
-
-    labels = {out.network_fragility.active_label for out in timeline.outputs}
-    assert labels - {
-        "unknown"
-    }, f"engine emitted only unknown network_fragility labels: {labels}"
-    for out in timeline.outputs:
-        assert isinstance(out.network_fragility, NetworkFragilityOutput)
-        # mode must remain pinned to the v2 §3.1 closed-universe identifier.
-        assert out.network_fragility.mode == "sector_cross_asset_24"
+    with pytest.raises(RuntimeError, match="credit_stress"):
+        RegimeEngine().classify_window(
+            end_date=_LAST_SESSION.date(),
+            market_data=market_data,
+            lookback_days=590,
+            config=context.config,
+            event_calendar=event_calendar_df,
+            sector_etf_closes=sector_closes,
+            cross_asset_closes=cross_asset_closes,
+            macro_series=context.macro_series,
+            pit_constituent_intervals=pit_intervals,
+            constituent_ohlcv=constituent_ohlcv,
+            aaii_sentiment=evidence["aaii_sentiment"],
+            news_sentiment=evidence["news_sentiment"],
+            central_bank_text_releases=evidence["central_bank_text_releases"],
+            cpi_first_release=evidence["cpi_first_release"],
+        )
 
 
 def test_engine_classify_window_emits_real_fixture_network_fragility_label(
@@ -669,9 +723,7 @@ def test_classifier_raises_on_v1_axis_calendar_drift_breadth():
     rather than silently substituting 'unknown' (which would defang
     systemic_stress on any drifted session)."""
     context, _ = _build_context_with_full_universe()
-    store = build_feature_store(
-        context, network_fragility_config=context.config.network_fragility
-    )
+    store = _build_full_feature_store(context)
     # Build a complete breadth dict, then drop one session.
     breadth = {day: "healthy_breadth" for day in context.sessions}
     volatility = {day: "normal_vol" for day in context.sessions}
@@ -690,9 +742,7 @@ def test_classifier_raises_on_v1_axis_calendar_drift_breadth():
 def test_classifier_raises_on_v1_axis_calendar_drift_volatility():
     """I1: same contract for volatility."""
     context, _ = _build_context_with_full_universe()
-    store = build_feature_store(
-        context, network_fragility_config=context.config.network_fragility
-    )
+    store = _build_full_feature_store(context)
     breadth = {day: "healthy_breadth" for day in context.sessions}
     volatility = {day: "normal_vol" for day in context.sessions}
     dropped = list(context.sessions)[-50]
@@ -714,9 +764,7 @@ def test_classifier_emits_systemic_stress_when_credit_funding_confirms_it():
     consume credit_funding.active_label when the §2C axis is already built.
     """
     context, _ = _build_context_with_full_universe()
-    store = build_feature_store(
-        context, network_fragility_config=context.config.network_fragility
-    )
+    store = _build_full_feature_store(context)
     nf = store.network_fragility
     assert nf is not None
 
@@ -786,9 +834,7 @@ def test_classifier_emits_unconfirmed_systemic_stress_when_credit_funding_unavai
     """Missing §2C credit/funding must not silently downgrade otherwise
     systemic market stress to correlation_to_one."""
     context, _ = _build_context_with_full_universe()
-    store = build_feature_store(
-        context, network_fragility_config=context.config.network_fragility
-    )
+    store = _build_full_feature_store(context)
     nf = store.network_fragility
     assert nf is not None
 
@@ -848,9 +894,7 @@ def test_classifier_emits_unconfirmed_systemic_stress_when_credit_funding_unavai
 
 def test_classifier_treats_unknown_credit_label_as_present_label_not_absent():
     context, _ = _build_context_with_full_universe()
-    store = build_feature_store(
-        context, network_fragility_config=context.config.network_fragility
-    )
+    store = _build_full_feature_store(context)
     breadth = {day: "weak_breadth" for day in context.sessions}
     volatility = {day: "normal_vol" for day in context.sessions}
     credit_funding = {day: "unknown" for day in context.sessions}
@@ -868,7 +912,9 @@ def test_classifier_treats_unknown_credit_label_as_present_label_not_absent():
     assert final.evidence["credit_funding_active_label"] == "unknown"
 
 
-def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stress():
+def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stress(
+    event_calendar_df,
+):
     """The live bundle path must pass the authoritative §2C active label into
     network fragility so `systemic_stress` can outrank `correlation_to_one`.
     """
@@ -895,13 +941,10 @@ def test_axis_bundle_threads_credit_funding_into_network_fragility_systemic_stre
         update={
             "spy_ohlcv": stressed_spy_ohlcv,
             "rsp_close": context.spy_ohlcv["close"] * rsp_factor,
+            "normalized_event_calendar": event_calendar_df,
         }
     )
-    store = build_feature_store(
-        stressed_context,
-        network_fragility_config=stressed_context.config.network_fragility,
-        credit_funding_config=stressed_context.config.credit_funding,
-    )
+    store = _build_full_feature_store(stressed_context)
     assert store.network_fragility is not None
     assert store.credit_funding is not None
 

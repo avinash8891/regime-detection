@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 import yaml
 
+from regime_detection.config import load_regime_config
 from regime_detection.engine import RegimeEngine
 from regime_detection.feature_store import build_feature_store
 from regime_detection.market_context import build_market_context
@@ -20,6 +21,9 @@ from regime_detection.strategy_response import build_strategy_response
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _GOLDEN_PATH = _REPO_ROOT / "tests" / "fixtures" / "derived" / "golden_dates.yaml"
+_V1_CONFIG_PATH = (
+    _REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v1.0.0.yaml"
+)
 
 
 def _golden_date(intent_id: str) -> date:
@@ -492,6 +496,7 @@ def test_transition_risk_series_classifier_applies_precedence_from_prepared_inpu
             for session in sessions
         },
         transition_score_config=RegimeEngine().config.transition_score,
+        strict_output_sessions=set(sessions[:-1]),
     )
 
     assert outputs[sessions[0]].state == "watch"
@@ -641,13 +646,15 @@ def test_transition_risk_series_treats_narrowing_breadth_as_sideways_stress() ->
 
 def test_transition_risk_series_fails_fast_on_price_index_misalignment(
     market_df_for_asof,
+    event_calendar_df,
 ) -> None:
     as_of = date(2023, 12, 14)
-    engine = RegimeEngine()
+    config = load_regime_config(_V1_CONFIG_PATH)
     context = build_market_context(
         end_date=as_of,
         market_data=market_df_for_asof(as_of),
-        config=engine.config,
+        config=config,
+        event_calendar=event_calendar_df,
     )
     feature_store = build_feature_store(context)
     axis_bundle = build_axis_series_bundle(context=context, feature_store=feature_store)

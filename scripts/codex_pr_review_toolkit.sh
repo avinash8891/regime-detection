@@ -12,6 +12,20 @@ if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
+run_with_timeout() {
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout -k 5 "$timeout_seconds" "$@"
+  elif command -v timeout >/dev/null 2>&1; then
+    timeout -k 5 "$timeout_seconds" "$@"
+  else
+    perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout_seconds" "$@"
+  fi
+}
+
+is_timeout_status() {
+  [[ "$1" -eq 124 || "$1" -eq 137 || "$1" -eq 142 ]]
+}
+
 repo_root="$(git rev-parse --show-toplevel)"
 review_dir="$(mktemp -d "${TMPDIR:-/tmp}/regime-codex-pr-review.XXXXXX")"
 report_dir="$(mktemp -d "${TMPDIR:-/tmp}/regime-codex-pr-reports.XXXXXX")"
@@ -40,14 +54,19 @@ cmd=(codex exec review --base "$base_sha" --ephemeral)
 if [[ -n "${CODEX_REVIEW_MODEL:-}" ]]; then
   cmd+=(--model "$CODEX_REVIEW_MODEL")
 fi
-if perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout_seconds" "${cmd[@]}" >"$output_file"; then
+if run_with_timeout "${cmd[@]}" >"$output_file"; then
   cat "$output_file"
   exit 0
+else
+  status=$?
 fi
 
-status=$?
-if [[ "$status" -eq 142 ]]; then
+if is_timeout_status "$status"; then
   echo "codex pr-review-toolkit timed out after ${timeout_seconds}s; skipping" >&2
+  exit 0
+fi
+if rg -q "failed to get diff|exitCode=128|fatal: working tree '.+' already exists" "$output_file"; then
+  echo "codex pr-review-toolkit could not compute diff in this worktree snapshot; skipping" >&2
   exit 0
 fi
 echo "codex pr-review-toolkit failed with exit code $status" >&2

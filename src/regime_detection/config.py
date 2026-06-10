@@ -180,6 +180,41 @@ class RegimeConfig(StrictBaseModel):
 
     @model_validator(mode="after")
     def _validate_v2_cross_section_dependencies(self) -> "RegimeConfig":
+        if self.config_version == "core3-v2.0.0":
+            required_v2_sections = (
+                "network_fragility",
+                "trend_direction_v2",
+                "volatility_state_v2",
+                "breadth_state_v2",
+                "volume_liquidity_v2",
+                "volume_liquidity_state",
+                "transition_score",
+                "trend_character_v2",
+                "monetary_pressure_v2",
+                "monetary_pressure_state",
+                "central_bank_text",
+                "news_sentiment",
+                "sentiment_score",
+                "inflation_growth",
+                "credit_funding",
+                "hmm",
+                "clustering",
+                "change_point",
+                "no_flip_flop",
+                "cohort_routing",
+                "strategy_family_constraints",
+                "strategy_event_modifiers",
+            )
+            missing = [
+                section
+                for section in required_v2_sections
+                if getattr(self, section) is None
+            ]
+            if missing:
+                raise ValueError(
+                    "core3-v2.0.0 config missing required V2 sections: "
+                    + ", ".join(missing)
+                )
         if (
             self.config_version == "core3-v2.0.0"
             and self.volume_liquidity_state is not None

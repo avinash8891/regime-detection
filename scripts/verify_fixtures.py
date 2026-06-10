@@ -37,6 +37,9 @@ from regime_data_fetch.cli_common import parse_date  # noqa: E402
 
 LOGGER = logging.getLogger("verify_fixtures")
 EVENT_CALENDAR_PATH = REPO_ROOT / "tests" / "fixtures" / "events" / "us_events.yaml"
+ENGINE_CONFIG_PATH = (
+    REPO_ROOT / "src" / "regime_detection" / "configs" / "core3-v2.0.0.yaml"
+)
 
 INTENTS: list[dict[str, Any]] = [
     {
@@ -222,7 +225,7 @@ def _serialize_obj(x: Any) -> Any:
 def _classify_all_intents(
     market_data: pd.DataFrame,
 ) -> dict[date, Any]:
-    engine = RegimeEngine()
+    engine = RegimeEngine(config_path=ENGINE_CONFIG_PATH)
     intent_dates = sorted(parse_date(item["intent_date"]) for item in INTENTS)
     end = max(intent_dates)
     earliest = min(intent_dates)

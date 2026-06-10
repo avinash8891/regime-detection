@@ -633,13 +633,10 @@ def test_build_sentiment_score_series_forward_fills_from_publication_date() -> N
     assert score.loc[pd.Timestamp("2024-03-15")] == 22.0
 
 
-def test_build_sentiment_score_series_returns_none_when_no_aaii() -> None:
-    """Optional input contract: when AAII is None, helper returns None and
-    the euphoria predicate falsifies via the sentiment_score=None branch."""
+def test_build_sentiment_score_series_raises_when_no_aaii() -> None:
+    """AAII is required for the direct helper; absence must fail loudly."""
     from regime_detection._feature_specs import _build_sentiment_score_series
 
     sessions = pd.bdate_range(start="2024-03-01", end="2024-03-15", freq="B")
-    assert (
+    with pytest.raises(ValueError, match="aaii_sentiment is required"):
         _build_sentiment_score_series(aaii_sentiment=None, session_index=sessions)
-        is None
-    )

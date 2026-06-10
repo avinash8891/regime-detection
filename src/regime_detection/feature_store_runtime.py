@@ -64,10 +64,9 @@ class FeatureSpec(Generic[T, StateT]):
     user-observable (e.g. derived series consumed only by other specs). Default
     True — public features that should appear in `FeatureStore.availability`.
 
-    If `build` returns None despite a successful `resolve`, the orchestrator emits
-    `available=False, reason="not_configured"` — matching legacy `_availability`
-    semantics for `compute_*_features` functions whose preconditions can't always
-    be expressed as resolve gates.
+    If a V2 runtime build cannot resolve inputs or `build` returns None despite
+    a successful `resolve`, the orchestrator raises. Missing data is a broken
+    production state, not a degraded classification.
     """
 
     name: str
@@ -84,9 +83,20 @@ def _run_feature_specs(
     state: StateT,
 ) -> dict[str, FeatureAvailability]:
     report: dict[str, FeatureAvailability] = {}
+    strict_fail_loud = _state_uses_v2_config(state)
     for spec in specs:
         resolved = spec.resolve(state)
         if isinstance(resolved, _Unavailable):
+            if strict_fail_loud:
+                reason = (
+                    "not_configured"
+                    if not resolved.missing_inputs
+                    else "missing_required_inputs"
+                )
+                raise RuntimeError(
+                    f"feature spec {spec.name!r} unavailable: {reason}; "
+                    f"missing_inputs={resolved.missing_inputs}"
+                )
             if spec.report:
                 reason = (
                     "not_configured"
@@ -103,6 +113,11 @@ def _run_feature_specs(
                 )
             continue
         value = spec.build(**resolved)
+        if value is None and strict_fail_loud:
+            raise RuntimeError(
+                f"feature spec {spec.name!r} returned None after inputs resolved; "
+                "insufficient history or failed model fit must fail loudly"
+            )
         spec.store(state, value)
         if spec.report:
             if value is None:
@@ -128,3 +143,10 @@ def _run_feature_specs(
                     required_inputs=spec.required_inputs,
                 )
     return report
+
+
+def _state_uses_v2_config(state: object) -> bool:
+    context = getattr(state, "context", None)
+    config = getattr(context, "config", None)
+    config_version = getattr(config, "config_version", None)
+    return config_version == "core3-v2.0.0"

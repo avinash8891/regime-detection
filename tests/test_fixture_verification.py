@@ -248,6 +248,45 @@ def test_fixture_verification_logs_git_sha_lookup_failure(
     assert "git rev-parse HEAD failed" in caplog.text
 
 
+def test_fixture_verification_uses_explicit_engine_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    import importlib.util
+
+    script_path = repo_root / "scripts" / "verify_fixtures.py"
+    spec = importlib.util.spec_from_file_location("verify_fixtures", script_path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+
+    seen_config_paths = []
+
+    class FakeEngine:
+        def __init__(self, config_path=None):
+            seen_config_paths.append(config_path)
+
+        def classify_window(self, **_kwargs):
+            return SimpleNamespace(outputs=[])
+
+    monkeypatch.setattr(mod, "RegimeEngine", FakeEngine)
+    monkeypatch.setattr(
+        mod,
+        "INTENTS",
+        [
+            {
+                "intent_date": "2024-01-02",
+                "search_window_trading_days": 0,
+                "intent": {},
+            }
+        ],
+    )
+
+    assert mod._classify_all_intents(pd.DataFrame()) == {}
+    assert seen_config_paths == [mod.ENGINE_CONFIG_PATH]
+
+
 def test_classified_golden_outputs_cover_every_row_without_silent_skips(
     golden_rows: list[dict[str, object]],
     classified_golden_outputs: dict[date, object],

@@ -16,7 +16,12 @@ from regime_detection.event_calendar_labels import (
 )
 from regime_detection.feature_store import FeatureStore
 from regime_detection.market_context import MarketContext
-from regime_detection.models import EventCalendarOutput, TransitionRiskOutput
+from regime_detection.models import (
+    DataQuality,
+    EventCalendarOutput,
+    TransitionRiskEvidencePayload,
+    TransitionRiskOutput,
+)
 from regime_detection.transition_risk import (
     TransitionRuleFlags,
     compose_transition_risk_output,
@@ -132,6 +137,11 @@ def build_transition_risk_series(
             cooldown_window_days=legacy_selection_config.cooldown_window_days,
             state_confirmation_days=legacy_selection_config.state_confirmation_days,
             initial_active_state=legacy_selection_config.initial_active_state,
+            strict_output_sessions=(
+                None
+                if requested_output_sessions is None
+                else set(requested_output_sessions)
+            ),
         )
         return _filter_transition_risk_outputs(
             outputs=outputs,
@@ -228,6 +238,11 @@ def build_transition_risk_series(
         cooldown_window_days=transition_score_config.cooldown_window_days,
         state_confirmation_days=transition_score_config.state_confirmation_days,
         initial_active_state=transition_score_config.initial_active_state,
+        strict_output_sessions=(
+            None
+            if requested_output_sessions is None
+            else set(requested_output_sessions)
+        ),
     )
     return _filter_transition_risk_outputs(
         outputs=outputs,
@@ -243,6 +258,35 @@ def _filter_transition_risk_outputs(
     if output_sessions is None:
         return outputs
     return {day: outputs[day] for day in output_sessions}
+
+
+def _strict_for_day(day: date, strict_output_sessions: set[date] | None) -> bool:
+    return strict_output_sessions is None or day in strict_output_sessions
+
+
+def _insufficient_transition_risk_output(
+    *,
+    score: ComposedTransitionScore,
+    flags: TransitionRuleFlags,
+    reason: str,
+) -> TransitionRiskOutput:
+    triggered_rules = ["insufficient_data"]
+    return TransitionRiskOutput(
+        state="insufficient_data",
+        score=None,
+        score_components=None,
+        primary_drivers=[],
+        triggered_rules=triggered_rules,
+        evidence=TransitionRiskEvidencePayload(
+            triggered_rules=triggered_rules,
+            stable_changed_today=flags.stable_changed_today,
+            days_since_axis_switch=flags.days_since_axis_switch,
+            axis_switch_count=flags.axis_switch_count,
+            recent_axis_switch_count=flags.recent_axis_switch_count,
+            macro_event_labels=list(score.macro_event_labels),
+        ),
+        data_quality=DataQuality(status="insufficient_history", reason=reason),
+    )
 
 
 def _legacy_transition_score_config() -> TransitionScoreConfig:
@@ -490,6 +534,7 @@ def build_transition_risk_outputs_by_date(
     cooldown_window_days: int = 5,
     state_confirmation_days: dict[str, int] | None = None,
     initial_active_state: str | None = None,
+    strict_output_sessions: set[date] | None = None,
 ) -> dict[date, TransitionRiskOutput]:
     index = pd.Index(sessions)
     trend_direction_active = pd.Series(
@@ -567,8 +612,12 @@ def build_transition_risk_outputs_by_date(
     selection_config = transition_score_config or _legacy_transition_score_config()
     raw_outputs: dict[date, TransitionRiskOutput] = {}
     for i, day in enumerate(sessions):
+        strict_day = transition_score_config is not None and _strict_for_day(
+            day, strict_output_sessions
+        )
         switch_days = history.days_since_axis_switch_by_date[day]
         inputs = transition_score_inputs_by_date[day]
+        score_not_ready_reason: str | None = None
         if transition_score_config is None:
             composed = ComposedTransitionScore(
                 score=0.0,
@@ -583,35 +632,54 @@ def build_transition_risk_outputs_by_date(
                 components=None,
                 missing_components=("axis_data_quality",),
             )
+            score_not_ready_reason = "axis_data_quality"
         else:
-            composed = compose_transition_score_for_session(
-                realized_vol_short=inputs.realized_vol_short,
-                realized_vol_long=inputs.realized_vol_long,
-                pct_above_50dma=inputs.pct_above_50dma,
-                avg_pairwise_corr_percentile_504d=(
-                    inputs.avg_pairwise_corr_percentile_504d
-                ),
-                drawdown_252d=inputs.drawdown_252d,
-                event_calendar_labels=inputs.event_calendar_labels,
-                spy_close=inputs.spy_close,
-                spy_sma_50=inputs.spy_sma_50,
-                largest_eigenvalue_share_percentile_504d=(
-                    inputs.largest_eigenvalue_share_percentile_504d
-                ),
-                effective_rank_percentile_504d=inputs.effective_rank_percentile_504d,
-                absorption_ratio_top3=inputs.absorption_ratio_top3,
-                credit_funding_label=inputs.credit_funding_label,
-                volume_liquidity_label=inputs.volume_liquidity_label,
-                volume_zscore_20d=inputs.volume_zscore_20d,
-                gap_frequency_percentile_252d=inputs.gap_frequency_percentile_252d,
-                intraday_range_percentile_252d=inputs.intraday_range_percentile_252d,
-                hmm_top_state_prob_now=inputs.hmm_top_state_prob_now,
-                hmm_top_state_prob_5d_ago=inputs.hmm_top_state_prob_5d_ago,
-                change_point_score=inputs.change_point_score,
-                cluster_id_now=inputs.cluster_id_now,
-                cluster_id_5d_ago=inputs.cluster_id_5d_ago,
-                config=transition_score_config,
-            )
+            try:
+                composed = compose_transition_score_for_session(
+                    realized_vol_short=inputs.realized_vol_short,
+                    realized_vol_long=inputs.realized_vol_long,
+                    pct_above_50dma=inputs.pct_above_50dma,
+                    avg_pairwise_corr_percentile_504d=(
+                        inputs.avg_pairwise_corr_percentile_504d
+                    ),
+                    drawdown_252d=inputs.drawdown_252d,
+                    event_calendar_labels=inputs.event_calendar_labels,
+                    spy_close=inputs.spy_close,
+                    spy_sma_50=inputs.spy_sma_50,
+                    largest_eigenvalue_share_percentile_504d=(
+                        inputs.largest_eigenvalue_share_percentile_504d
+                    ),
+                    effective_rank_percentile_504d=(
+                        inputs.effective_rank_percentile_504d
+                    ),
+                    absorption_ratio_top3=inputs.absorption_ratio_top3,
+                    credit_funding_label=inputs.credit_funding_label,
+                    volume_liquidity_label=inputs.volume_liquidity_label,
+                    volume_zscore_20d=inputs.volume_zscore_20d,
+                    gap_frequency_percentile_252d=(
+                        inputs.gap_frequency_percentile_252d
+                    ),
+                    intraday_range_percentile_252d=(
+                        inputs.intraday_range_percentile_252d
+                    ),
+                    hmm_top_state_prob_now=inputs.hmm_top_state_prob_now,
+                    hmm_top_state_prob_5d_ago=inputs.hmm_top_state_prob_5d_ago,
+                    change_point_score=inputs.change_point_score,
+                    cluster_id_now=inputs.cluster_id_now,
+                    cluster_id_5d_ago=inputs.cluster_id_5d_ago,
+                    config=transition_score_config,
+                )
+            except RuntimeError as exc:
+                if strict_day:
+                    raise
+                composed = ComposedTransitionScore(
+                    score=None,
+                    interpretation=None,
+                    components=None,
+                    missing_components=("transition_score",),
+                    macro_event_labels=inputs.event_calendar_labels,
+                )
+                score_not_ready_reason = str(exc)
         components = composed.components or {}
         overrides = selection_config.overrides
         credit_stressed = (
@@ -655,24 +723,41 @@ def build_transition_risk_outputs_by_date(
                 default=0.0,
             )
         )
-        output = compose_transition_risk_output(
-            score=composed,
-            primary_driver_min=overrides.primary_driver_min,
-            flags=TransitionRuleFlags(
-                crisis=crisis,
-                bear_stress=bear_stress,
-                fragile_bull=fragile_bull,
-                recovery_attempt=bool(recovery_attempt_arr[i]),
-                sideways_stress=sideways_stress,
-                event_transition_watch=event_transition_watch,
-                post_switch_cooldown=bool(post_switch_cooldown_arr[i]),
-                insufficient_data=bool(insufficient_data_arr[i]),
-                stable_changed_today=history.stable_changed_by_date[day],
-                days_since_axis_switch=switch_days,
-                axis_switch_count=history.axis_switch_count_by_date[day],
-                recent_axis_switch_count=history.recent_axis_switch_count_by_date[day],
-            ),
+        flags = TransitionRuleFlags(
+            crisis=crisis,
+            bear_stress=bear_stress,
+            fragile_bull=fragile_bull,
+            recovery_attempt=bool(recovery_attempt_arr[i]),
+            sideways_stress=sideways_stress,
+            event_transition_watch=event_transition_watch,
+            post_switch_cooldown=bool(post_switch_cooldown_arr[i]),
+            insufficient_data=bool(insufficient_data_arr[i]),
+            stable_changed_today=history.stable_changed_by_date[day],
+            days_since_axis_switch=switch_days,
+            axis_switch_count=history.axis_switch_count_by_date[day],
+            recent_axis_switch_count=history.recent_axis_switch_count_by_date[day],
         )
+        not_ready_reason = score_not_ready_reason
+        if not_ready_reason is None and flags.insufficient_data:
+            not_ready_reason = "axis_data_quality"
+        if not_ready_reason is None and (
+            composed.score is None
+            or composed.interpretation is None
+            or composed.components is None
+        ):
+            not_ready_reason = "transition_score"
+        if not_ready_reason is not None and not strict_day:
+            output = _insufficient_transition_risk_output(
+                score=composed,
+                flags=flags,
+                reason=not_ready_reason,
+            )
+        else:
+            output = compose_transition_risk_output(
+                score=composed,
+                primary_driver_min=overrides.primary_driver_min,
+                flags=flags,
+            )
         if transition_score_config is None:
             # F-049: V1 path. The legacy transition-risk state machine above is run in
             # full (hard-override flags, debounce) and its STATE + evidence are
@@ -694,7 +779,11 @@ def build_transition_risk_outputs_by_date(
         raw_outputs=raw_outputs,
         state_confirmation_days=state_confirmation_days
         or selection_config.state_confirmation_days,
-        initial_active_state=initial_active_state,
+        initial_active_state=(
+            initial_active_state
+            if initial_active_state is not None
+            else selection_config.initial_active_state
+        ),
     )
 
 
