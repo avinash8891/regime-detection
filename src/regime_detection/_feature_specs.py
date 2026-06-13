@@ -7,7 +7,8 @@ This module is package-private (leading underscore). It defines:
 - Core ``_resolve_*`` / ``_build_*`` helper functions and the two sentinel-score
   series builders (``_build_sentiment_score_series``,
   ``_build_news_sentiment_score_series``). Trainable-evidence resolvers live in
-  ``_feature_specs_trainable``.
+  ``_feature_specs_trainable``; macro-axis resolvers live in
+  ``_feature_specs_macro``.
 - Module-level constants ``_FRED_DGS2_KEY``, ``_MIN_SENTIMENT_WEEKLY_READINGS``,
   that are used here and re-exposed by ``feature_store`` where needed.
 """
@@ -33,7 +34,6 @@ from regime_detection.change_point import (
     ChangePointFeatures,
     compute_change_point_features,
 )
-from regime_detection.central_bank_text import to_daily_score_series
 from regime_detection.config import (
     BreadthV2Config,
     CentralBankTextConfig,
@@ -50,22 +50,6 @@ from regime_detection.config import (
 from regime_detection.credit_funding import (
     CreditFundingFeatures,
     compute_credit_funding_features,
-)
-from regime_detection.credit_funding_rules import (
-    BROAD_USD_INDEX_KEY as _CF_BROAD_USD_KEY,
-    FEDFUNDS_KEY as _CF_FEDFUNDS_KEY,
-    HYG_KEY as _CF_HYG_KEY,
-    HY_OAS_KEY as _CF_HY_OAS_KEY,
-    IG_OAS_KEY as _CF_IG_OAS_KEY,
-    IOER_LEGACY_KEY as _CF_IOER_LEGACY_KEY,
-    IORB_KEY as _CF_IORB_KEY,
-    KRE_KEY as _CF_KRE_KEY,
-    LQD_KEY as _CF_LQD_KEY,
-    NFCI_KEY as _CF_NFCI_KEY,
-    REQUIRED_CROSS_ASSET_KEYS as _CF_CROSS_ASSET_KEYS,
-    REQUIRED_MACRO_KEYS as _CF_MACRO_KEYS,
-    SOFR_KEY as _CF_SOFR_KEY,
-    TLT_KEY as _CF_TLT_KEY,
 )
 from regime_detection.event_calendar import compute_event_window_just_passed
 from regime_detection.fragility_universe import SECTOR_ETFS
@@ -113,19 +97,7 @@ from regime_detection.inflation_growth import (
     compute_inflation_growth_features,
 )
 from regime_detection.inflation_growth_rules import (
-    AGG_FORWARD_EPS_REVISION_KEY as _IG_AGG_FORWARD_EPS_REVISION_KEY,
-    CPI_KEY as _IG_CPI_KEY,
-    CPI_NOWCAST_KEY as _IG_CPI_NOWCAST_KEY,
-    DBC_KEY as _IG_DBC_KEY,
     DGS10_KEY as _IG_DGS10_KEY,
-    PMI_KEY as _IG_PMI_KEY,
-    REQUIRED_CROSS_ASSET_KEYS as _IG_CROSS_ASSET_KEYS,
-    REQUIRED_MACRO_KEYS as _IG_MACRO_KEYS,
-    TLT_KEY as _IG_TLT_KEY,
-    XLI_KEY as _IG_XLI_KEY,
-    XLP_KEY as _IG_XLP_KEY,
-    XLU_KEY as _IG_XLU_KEY,
-    XLY_KEY as _IG_XLY_KEY,
 )
 from regime_detection.feature_store_runtime import (
     FeatureSpec,
@@ -140,8 +112,13 @@ from regime_detection._feature_specs_trainable import (
     resolve_hmm,
     resolve_realized_vol_21d,
 )
+from regime_detection._feature_specs_macro import (
+    FRED_DGS2_KEY,
+    resolve_credit_funding,
+    resolve_inflation_growth,
+    resolve_monetary,
+)
 
-_FRED_DGS2_KEY = "2y_yield"
 # v2 §1A (spec lines 231-233): euphoria's sentiment_score is NaN until at least
 # this many weekly AAII readings exist on or before the session (F-006).
 _MIN_SENTIMENT_WEEKLY_READINGS = 4
@@ -196,22 +173,6 @@ class _FeatureStoreBuildState:
     credit_funding: CreditFundingFeatures | None = None
     inflation_growth: InflationGrowthFeatures | None = None
     change_point: ChangePointFeatures | None = None
-
-
-def _missing_macro_keys(
-    macro_series: dict[str, pd.Series] | None, required_keys: tuple[str, ...]
-) -> tuple[str, ...]:
-    if macro_series is None:
-        return ("macro_series",) + required_keys
-    return tuple(key for key in required_keys if key not in macro_series)
-
-
-def _missing_cross_asset_keys(
-    cross_asset_closes: dict[str, pd.Series] | None, required_keys: tuple[str, ...]
-) -> tuple[str, ...]:
-    if cross_asset_closes is None:
-        return ("cross_asset_closes",) + required_keys
-    return tuple(key for key in required_keys if key not in cross_asset_closes)
 
 
 def _missing_sector_inputs(state: _FeatureStoreBuildState) -> tuple[str, ...]:
@@ -653,90 +614,6 @@ def _resolve_volume_liquidity_v2(
     }
 
 
-def _resolve_credit_funding(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    missing: list[str] = []
-    if state.credit_funding_config is None:
-        missing.append("credit_funding_config")
-        return _Unavailable(missing_inputs=tuple(missing))
-    cross_missing = _missing_cross_asset_keys(
-        state.context.cross_asset_closes, tuple(_CF_CROSS_ASSET_KEYS)
-    )
-    macro_missing = _missing_macro_keys(
-        state.context.macro_series, tuple(_CF_MACRO_KEYS)
-    )
-    missing.extend(cross_missing)
-    missing.extend(macro_missing)
-    if missing:
-        return _Unavailable(missing_inputs=tuple(missing))
-    cross_asset_closes = _require_build_input(
-        state.context.cross_asset_closes, "cross_asset_closes"
-    )
-    macro_series = _require_build_input(state.context.macro_series, "macro_series")
-    nan_oas = pd.Series(float("nan"), index=state.spy_close.index)
-    return {
-        "hyg_close": cross_asset_closes[_CF_HYG_KEY],
-        "lqd_close": cross_asset_closes[_CF_LQD_KEY],
-        "tlt_close": cross_asset_closes[_CF_TLT_KEY],
-        "kre_close": cross_asset_closes[_CF_KRE_KEY],
-        "spy_close": state.spy_close,
-        "sofr": macro_series[_CF_SOFR_KEY],
-        "iorb": macro_series[_CF_IORB_KEY],
-        "nfci_weekly": macro_series[_CF_NFCI_KEY],
-        "broad_usd_index": macro_series[_CF_BROAD_USD_KEY],
-        "hy_oas": macro_series.get(_CF_HY_OAS_KEY, nan_oas),
-        "ig_oas": macro_series.get(_CF_IG_OAS_KEY, nan_oas),
-        "config": state.credit_funding_config.rules,
-        "fedfunds": macro_series.get(_CF_FEDFUNDS_KEY),
-        "ioer_legacy": macro_series.get(_CF_IOER_LEGACY_KEY),
-    }
-
-
-def _resolve_inflation_growth(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    missing: list[str] = []
-    if state.inflation_growth_config is None:
-        missing.append("inflation_growth_config")
-        return _Unavailable(missing_inputs=tuple(missing))
-    cross_missing = _missing_cross_asset_keys(
-        state.context.cross_asset_closes, tuple(_IG_CROSS_ASSET_KEYS)
-    )
-    macro_missing = _missing_macro_keys(
-        state.context.macro_series, tuple(_IG_MACRO_KEYS)
-    )
-    missing.extend(cross_missing)
-    missing.extend(macro_missing)
-    if missing:
-        return _Unavailable(missing_inputs=tuple(missing))
-    cross_asset_closes = _require_build_input(
-        state.context.cross_asset_closes, "cross_asset_closes"
-    )
-    macro_series = _require_build_input(state.context.macro_series, "macro_series")
-    return {
-        "cpi_all_items": macro_series[_IG_CPI_KEY],
-        "pmi_manufacturing": macro_series[_IG_PMI_KEY],
-        "dgs10": macro_series[_IG_DGS10_KEY],
-        "dbc_close": cross_asset_closes[_IG_DBC_KEY],
-        "spy_close": state.spy_close,
-        "tlt_close": cross_asset_closes[_IG_TLT_KEY],
-        "xly_close": cross_asset_closes[_IG_XLY_KEY],
-        "xli_close": cross_asset_closes[_IG_XLI_KEY],
-        "xlp_close": cross_asset_closes[_IG_XLP_KEY],
-        "xlu_close": cross_asset_closes[_IG_XLU_KEY],
-        "config": state.inflation_growth_config.rules,
-        "cpi_nowcast": macro_series.get(_IG_CPI_NOWCAST_KEY),
-        "aggregate_forward_eps_revision": macro_series.get(
-            _IG_AGG_FORWARD_EPS_REVISION_KEY
-        ),
-        "cpi_first_release": state.context.cpi_first_release,
-        "use_first_release_cpi_when_available": (
-            state.inflation_growth_config.rules.use_first_release_cpi_when_available
-        ),
-    }
-
-
 def _build_realized_vol_21d(close: pd.Series, window: int) -> pd.Series:
     return realized_vol(close, window=window)
 
@@ -792,55 +669,6 @@ def _build_change_point_feature(
         realized_vol_21d=realized_vol_21d,
         config=config,
     )
-
-
-def _resolve_monetary(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    if state.monetary_pressure_v2_config is None:
-        # Unconfigured monetary axis is expected absence — reason="not_configured"
-        # via the orchestrator's empty-missing_inputs branch, paired with the
-        # spec's default policy="none" so coverage marks the run safe.
-        return _Unavailable(missing_inputs=())
-    macro_missing = _missing_macro_keys(
-        state.context.macro_series,
-        (_FRED_DGS2_KEY, _IG_DGS10_KEY, "broad_usd_index"),
-    )
-    if macro_missing:
-        # Monetary IS configured but required macro data is missing — this is
-        # an UNSAFE data gap for direct build_feature_store / build_regime_timeline
-        # callers that bypass the ClassifyRequest validator. Override the spec's
-        # default policy ("none", for opt-out callers) with "raise" so
-        # classification_coverage flags the run as unsafe.
-        return _Unavailable(
-            missing_inputs=tuple(macro_missing),
-            policy_override="raise",
-        )
-    macro_series = _require_build_input(state.context.macro_series, "macro_series")
-    cb_text_score_series: pd.Series | None = None
-    if state.central_bank_text_config is not None:
-        if (
-            state.context.central_bank_text_releases is None
-            or state.context.central_bank_text_releases.empty
-        ):
-            return _Unavailable(
-                missing_inputs=("central_bank_text_releases",),
-                policy_override="raise",
-            )
-        cb_text_score_series = to_daily_score_series(
-            state.context.central_bank_text_releases,
-            session_index=_as_datetime_index(state.spy_close.index),
-            smoothing_window_sessions=state.central_bank_text_config.smoothing_window_sessions,
-            same_date_aggregation=state.central_bank_text_config.same_date_aggregation,
-            max_release_age_days=state.central_bank_text_config.max_release_age_days,
-        )
-    return {
-        "dgs2": macro_series[_FRED_DGS2_KEY],
-        "dgs10": macro_series[_IG_DGS10_KEY],
-        "broad_usd_index": macro_series["broad_usd_index"],
-        "central_bank_text_score": cb_text_score_series,
-        "config": state.monetary_pressure_v2_config,
-    }
 
 
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
@@ -955,11 +783,11 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         policy="none",
         required_inputs=(
             "macro_series",
-            _FRED_DGS2_KEY,
+            FRED_DGS2_KEY,
             _IG_DGS10_KEY,
             "broad_usd_index",
         ),
-        resolve=_resolve_monetary,
+        resolve=resolve_monetary,
         build=compute_monetary_pressure_features,
         store=lambda s, v: setattr(s, "monetary", v),
     ),
@@ -1006,7 +834,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         name="credit_funding",
         policy="none",
         required_inputs=("credit_funding_config", "cross_asset_closes", "macro_series"),
-        resolve=_resolve_credit_funding,
+        resolve=resolve_credit_funding,
         build=compute_credit_funding_features,  # pyright: ignore[reportUnknownArgumentType]
         store=lambda s, v: setattr(s, "credit_funding", v),
     ),
@@ -1018,7 +846,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
             "cross_asset_closes",
             "macro_series",
         ),
-        resolve=_resolve_inflation_growth,
+        resolve=resolve_inflation_growth,
         build=compute_inflation_growth_features,  # pyright: ignore[reportUnknownArgumentType]
         store=lambda s, v: setattr(s, "inflation_growth", v),
     ),
