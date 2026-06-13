@@ -11,6 +11,8 @@ __all__ = [
     "FeatureAvailabilityPolicy",
     "FeatureSpec",
     "_Unavailable",
+    "_require_build_input",
+    "_require_feature",
     "_run_feature_specs",
 ]
 
@@ -150,3 +152,15 @@ def _state_uses_v2_config(state: object) -> bool:
     config = getattr(context, "config", None)
     config_version = getattr(config, "config_version", None)
     return config_version == "core3-v2.0.0"
+
+
+def _require_feature(value: T | None, name: str) -> T:
+    if value is None:
+        raise RuntimeError(f"feature builder did not populate required feature: {name}")
+    return value
+
+
+def _require_build_input(value: T | None, name: str) -> T:
+    if value is None:
+        raise RuntimeError(f"feature spec missing required build input: {name}")
+    return value

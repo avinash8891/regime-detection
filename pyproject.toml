@@ -88,6 +88,7 @@ include = [
   "src/regime_detection/coverage_models.py",
   "src/regime_detection/wire_models.py",
   "src/regime_detection/axis_series.py",
+  "src/regime_detection/_feature_specs_trainable.py",
   "src/regime_detection/feature_store.py",
   "src/regime_detection/feature_store_runtime.py",
   "src/regime_detection/timeline.py",

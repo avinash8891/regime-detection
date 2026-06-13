@@ -4,17 +4,17 @@ This module is package-private (leading underscore). It defines:
 - ``_FeatureStoreBuildState``: mutable accumulator threaded through all feature specs.
 - ``_FEATURE_SPECS``: the ordered tuple of ``FeatureSpec`` instances consumed by
   ``build_feature_store`` via ``_run_feature_specs``.
-- All ``_resolve_*`` / ``_build_*`` helper functions and the two sentinel-score
+- Core ``_resolve_*`` / ``_build_*`` helper functions and the two sentinel-score
   series builders (``_build_sentiment_score_series``,
-  ``_build_news_sentiment_score_series``).
+  ``_build_news_sentiment_score_series``). Trainable-evidence resolvers live in
+  ``_feature_specs_trainable``.
 - Module-level constants ``_FRED_DGS2_KEY``, ``_MIN_SENTIMENT_WEEKLY_READINGS``,
-  ``_T`` that are used here and re-exposed by ``feature_store`` where needed.
+  that are used here and re-exposed by ``feature_store`` where needed.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypeVar
 
 import numpy as np
 import pandas as pd
@@ -130,13 +130,21 @@ from regime_detection.inflation_growth_rules import (
 from regime_detection.feature_store_runtime import (
     FeatureSpec,
     _Unavailable,
+    _require_build_input,
+    _require_feature,
+)
+from regime_detection._feature_specs_trainable import (
+    resolve_change_point,
+    resolve_clustering,
+    resolve_drawdown_63d,
+    resolve_hmm,
+    resolve_realized_vol_21d,
 )
 
 _FRED_DGS2_KEY = "2y_yield"
 # v2 §1A (spec lines 231-233): euphoria's sentiment_score is NaN until at least
 # this many weekly AAII readings exist on or before the session (F-006).
 _MIN_SENTIMENT_WEEKLY_READINGS = 4
-_T = TypeVar("_T")
 
 
 def _as_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
@@ -645,84 +653,6 @@ def _resolve_volume_liquidity_v2(
     }
 
 
-def _resolve_drawdown_63d(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    """Disjunction gate: drawdown_63d is built when hmm OR clustering config
-    is present (those features consume it). When both are None, _Unavailable —
-    matches legacy 'state.drawdown_63d = None' branch."""
-    if state.context.config.hmm is None and state.context.config.clustering is None:
-        return _Unavailable(missing_inputs=("hmm_or_clustering_config",))
-    return {"close": state.spy_close, "lookback": 63}
-
-
-def _resolve_hmm(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    missing: list[str] = []
-    if state.context.config.hmm is None:
-        missing.append("hmm_config")
-    if state.volume_liquidity_v2 is None:
-        missing.append("volume_liquidity_v2")
-    if state.network_fragility is None:
-        missing.append("network_fragility")
-    if missing:
-        return _Unavailable(missing_inputs=tuple(missing))
-    volatility = _require_feature(state.volatility, "volatility")
-    volume_liquidity_v2 = _require_feature(
-        state.volume_liquidity_v2, "volume_liquidity_v2"
-    )
-    network_fragility = _require_feature(state.network_fragility, "network_fragility")
-    realized_vol_21d = _require_feature(state.realized_vol_21d, "realized_vol_21d")
-    drawdown_63d = _require_feature(state.drawdown_63d, "drawdown_63d")
-    return {
-        "config": state.context.config.hmm,
-        "return_1d": volatility.return_1d,
-        "realized_vol_21d": realized_vol_21d,
-        "drawdown_63d": drawdown_63d,
-        "volume_zscore_20d": volume_liquidity_v2.volume_zscore_20d,
-        "avg_pairwise_corr_63d": network_fragility.avg_pairwise_corr_63d,
-    }
-
-
-def _resolve_clustering(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    missing: list[str] = []
-    if state.context.config.clustering is None:
-        missing.append("clustering_config")
-    breadth_state_v2 = state.breadth_state_v2
-    if breadth_state_v2 is None or breadth_state_v2.pct_above_50dma is None:
-        missing.append("breadth_state_v2.pct_above_50dma")
-    if state.network_fragility is None:
-        missing.append("network_fragility")
-    if state.trend_direction_v2 is None:
-        missing.append("trend_direction_v2")
-    if missing:
-        return _Unavailable(missing_inputs=tuple(missing))
-    trend_character = _require_feature(state.trend_character, "trend_character")
-    trend_direction_v2 = _require_feature(
-        state.trend_direction_v2, "trend_direction_v2"
-    )
-    network_fragility = _require_feature(state.network_fragility, "network_fragility")
-    realized_vol_21d = _require_feature(state.realized_vol_21d, "realized_vol_21d")
-    drawdown_63d = _require_feature(state.drawdown_63d, "drawdown_63d")
-    breadth_state_v2 = _require_feature(breadth_state_v2, "breadth_state_v2")
-    pct_above_50dma = _require_build_input(
-        breadth_state_v2.pct_above_50dma, "breadth_state_v2.pct_above_50dma"
-    )
-    return {
-        "config": state.context.config.clustering,
-        "return_21d": trend_character.return_21d,
-        "return_63d": trend_direction_v2.return_63d,
-        "realized_vol_21d": realized_vol_21d,
-        "drawdown_63d": drawdown_63d,
-        "adx_14": trend_character.adx_14,
-        "avg_pairwise_corr_63d": network_fragility.avg_pairwise_corr_63d,
-        "pct_above_50dma": pct_above_50dma,
-    }
-
-
 def _resolve_credit_funding(
     state: _FeatureStoreBuildState,
 ) -> dict[str, object] | _Unavailable:
@@ -805,37 +735,6 @@ def _resolve_inflation_growth(
             state.inflation_growth_config.rules.use_first_release_cpi_when_available
         ),
     }
-
-
-def _resolve_change_point(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    if state.context.config.change_point is None:
-        return _Unavailable(missing_inputs=("change_point_config",))
-    if state.realized_vol_21d is None:
-        return _Unavailable(missing_inputs=("realized_vol_21d",))
-    return {
-        "realized_vol_21d": state.realized_vol_21d,
-        "config": state.context.config.change_point,
-    }
-
-
-def _resolve_realized_vol_21d(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    """Disjunction gate: realized_vol_21d is built when ANY of hmm,
-    clustering, or change_point configs is present (those features consume it).
-    When none are set, return _Unavailable so build is skipped — matches
-    legacy 'state.realized_vol_21d = None' branch."""
-    if (
-        state.context.config.hmm is None
-        and state.context.config.clustering is None
-        and state.context.config.change_point is None
-    ):
-        return _Unavailable(
-            missing_inputs=("hmm_or_clustering_or_change_point_config",)
-        )
-    return {"close": state.spy_close, "window": 21}
 
 
 def _build_realized_vol_21d(close: pd.Series, window: int) -> pd.Series:
@@ -942,18 +841,6 @@ def _resolve_monetary(
         "central_bank_text_score": cb_text_score_series,
         "config": state.monetary_pressure_v2_config,
     }
-
-
-def _require_feature(value: _T | None, name: str) -> _T:
-    if value is None:
-        raise RuntimeError(f"feature builder did not populate required feature: {name}")
-    return value
-
-
-def _require_build_input(value: _T | None, name: str) -> _T:
-    if value is None:
-        raise RuntimeError(f"feature spec missing required build input: {name}")
-    return value
 
 
 _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
@@ -1080,7 +967,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         name="realized_vol_21d",
         policy="none",
         required_inputs=("hmm_or_clustering_or_change_point_config",),
-        resolve=_resolve_realized_vol_21d,
+        resolve=resolve_realized_vol_21d,
         build=_build_realized_vol_21d,
         store=lambda s, v: setattr(s, "realized_vol_21d", v),
         report=False,
@@ -1089,7 +976,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         name="drawdown_63d",
         policy="none",
         required_inputs=("hmm_or_clustering_config",),
-        resolve=_resolve_drawdown_63d,
+        resolve=resolve_drawdown_63d,
         build=compute_trailing_drawdown,
         store=lambda s, v: setattr(s, "drawdown_63d", v),
         report=False,
@@ -1098,7 +985,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         name="hmm",
         policy="none",
         required_inputs=("hmm_config", "volume_liquidity_v2", "network_fragility"),
-        resolve=_resolve_hmm,
+        resolve=resolve_hmm,
         build=_build_hmm_feature,
         store=lambda s, v: setattr(s, "hmm", v),
     ),
@@ -1111,7 +998,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
             "network_fragility",
             "trend_direction_v2",
         ),
-        resolve=_resolve_clustering,
+        resolve=resolve_clustering,
         build=_build_clustering_feature,
         store=lambda s, v: setattr(s, "clustering", v),
     ),
@@ -1139,7 +1026,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         name="change_point",
         policy="none",
         required_inputs=("change_point_config", "realized_vol_21d"),
-        resolve=_resolve_change_point,
+        resolve=resolve_change_point,
         build=_build_change_point_feature,
         store=lambda s, v: setattr(s, "change_point", v),
     ),
