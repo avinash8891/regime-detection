@@ -1,0 +1,25 @@
+src/regime_detection/_feature_specs_trainable.py
+  s_b717af8e0074fe::t_a6c7d3cd58b877 1-137
+src/regime_detection/feature_store_runtime.py
+  s_b717af8e0074fe::t_a6c7d3cd58b877 14-15,155-166
+pyproject.toml
+  s_b717af8e0074fe::t_5767c2e807738c 91
+src/regime_detection/_feature_specs.py
+  s_b717af8e0074fe::t_ea50cd87451c15 7,9-10,12,133-141,970,979,988,1001,1029
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "081067fea1b0c0630b813ebb0905e7517d8c480b",
+  "prompts": {},
+  "sessions": {
+    "s_b717af8e0074fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ec123-5327-78b1-bbac-f8ce6ef7ee76",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
