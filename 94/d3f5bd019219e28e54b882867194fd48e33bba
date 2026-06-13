@@ -1,0 +1,41 @@
+src/regime_data_fetch/acquisition_consolidation.py
+  s_52de661ea8374d::t_d1722e6a5b4255 80,113,360-373,542-544,721-740
+src/regime_detection/input_spec.py
+  s_52de661ea8374d::t_8afbceb060a433 49
+tests/test_monetary_text_outputs.py
+  s_52de661ea8374d::t_6fc19f43bada5a 1-113
+src/regime_detection/package_io.py
+  s_52de661ea8374d::t_ca2d4354e00aa8 14,57,96-101,121-125,173-174,184
+tests/test_foundation.py
+  s_52de661ea8374d::t_494b116fe5eebc 137-149
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_83fa2cf3b8944c 451-488
+src/regime_detection/loaders.py
+  s_52de661ea8374d::t_9d6b9055e235c1 100-111,250-295
+tests/test_acquisition_consolidation.py
+  s_52de661ea8374d::t_7e193c9fcb7da1 42
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_49beed23c5485a 434-439,441-452,454
+src/regime_detection/market_context.py
+  s_52de661ea8374d::t_c665bca7705f87 15,38,50,87-90,105,141-146,161,209-214,229,359-375,391-404
+src/regime_detection/engine.py
+  s_52de661ea8374d::t_d5e89b817ad854 40,55,77,92,105,129,143,158-159,167,185
+src/regime_detection/pit_builder.py
+  s_52de661ea8374d::t_7142358335a4dd 23,72,100,136,157,475-516,533,573-576
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "94d3f5bd019219e28e54b882867194fd48e33bba",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

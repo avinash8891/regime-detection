@@ -1,0 +1,135 @@
+tests/test_volatility_state_v2_vol_crush.py
+  s_ab33020b7c1f29::t_c99673056a048b 321-322,324-329
+src/regime_detection/timeline.py
+  s_ab33020b7c1f29::t_8172dad5275bf1 343-346,359-362,364-367,408-411,422-425,427-430
+tests/test_shadow_deadman_check.py
+  s_ab33020b7c1f29::t_8b362c797b8ca2 23-25,42-43,77-106
+tests/test_hmm_state.py
+  s_ab33020b7c1f29::t_f9a40b524706ab 109,120-121,124,127-128,173,185-186,205,230-231
+src/regime_detection/transition_risk_series.py
+  s_ab33020b7c1f29::t_52ae99413f316a 738-747,751
+  s_ab33020b7c1f29::t_c29093cf3eeee0 19-24,140-144,241,245,263-291,537,615,618,633,635-680,724-736,748-750,752-758
+  s_ab33020b7c1f29::t_b64a06bd780c91 242-244
+src/regime_detection/transition_risk.py
+  s_ab33020b7c1f29::t_8172dad5275bf1 49-50
+  s_ab33020b7c1f29::t_5dc7d6a2a4be82 52-54,56-60
+src/regime_detection/change_point.py
+  s_ab33020b7c1f29::t_0bc696771cb3a4 72,109,113-116,128,136,139,146,149
+src/regime_detection/clustering.py
+  s_ab33020b7c1f29::t_8e70ab1c1a95ed 136,140,158-160,165-167,233
+  s_ab33020b7c1f29::t_8d98418ba8a7ff 5
+src/regime_detection/feature_store_runtime.py
+  s_ab33020b7c1f29::t_8172dad5275bf1 67-69,86,90-99,116-120,146-150
+  s_ab33020b7c1f29::t_051dba5e94ff3d 151-152
+scripts/run_shadow_deadman_check.py
+  s_ab33020b7c1f29::t_b6f827a275b891 115-138
+src/regime_detection/_feature_specs.py
+  s_ab33020b7c1f29::t_e3051c2d868ffd 741-749,931-939
+  s_ab33020b7c1f29::t_9a4547ecc9f80b 241-243,246,248,250,255
+tests/test_profile_engine.py
+  s_ab33020b7c1f29::t_8b362c797b8ca2 936-940
+src/regime_detection/config.py
+  s_ab33020b7c1f29::t_8172dad5275bf1 183-217
+tests/test_change_point.py
+  s_ab33020b7c1f29::t_3ee0539038a982 75,77-78,81,85-86,217,219,223-224,227,249-250,253,273-274
+tests/test_v2_data_ingestion.py
+  s_ab33020b7c1f29::t_18a20684660723 689
+  s_ab33020b7c1f29::t_e7f41b37418147 666-669,673-675,681-685
+  s_ab33020b7c1f29::t_c2d82469b07b09 678-680
+tests/test_v2_config.py
+  s_ab33020b7c1f29::t_ad9e6d317fa65f 400,419
+src/regime_detection/central_bank_text.py
+  s_ab33020b7c1f29::t_feec686a8068af 399-400,403,411
+src/regime_detection/transition_score.py
+  s_ab33020b7c1f29::t_840c68a575c94d 106
+  s_ab33020b7c1f29::t_c41cd9bff67b25 3-5,278-279
+  s_ab33020b7c1f29::t_8172dad5275bf1 105
+tests/test_transition_score_v2.py
+  s_ab33020b7c1f29::t_4a20edd3a195f5 124,139-144,147,150-164,216,222-226
+  s_ab33020b7c1f29::t_71fe318239fc5e 196,199-203,262,265-279
+src/regime_detection/transition_risk_history.py
+  s_ab33020b7c1f29::t_8172dad5275bf1 29-33
+tests/test_fail_loud_failure_modes.py
+  s_ab33020b7c1f29::t_f7da06cefb8cf2 10-13,15-19,22,24,73-95,104-146
+  s_ab33020b7c1f29::t_8b362c797b8ca2 1-9,14,20-21,23,25-44,48-63,66-67,69,71,147-310
+  s_ab33020b7c1f29::t_0832a110ea560c 64-65,68,70,72
+  s_ab33020b7c1f29::t_840c68a575c94d 45-47,96-103
+scripts/profile_engine.py
+  s_ab33020b7c1f29::t_8172dad5275bf1 239,241,258-261,274,277,283,285,294-301,303-304,307
+  s_ab33020b7c1f29::t_6d0309cd5c13e3 772-777,1086
+src/regime_detection/loaders.py
+  s_ab33020b7c1f29::t_587e84c8566632 309-310,321-322,352,420,428
+  s_ab33020b7c1f29::t_8172dad5275bf1 152,174,243
+src/regime_detection/_config_evidence_strategy.py
+  s_ab33020b7c1f29::t_8172dad5275bf1 113-115,143-150
+tests/test_central_bank_text.py
+  s_ab33020b7c1f29::t_5e5a2d3eedcf6d 456-458
+tests/test_feature_store_refactors.py
+  s_ab33020b7c1f29::t_840c68a575c94d 223-225,236,277-279
+  s_3579a11c274b3d::t_95688169df806b 291
+  s_ab33020b7c1f29::t_4303a3b6c8c61f 295-296,306-307
+  s_ab33020b7c1f29::t_df95a1157fcdc4 10-11,14,251-276,280-285,287-288,292
+  s_ab33020b7c1f29::t_acf66b9af7bdfa 220-222,226-231,237-238
+src/regime_detection/hmm_state.py
+  s_ab33020b7c1f29::t_76795f2c7f36b9 152,336
+  s_ab33020b7c1f29::t_7be7071016a13b 370
+  s_ab33020b7c1f29::t_54981e0016c0db 175,179,193-195,201-203,374-375
+tests/test_event_calendar.py
+  s_ab33020b7c1f29::t_2ffa533eacc181 657-667,672,680
+tests/test_cpi_vintages_first_release.py
+  s_ab33020b7c1f29::t_6bced48f4e0c61 110,112-113
+  s_ab33020b7c1f29::t_761f30903e27b9 16
+tests/test_transition_overrides_and_band_validation.py
+  s_ab33020b7c1f29::t_a7e9b5e565d3a4 389-391,394-399,445-446
+tests/test_transition_risk.py
+  s_ab33020b7c1f29::t_5ffa95df680f06 144-146,150-151,433,435-436,440-451,498-505
+  s_ab33020b7c1f29::t_840c68a575c94d 147-149,454
+  s_ab33020b7c1f29::t_af6c0dd7dd8390 273-274,294,308-309,351,411,630
+  s_ab33020b7c1f29::t_cef8cf798ad6a3 113-122,125,132-141
+tests/test_clustering.py
+  s_ab33020b7c1f29::t_57d7bcb11e97a3 113,118-119,122,125-126
+  s_ab33020b7c1f29::t_964825b7dad40b 298,312-313
+tests/test_profile_engine_reporting_loaders.py
+  s_ab33020b7c1f29::t_8b362c797b8ca2 454,457-461
+src/regime_detection/event_calendar.py
+  s_ab33020b7c1f29::t_d4cfd6dc3dc644 152-153,156,273,298-299,314
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_ab33020b7c1f29::t_d43971c9437ac5 185-187,299
+tests/fixtures/configs/core3-v2-fast.yaml
+  s_ab33020b7c1f29::t_57d3746eb8d812 236,248-265,272-273
+src/regime_detection/engine.py
+  s_ab33020b7c1f29::t_fe9f7ce3ac60d7 169-170
+  s_ab33020b7c1f29::t_8172dad5275bf1 6,199-204,208-210,215-217,318-331,424-429
+tests/conftest.py
+  s_ab33020b7c1f29::t_ab1ff8b6ba566d 281-282
+  s_ab33020b7c1f29::t_718c0c2150527f 397-433
+  s_ab33020b7c1f29::t_8b362c797b8ca2 26-30
+  s_ab33020b7c1f29::t_231ef41e1c7394 623-624,627,634,692
+  s_ab33020b7c1f29::t_6e7f11012b34fe 802-805,889-890,893,902-905
+tests/test_trend_direction_v2_euphoria.py
+  s_ab33020b7c1f29::t_535d3d5a4e78dc 636-637,641
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "c6c6e5d6d59fdcc6784419cb27bf4974d2003c9e",
+  "prompts": {},
+  "sessions": {
+    "s_3579a11c274b3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4ff0dba7-5695-4f37-858c-5161163327a0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_ab33020b7c1f29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eabb2-f3d1-7c91-b71a-ca44437f87a6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+src/regime_detection/network_fragility_rules.py
+  s_7f3c352a4f9447::t_59503fd3f250b9 508-510
+  s_7f3c352a4f9447::t_07eb4017b92373 399-403,410-414
+docs/regime_engine_v2_spec.md
+  s_7f3c352a4f9447::t_9780f4be662613 372-383
+tests/test_network_fragility_rules.py
+  s_7f3c352a4f9447::t_9f764ee75664a7 171-183
+  s_7f3c352a4f9447::t_bbf621b7abf65b 281-303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "4f031952ea9219ca535a884109372bd0b0fc0508",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+tests/conftest.py
+  s_1c47c85d071288::t_18d0c5ff3921b5 73-76,83-128
+  s_1c47c85d071288::t_794c246b636844 3-4,6
+pyproject.toml
+  s_1c47c85d071288::t_3dc14466d8a152 23
+tests/test_v2_feature_store_and_axis_seams.py
+  s_1c47c85d071288::t_2a1c0ca431f9fb 5
+  s_1c47c85d071288::t_b5b85a89a4df33 20-34
+pytest.ini
+  s_1c47c85d071288::t_24b4c57111334a 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "13b6221985ad418e20aeecc8df15ebe85e8bea59",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

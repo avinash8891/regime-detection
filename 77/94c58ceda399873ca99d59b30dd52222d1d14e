@@ -1,0 +1,71 @@
+src/regime_detection/transition_risk_series.py
+  s_0d43344a48cf5a::t_fbde7e5a4f5265 455-456,458
+  s_0d43344a48cf5a::t_11e4acfa757d83 304-305,461-463
+  s_0d43344a48cf5a::t_0c374e3753a93e 141,162-166
+  s_0d43344a48cf5a::t_6ecc8631ac5a62 712,714
+  s_75270fdd5c79b3::t_24fd8da6c9e825 24-25,27-28
+  s_0d43344a48cf5a::t_33f67573dfa7fb 3,6,26,35
+  s_0d43344a48cf5a::t_2478214431af00 279-282,417-420,692
+  s_0d43344a48cf5a::t_3a888a2983de60 530-538,713
+  s_0d43344a48cf5a::t_b1566613ca7434 444,446-449,453,525-527,710-711,715
+src/regime_detection/feature_store.py
+  s_0d43344a48cf5a::t_3a888a2983de60 203-204
+  s_0d43344a48cf5a::t_ef1f60ac0a863e 39-43,46-48,182-183,198,201,205-207
+src/regime_detection/event_calendar_loader.py
+  s_0d43344a48cf5a::t_cec8624d603f65 8,15-17,58,100,123,127,136,145,151,162-163,175,180,223
+  s_913a092fe5e591::t_6b5fb58b0743b9 1-7,9-13,19-57,59-99,101-122,124-126,128-135,137-144,146-150,152-161,164-174,176-179,181-222,224-268
+  s_913a092fe5e591::t_258fbff240ee29 14,18
+src/regime_detection/config.py
+  s_0d43344a48cf5a::t_2fae271662637d 5,98,109-121,188
+  s_75270fdd5c79b3::t_24fd8da6c9e825 189-222
+src/regime_detection/_loader_utils.py
+  s_913a092fe5e591::t_5a5dc5229e7589 5
+  s_0d43344a48cf5a::t_2fae271662637d 17,21,25
+  s_913a092fe5e591::t_60addb072ca337 1-4,6-16,18-20,22-24,26
+src/regime_detection/engine.py
+  s_75270fdd5c79b3::t_24fd8da6c9e825 334-384,433,451-452,600,618-619
+src/regime_detection/transition_risk_history.py
+  s_0d43344a48cf5a::t_3a888a2983de60 113,159
+  s_0d43344a48cf5a::t_6ecc8631ac5a62 112,114
+  s_0d43344a48cf5a::t_c8c2767cd9d89f 143
+  s_913a092fe5e591::t_8bdbdbe586f32f 1-4,6-20,22-111,115-138,141-142,144-145,147-148,152,154-158,160-161,163,167-174
+  s_0d43344a48cf5a::t_cec8624d603f65 5,21,139-140,146,149-151,153,162,164-166,175-177
+src/regime_detection/_feature_specs.py
+  s_0d43344a48cf5a::t_ef1f60ac0a863e 1071-1076
+src/regime_detection/loaders.py
+  s_75270fdd5c79b3::t_24fd8da6c9e825 4,9-10,15-16,18
+src/regime_detection/timeline.py
+  s_75270fdd5c79b3::t_24fd8da6c9e825 642
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "7794c58ceda399873ca99d59b30dd52222d1d14e",
+  "prompts": {},
+  "sessions": {
+    "s_0d43344a48cf5a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eab5a-b02b-7922-9420-46c911681074",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_75270fdd5c79b3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eab95-e573-79b2-98db-efe10a11c602",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_913a092fe5e591": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e6982f76-8c70-403b-987c-597826766580",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

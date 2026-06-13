@@ -1,0 +1,36 @@
+src/regime_detection/config.py
+  s_69e10dfae52a94::t_fd323c77148eb4 417-445,449-452,454-457
+  s_69e10dfae52a94::t_251f0092af32d9 551
+src/regime_detection/monetary_pressure.py
+  s_69e10dfae52a94::t_4029dab9b6ee5f 1-165
+docs/regime_engine_v2_spec.md
+  s_69e10dfae52a94::t_643217f547cb97 981-1069
+tests/test_monetary_pressure_features.py
+  s_69e10dfae52a94::t_705fb1cb392a04 1-108,110-111,118-122,126,134-384
+  s_69e10dfae52a94::t_f0d2ad95c97f6e 127-131
+  s_69e10dfae52a94::t_056354927cd9f8 109,112-117,123-125,132-133
+src/regime_detection/timeline.py
+  s_69e10dfae52a94::t_043caf59b177de 95-97,105
+src/regime_detection/feature_store.py
+  s_69e10dfae52a94::t_bbd4c717074e62 126
+  s_69e10dfae52a94::t_bb54d690adb07b 46-49,54,63-67
+  s_69e10dfae52a94::t_c9f220e6bdab08 13
+  s_69e10dfae52a94::t_e82a314e16e568 109-116
+  s_69e10dfae52a94::t_a075768785a036 229-246,259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "93a67271c7ca95db1cd66bc16218786cdb0472d5",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

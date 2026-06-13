@@ -1,0 +1,128 @@
+tests/test_transition_score_v2_weights_outputs.py
+  s_ab33020b7c1f29::t_dcc34c2e69f524 132-134
+tests/test_monetary_pressure_classifier.py
+  s_ab33020b7c1f29::t_5cf2be997d8658 486-487,489,501-504,545-547,567
+  s_ab33020b7c1f29::t_5ccdcc2eda1761 81-88
+  s_ab33020b7c1f29::t_eb851c5986307c 380-382
+  s_ab33020b7c1f29::t_cfea742a9841ec 79-80,89-90,361,375-379,383-384,407
+tests/test_credit_funding_axis_engine.py
+  s_ab33020b7c1f29::t_c1ed3eca250787 1022,1047-1072,1075,1077,1081,1087-1090
+  s_ab33020b7c1f29::t_d6b142747d98ac 239-258,372-373
+  s_ab33020b7c1f29::t_c5fb568eee7b34 402-404,931-933
+  s_ab33020b7c1f29::t_1b0db127a84c68 602
+  s_ab33020b7c1f29::t_97d5113f347e38 913-928,930,1173-1188,1192
+  s_ab33020b7c1f29::t_f66039b83c9aa3 911-912,1171-1172
+  s_ab33020b7c1f29::t_de0f7f0f340767 354
+  s_ab33020b7c1f29::t_4401ab1e85873c 55,263-264,322-327,374,381,401,405,413,415,418,423
+tests/test_transition_and_strategy.py
+  s_ab33020b7c1f29::t_14c54b13739f0f 10,652,656
+  s_ab33020b7c1f29::t_c5fb568eee7b34 24-26
+  s_ab33020b7c1f29::t_a83d8da40a237e 499,649,657
+tests/test_volatility_state_v2_features.py
+  s_ab33020b7c1f29::t_c37ceb0227707c 17,25,39-47,482,500,534,540-543,551,568
+tests/test_inflation_growth_axis_engine.py
+  s_ab33020b7c1f29::t_7a9be02f41ac42 47,242-243,257-263,294-295,305,312,598-613,615
+  s_ab33020b7c1f29::t_c5fb568eee7b34 616-618
+  s_ab33020b7c1f29::t_6e31802f507e6d 596-597
+  s_ab33020b7c1f29::t_23cedea7856f52 283
+  s_ab33020b7c1f29::t_1f1f0836306a0b 672,730,736-739
+  s_ab33020b7c1f29::t_48dceee3161a55 164-183,303-304
+tests/test_profile_engine_reporting_loaders.py
+  s_ab33020b7c1f29::t_ec00af3e3e2012 413-414
+tests/test_feature_store_runtime.py
+  s_ab33020b7c1f29::t_6e139b99afc691 77-84,88,92-94,96-98,147-148,162-169,173-174,190-198,201-202,214-222
+  s_ab33020b7c1f29::t_c5fb568eee7b34 71-73,95
+tests/test_clustering.py
+  s_ab33020b7c1f29::t_aad9c9c3b416e6 342-347,379-388,435
+tests/test_trend_direction_v2_features.py
+  s_ab33020b7c1f29::t_e8fd00b44a68bf 16,22-25,36-44,373,394,407-410,426-428,431,433-442,450
+tests/test_hmm_state.py
+  s_ab33020b7c1f29::t_3b6b77323c7614 415,423-425,428-439,441-442,470-475
+tests/test_shadow_replay_check.py
+  s_ab33020b7c1f29::t_c5fb568eee7b34 36-38,81-85,125-129,190-194,273-277
+tests/test_historical_walkforward.py
+  s_ab33020b7c1f29::t_7e31eb3cc24ea9 98,148,170-178,202-204
+tests/test_network_fragility_classifier.py
+  s_ab33020b7c1f29::t_c5fb568eee7b34 67
+  s_ab33020b7c1f29::t_8d1c0bd0292816 536
+  s_ab33020b7c1f29::t_26dbd83ebf706f 544
+  s_ab33020b7c1f29::t_7f861a4eb668d1 265-271,275-278,309-310,314-316,326-329
+  s_ab33020b7c1f29::t_667cd1ff4a92d8 570,726,745,767,837,897,947
+  s_ab33020b7c1f29::t_5c5ce4150808a2 621,624-625,656-672,915-917,944
+  s_ab33020b7c1f29::t_ddb0fb4744f65f 494,499-517
+  s_ab33020b7c1f29::t_44da12cbe474d1 622-623,631,653-654
+  s_ab33020b7c1f29::t_6fef6dce22b289 525-526,528,533-534,541,547-554,556-558
+  s_ab33020b7c1f29::t_4ef2e0bb82348a 288-307,324-325
+  s_ab33020b7c1f29::t_a1e5973b0e826d 55,170,175
+  s_ab33020b7c1f29::t_3e9a8e3aaacc10 434-435,437-442,445,447-450,452-453,458,467,481
+tests/test_cleveland_fed_nowcast.py
+  s_ab33020b7c1f29::t_44f3e63e878443 9-10,19-21,25,120-145,278,281,283,290-293,343-346,370-373,382
+  s_ab33020b7c1f29::t_c5fb568eee7b34 284,383
+tests/test_change_point.py
+  s_ab33020b7c1f29::t_45c7ee6e007e42 435-440,478-487,528-533
+tests/test_volume_liquidity_v2_features.py
+  s_ab33020b7c1f29::t_a6d42afb95d4e5 18,26,39-47,197,214,248,254-257,265,275-277,279,284
+tests/test_schema_and_timeline.py
+  s_ab33020b7c1f29::t_547a245c1b644a 641-642
+  s_ab33020b7c1f29::t_55d394594ab58e 15,50-57,198,203,206
+  s_ab33020b7c1f29::t_bec0ddb868b6e9 196,204,218-220,235,247
+  s_ab33020b7c1f29::t_6b5b64a5298ce6 599,605,617,619-627
+  s_ab33020b7c1f29::t_af4afb6df7add5 503
+  s_ab33020b7c1f29::t_3cfe84f5e1a9f7 470,475-481
+tests/test_central_bank_text.py
+  s_ab33020b7c1f29::t_bd6bb2de435a3d 238,240-253,479,493-501
+tests/test_shadow_runner.py
+  s_ab33020b7c1f29::t_441e466a43652d 38,40,127,129
+  s_ab33020b7c1f29::t_aac5ebb6cc2c43 142,165-168
+tests/test_feature_store_specs.py
+  s_ab33020b7c1f29::t_d804949aa5450e 4,8,13-20,44
+tests/test_axis_builders.py
+  s_ab33020b7c1f29::t_c07ba11a34c464 189,196
+  s_ab33020b7c1f29::t_b1b8c0c598e484 277
+  s_ab33020b7c1f29::t_1407c446441fa3 11,44-46,117
+  s_ab33020b7c1f29::t_d21ada4353f742 121-129,259,308,325
+tests/test_v2_feature_store_and_axis_seams.py
+  s_ab33020b7c1f29::t_7d6831d7cc73d4 21,24-25,28-39,46,56-57,62,66,69,77,90-94,100,109-110,115,121,123,161-162,167,171,173
+tests/test_walkforward_replay_check.py
+  s_ab33020b7c1f29::t_87fa47584f2b81 31-33
+tests/test_transition_overrides_and_band_validation.py
+  s_ab33020b7c1f29::t_c5fb568eee7b34 221-223
+  s_ab33020b7c1f29::t_f3d4b9f9190153 312-313
+tests/conftest.py
+  s_ab33020b7c1f29::t_61a7ce2233f9ca 52-55,398,402-406,629
+  s_ab33020b7c1f29::t_09991ffc36a049 447-460
+  s_ab33020b7c1f29::t_c5fb568eee7b34 407,883-885
+tests/test_volume_liquidity_classifier.py
+  s_ab33020b7c1f29::t_3bc58387d91490 33
+  s_ab33020b7c1f29::t_0b71903fd7b2d8 13-14,23,37-44,122,125-126,131-140,153,167-171,178-180,190-192,195-196,217-219,222-223,231-233,236-237,244-246,250-251,266-268,276-277,288-297,299,325-327,332-333,338-347,349,410,430-432,434,443
+  s_ab33020b7c1f29::t_db3d85f8fc0353 17,401,404-405,411-427
+tests/test_feature_availability_golden.py
+  s_ab33020b7c1f29::t_8475be13b072f5 146-150,164,174,176
+  s_ab33020b7c1f29::t_68debf46feab4d 4,8,12-19,33
+tests/test_monetary_pressure_features.py
+  s_ab33020b7c1f29::t_99abe938cb34f2 20,29,45-51,70-71,349,383,395-396,405-406,427-428,439-442
+  s_ab33020b7c1f29::t_e92adb77c91503 458
+  s_ab33020b7c1f29::t_d7c147ece39968 394,401,433
+  s_ab33020b7c1f29::t_c797ac1d0682cf 72-79
+tests/test_shadow_deadman_check.py
+  s_ab33020b7c1f29::t_3fc5790ac2991a 66,68,74-79,229
+src/regime_detection/transition_risk_series.py
+  s_ab33020b7c1f29::t_a593b5eada6ea0 615-617
+  s_ab33020b7c1f29::t_458e309c2070c2 782-786
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "5d53f536abdf24cf68a77748354a195a541ee754",
+  "prompts": {},
+  "sessions": {
+    "s_ab33020b7c1f29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eabb2-f3d1-7c91-b71a-ca44437f87a6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

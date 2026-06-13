@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-05-14-credit-spread-tlt-proxy-parallel-metric-design.md
+  s_7f3c352a4f9447::t_e8d591da5efd1d 1-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "548826c12399aed4e54f88dfd99bc63acc59e6d4",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

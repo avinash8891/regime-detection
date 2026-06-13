@@ -1,0 +1,76 @@
+src/regime_detection/euphoria.py
+  s_52de661ea8374d::t_eb240f91f3986a 52-54,111,118
+  s_52de661ea8374d::t_3f848ba85b2d7b 1-51,55-110,112-117,119-123
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_7fa1606fb5c281 294-297,387-390
+src/regime_detection/pit_builder.py
+  s_52de661ea8374d::t_8beacb027e1d4f 20,61,85,117,134,341-349,360-363,365-367,369-374,387,412
+  s_52de661ea8374d::t_89a86e9d9a78ac 350-359,364,368
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_15734734f0d516 35
+  s_52de661ea8374d::t_d3ccfecfe88c85 172,174-193
+  s_52de661ea8374d::t_6f99c0619bd441 47-56
+  s_52de661ea8374d::t_36bfadf2778043 476-480
+  s_52de661ea8374d::t_3c7c05a1b7c35f 173
+src/regime_detection/engine.py
+  s_52de661ea8374d::t_f11ac27b2e454f 37,49,67,79,89,109,120,129-130,132-138,150
+src/regime_detection/package_io.py
+  s_52de661ea8374d::t_17b397fd0e12a6 10,45,60-65,77,115-116,122
+src/regime_detection/models.py
+  s_52de661ea8374d::t_63c29b4b8edb97 63
+tests/fixtures/derived/golden_dates.yaml
+  s_52de661ea8374d::t_2ce9b245127853 1-2,18,23
+src/regime_data_fetch/cpce.py
+  s_52de661ea8374d::t_f41f3ab6c1cafb 1-10,12-20,28-45,50-51,53,55-143
+  s_52de661ea8374d::t_75990ee572fb5d 11,21-27,46-49,52,54
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_272cd88907cd71 107,112-118,122-124,127-172
+tests/fixtures/verification/golden_dates_report.yaml
+  s_52de661ea8374d::t_2ce9b245127853 1-2,18,23
+tests/fixtures/raw/sentiment/equitypc.csv
+  ai_agent 1-3256
+src/regime_detection/volatility_state.py
+  s_52de661ea8374d::t_4d38c2738a1ac5 45-46,79,93-94
+src/regime_detection/input_spec.py
+  s_52de661ea8374d::t_4ef15bd12b5b86 46
+src/regime_detection/loaders.py
+  s_52de661ea8374d::t_6f07032b61d0d9 52-63,125-144
+src/regime_data_fetch/acquisition_consolidation.py
+  s_52de661ea8374d::t_218c6f26b0b30c 77,107,321-331,491-493,604-620
+scripts/fetchers/sentiment/fetch_cpce.py
+  s_52de661ea8374d::t_db09af8cc98c99 1-32
+src/regime_detection/market_context.py
+  s_52de661ea8374d::t_3bb04cded70a24 11,27,36,64,76,97-99,111,144-146,158,242-257
+tests/test_cpce.py
+  s_52de661ea8374d::t_61c4ffa368eace 22-27
+  s_52de661ea8374d::t_5bb907ff025936 1-21,28-40
+tests/test_acquisition_consolidation.py
+  s_52de661ea8374d::t_5e1eed22bdf5a6 35,39,57,64,68,107-118
+tests/test_shadow_runner.py
+  s_52de661ea8374d::t_9962f6c28ac652 13,230-236,238-242,244,246-248,327,350-357,419-440
+  s_52de661ea8374d::t_b9d8a527297ab6 237,243,245
+src/regime_detection/trend_direction.py
+  s_52de661ea8374d::t_5625abbdd70676 32,42,51
+src/regime_detection/feature_store.py
+  s_52de661ea8374d::t_d8f35e3a30a1fc 14,36,70-72,82
+src/regime_detection/timeline.py
+  s_52de661ea8374d::t_0b5253cc419f28 4,44-50,63,73,92
+src/regime_detection/sentiment.py
+  s_52de661ea8374d::t_d12f4be8b4e2b6 1-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "3591cdccd52409791f21dfefaf1cb5ca32a97120",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

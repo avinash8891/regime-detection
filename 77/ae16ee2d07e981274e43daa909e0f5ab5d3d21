@@ -1,0 +1,20 @@
+src/regime_detection/trend_character.py
+  s_874a3142b8386c::t_1d154f6b4b9d28 3
+  s_874a3142b8386c::t_3c880ee4efc43b 211-220,222-231,233-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "77ae16ee2d07e981274e43daa909e0f5ab5d3d21",
+  "prompts": {},
+  "sessions": {
+    "s_874a3142b8386c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04c950f9-e520-447c-bea9-a46bacc12b0c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

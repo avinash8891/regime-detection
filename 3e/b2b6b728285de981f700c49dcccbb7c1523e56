@@ -1,0 +1,35 @@
+scripts/_v2_calibration_helpers.py
+  s_7e147b89f819ca::t_02ab1cbdd114fb 25
+tests/test_credit_funding.py
+  s_7e147b89f819ca::t_eeaf05d6a86b49 31-33
+src/regime_detection/credit_funding.py
+  s_7e147b89f819ca::t_798145d9383f53 1,3-6,57
+src/regime_detection/engine.py
+  s_7e147b89f819ca::t_13b9da12084b31 21
+src/regime_detection/axis_builders/credit_funding.py
+  s_7e147b89f819ca::t_141dae845c8928 12-14
+tests/test_v2_calibration_helpers.py
+  s_7e147b89f819ca::t_1b226a0af73e61 16
+src/regime_detection/feature_store.py
+  s_7e147b89f819ca::t_a580bb7c5d337f 41-45,47-51,53,57
+tests/test_credit_funding_axis_engine.py
+  s_7e147b89f819ca::t_d9492027a1f1bf 39-42
+src/regime_detection/credit_funding_rules.py
+  s_7e147b89f819ca::t_1a4ea97b5278e6 1-505
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "3eb2b6b728285de981f700c49dcccbb7c1523e56",
+  "prompts": {},
+  "sessions": {
+    "s_7e147b89f819ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c013e7-b3b8-439c-8ee2-73f4562e1a34",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+src/regime_detection/engine.py
+  s_cad40512569b61::t_26ac572b00a5dc 236-238,267-269
+  s_cad40512569b61::t_d59bca5ea56be2 16-23,30,71-187,239-266,270-299
+  s_cad40512569b61::t_239ddf09123cda 385
+docs/superpowers/plans/2026-05-27-complete-business-contracts.md
+  s_cad40512569b61::t_247fdba50d4e14 1-46
+tests/conftest.py
+  s_cad40512569b61::t_5ac42333374306 484-487
+  s_cad40512569b61::t_26ac572b00a5dc 488
+  s_cad40512569b61::t_fbc05cf3a041d1 362-363,368,411-414,475-476
+tests/test_foundation.py
+  s_cad40512569b61::t_26ac572b00a5dc 212-214
+  s_cad40512569b61::t_8d7a5d86b84062 255-256
+  s_cad40512569b61::t_560b4687806e05 12-16,178-211,215-254,257-281,285-289
+  s_cad40512569b61::t_ddf63b9f8fe8c8 282-284
+docs/regime_engine_contracts.md
+  s_cad40512569b61::t_0b1af7eaff7715 77-96,121-122,137-141
+tests/test_rule_provenance.py
+  s_cad40512569b61::t_620aca5c6edf47 3-8,30-38,43-53
+src/regime_detection/rule_provenance.py
+  s_cad40512569b61::t_aa07deab3af32a 4,411,418
+  s_cad40512569b61::t_26ac572b00a5dc 513-515
+  s_cad40512569b61::t_ddcb594860a1ba 3,8-20,24,37-232,261,276,278,284,286,292,300,310,325-410,412-417,419-512,516-522,532
+docs/superpowers/specs/2026-05-27-complete-business-contracts-design.md
+  s_cad40512569b61::t_247fdba50d4e14 1-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e60105e784bf0805e76b100a9eed4b786c32bb99",
+  "prompts": {},
+  "sessions": {
+    "s_cad40512569b61": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e67ba-fdfb-7e72-a86b-68d4b7034df0",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

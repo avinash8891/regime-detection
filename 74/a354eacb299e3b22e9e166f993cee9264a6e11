@@ -1,0 +1,23 @@
+tests/test_trend_character.py
+  s_e13bd0da99a610::t_fee66bd61db703 244-284
+  s_e13bd0da99a610::t_793a1cf1ea26da 13
+tests/test_trend_direction.py
+  s_e13bd0da99a610::t_87a4aec969b889 20-38
+  s_e13bd0da99a610::t_afe719ae6e74ab 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "74a354eacb299e3b22e9e166f993cee9264a6e11",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

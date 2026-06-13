@@ -1,0 +1,33 @@
+src/regime_detection/engine.py
+  s_7f3c352a4f9447::t_d01b64ee8955a0 74,93
+  s_7f3c352a4f9447::t_77e43aa8cd262e 39,56
+tests/test_trend_direction_v2_euphoria.py
+  s_7f3c352a4f9447::t_f50352e5677082 354-430
+src/regime_detection/market_context.py
+  s_7f3c352a4f9447::t_919de98a9b8e5f 79
+  s_7f3c352a4f9447::t_03b6cfc93fb708 122-126
+  s_7f3c352a4f9447::t_2bd657c1db1979 44
+  s_7f3c352a4f9447::t_b264fa4c39828f 29
+  s_7f3c352a4f9447::t_ab9fe87da27a51 167-169
+src/regime_detection/feature_store.py
+  s_7f3c352a4f9447::t_81c2eb8c7af2c0 309-316,318-320
+  s_7f3c352a4f9447::t_3a5df86bac1daf 207-251
+tests/test_v2_data_ingestion.py
+  s_7f3c352a4f9447::t_8c3a98a2ec8c30 357-404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "2f8babe5f836027466e0ce97c3fc207538173ba2",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

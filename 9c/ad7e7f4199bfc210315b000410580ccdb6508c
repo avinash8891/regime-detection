@@ -1,0 +1,39 @@
+docs/regime_engine_v2_spec.md
+  s_7f3c352a4f9447::t_74f1c08a0802b2 1556-1581
+  s_7f3c352a4f9447::t_c26d0ad2749140 1515-1538
+src/regime_detection/credit_funding.py
+  s_7f3c352a4f9447::t_0ed5ea6eae94ee 358-361,365,367-368
+  s_7f3c352a4f9447::t_5e38bf3e28be4f 114-118,127-128,133,136-144
+  s_7f3c352a4f9447::t_64460b585bce6d 11-32
+  s_7f3c352a4f9447::t_c20a892f24cdde 263-264,272-285,307-315
+src/regime_data_fetch/fetch_workflow.py
+  s_7f3c352a4f9447::t_76ce56f347fdb3 60-64
+tests/test_credit_funding.py
+  s_7f3c352a4f9447::t_e0fec81f666efa 209-210,213,215-216
+  s_7f3c352a4f9447::t_958d2fe94b0890 103-105,115-116
+  s_7f3c352a4f9447::t_406c48cfa53b3e 170-171,180,182-183
+  s_7f3c352a4f9447::t_ad9874bc37d643 334-335,347-348
+  s_7f3c352a4f9447::t_956ac2c8bd2bac 221-223,233-234,237,239-240,244-246,257-261,273-275,278,280,284,287,292,296,298,301-306,313-321
+  s_7f3c352a4f9447::t_e9732b5d93ab0d 125-129,132-135,145,147-148,150-157
+  s_7f3c352a4f9447::t_214a37bf4da9ad 28-30
+  s_7f3c352a4f9447::t_39f6cee1958b79 546-550
+src/regime_detection/feature_store.py
+  s_7f3c352a4f9447::t_7635ac97be54c7 463-466,475-476
+  s_7f3c352a4f9447::t_14db5aeea6eb28 35-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "9cad7e7f4199bfc210315b000410580ccdb6508c",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

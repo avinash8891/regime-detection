@@ -1,0 +1,25 @@
+tests/fixtures/derived/golden_dates.yaml
+  s_e13bd0da99a610::t_b16a50c8ff96a4 186-193,195-212
+tests/test_fixture_verification.py
+  s_e13bd0da99a610::t_5fb4d80051933c 485-488,492-493
+  s_e13bd0da99a610::t_d9d50d33712a2a 282-289
+  s_e13bd0da99a610::t_9eb7aa26c072b3 420-422,447-449,455-460,463-465,478-483,489-491
+  s_e13bd0da99a610::t_f39cd7ca01e632 390-419,423-446,450-454,461-462,466-477,484,494-495
+  s_e13bd0da99a610::t_5b1dc62bf1d994 346-350
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7a2b0f1e9e616963dfb04381a47caddd254e031f",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

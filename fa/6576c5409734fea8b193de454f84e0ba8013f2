@@ -1,0 +1,24 @@
+tests/test_foundation.py
+  s_cad40512569b61::t_d188c5af60a9f1 92,107
+  s_cad40512569b61::t_61dd54c67d32fd 95-102
+  s_cad40512569b61::t_9ef387665d193f 12,79-91,93-94,103-106,108-112,114-115
+  s_cad40512569b61::t_5496625a632aa3 113
+src/regime_detection/engine.py
+  s_cad40512569b61::t_3e525c16cedf81 3,6,21-44,93-112,116-142,163-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fa6576c5409734fea8b193de454f84e0ba8013f2",
+  "prompts": {},
+  "sessions": {
+    "s_cad40512569b61": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e67ba-fdfb-7e72-a86b-68d4b7034df0",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

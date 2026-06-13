@@ -1,0 +1,23 @@
+tests/test_shadow_deadman_check.py
+  s_6e70032b0c3209::t_ba036381a066a4 20-44,54,109
+tests/test_credit_funding_axis_engine.py
+  s_6e70032b0c3209::t_b4f71b0d4b0353 859-862
+tests/test_build_walkforward_report.py
+  s_6e70032b0c3209::t_491d59ac264b80 5,19-20,22-86,91,96,118,123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2eab9cccec0d8871d003e290a4477ee584d2b32e",
+  "prompts": {},
+  "sessions": {
+    "s_6e70032b0c3209": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6dd3-e8f9-72c2-9989-b78cb18e0f65",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

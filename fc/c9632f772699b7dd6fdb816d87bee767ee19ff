@@ -1,0 +1,21 @@
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_a2a758607dccc5 1014-1016
+src/regime_detection/credit_funding.py
+  s_52de661ea8374d::t_831e379330ada2 122,129-130,135-140,152-153,163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "fcc9632f772699b7dd6fdb816d87bee767ee19ff",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

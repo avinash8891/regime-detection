@@ -1,0 +1,20 @@
+tests/test_acquisition_consolidation.py
+  s_874a3142b8386c::t_7b3394d65433a8 237-274
+  s_874a3142b8386c::t_1ee352ca0f9e4a 116-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7d9e35ba8f4d1185f0b911dd661dcd6e68f60739",
+  "prompts": {},
+  "sessions": {
+    "s_874a3142b8386c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04c950f9-e520-447c-bea9-a46bacc12b0c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

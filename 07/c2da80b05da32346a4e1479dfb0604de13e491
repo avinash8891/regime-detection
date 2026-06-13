@@ -1,0 +1,19 @@
+docs/credit_spread_tlt_proxy_parallel_metric_plan.md
+  s_7f3c352a4f9447::t_25c91c62989a6d 1-589
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "07c2da80b05da32346a4e1479dfb0604de13e491",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

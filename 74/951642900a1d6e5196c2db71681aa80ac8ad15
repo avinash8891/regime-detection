@@ -1,0 +1,44 @@
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_1c47c85d071288::t_badb2069af4160 248-285
+src/regime_detection/credit_funding.py
+  s_1c47c85d071288::t_100beca34dc4bb 1-570
+src/regime_detection/feature_store.py
+  s_1c47c85d071288::t_730723a2f733af 13,20-32
+  s_1c47c85d071288::t_340e3754c76008 160-166
+  s_1c47c85d071288::t_27a15d4de1cb6d 177
+  s_1c47c85d071288::t_242baf198a89f6 347-372,388
+  s_1c47c85d071288::t_7607a3f955db4d 76
+src/regime_detection/axis_series.py
+  s_1c47c85d071288::t_485ef33a513b5b 29-35,39
+  s_1c47c85d071288::t_8a55449f501449 591-842,849,867
+  s_1c47c85d071288::t_3ade3dabc8791c 94-97
+src/regime_detection/config.py
+  s_1c47c85d071288::t_f9c3a74486236c 478-518,520-526,530-538
+tests/test_credit_funding.py
+  s_1c47c85d071288::t_128fc3474eb322 1-653
+src/regime_detection/models.py
+  s_1c47c85d071288::t_173684866f66c3 95-104,106-111,115-117
+src/regime_detection/timeline.py
+  s_1c47c85d071288::t_3ab743f828111f 183-187
+  s_1c47c85d071288::t_c8276e9939391a 247
+  s_1c47c85d071288::t_89bfd6a1a16cba 158-161
+  s_1c47c85d071288::t_b3511eed829481 105-107,116
+src/regime_detection/network_fragility_rules.py
+  s_1c47c85d071288::t_1294ba45a017df 95-97,99-100,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "74951642900a1d6e5196c2db71681aa80ac8ad15",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

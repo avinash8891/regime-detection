@@ -1,0 +1,19 @@
+src/regime_detection/data_quality.py
+  s_db04d04d95877a::t_ede94406b3fc99 10-14,31,44,56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "05a2aaa99200c94ca695f8abf94aab2a176dfb24",
+  "prompts": {},
+  "sessions": {
+    "s_db04d04d95877a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "514917cc-8426-49e3-bf28-e8825bfc89ea",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

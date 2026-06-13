@@ -1,0 +1,26 @@
+tests/test_v2_config.py
+  s_db04d04d95877a::t_8ceae1444b32d2 25-27,40,46
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_db04d04d95877a::t_9b2e8686176187 48-52,65,71
+tests/test_v2_data_ingestion.py
+  s_db04d04d95877a::t_4530da80e7b70e 11
+  s_db04d04d95877a::t_e40fe228482dd9 31-33,37-40,42-46
+src/regime_detection/fragility_universe.py
+  s_db04d04d95877a::t_40668cb45f3353 3-13,19-20,22-32,35-40,42-51,54-55,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "393eb8ab9797c4a9af482577af7cf1e6f6b48080",
+  "prompts": {},
+  "sessions": {
+    "s_db04d04d95877a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "514917cc-8426-49e3-bf28-e8825bfc89ea",
+        "model": "unknown"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

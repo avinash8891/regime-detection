@@ -1,0 +1,28 @@
+src/regime_detection/market_context.py
+  s_1c47c85d071288::t_8ea10b95b22c8f 28
+  s_1c47c85d071288::t_c1aa2dc6e58944 75-76
+  s_1c47c85d071288::t_6a1ce889d42938 6-7
+  s_1c47c85d071288::t_e03f4e91cb50fd 27,41-42
+tests/test_breadth_state_v2_bias_warnings_scaffolding.py
+  s_1c47c85d071288::t_bfa92cc69401ed 1-183
+tests/test_market_context_pit_inputs.py
+  s_1c47c85d071288::t_23ff3bb8bd9f89 1-176
+src/regime_detection/breadth_state_v2.py
+  s_1c47c85d071288::t_6d7107c1d341b9 44,59,71-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "5c9bd7e8ae978543b518e0949b16c10e6f63d50a",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

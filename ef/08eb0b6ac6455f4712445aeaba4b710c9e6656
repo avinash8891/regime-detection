@@ -1,0 +1,40 @@
+src/regime_detection/network_fragility.py
+  s_69e10dfae52a94::t_f55632783ff32f 197-198,202-207,225-228
+  s_69e10dfae52a94::t_e8fb0a35897db7 78-82
+  s_69e10dfae52a94::t_76ef2e6799cd1c 175-178,180-181
+docs/regime_engine_v2_spec.md
+  s_69e10dfae52a94::t_6449a632cc929d 577,581
+tests/test_v2_config.py
+  s_69e10dfae52a94::t_f0336eddb7b41e 100-170
+  s_69e10dfae52a94::t_1b5923cc612405 61-69
+src/regime_detection/engine.py
+  s_69e10dfae52a94::t_60b7546bb9317c 83-85
+src/regime_detection/config.py
+  s_69e10dfae52a94::t_525ad273ae25ad 96-101
+src/regime_detection/feature_store.py
+  s_69e10dfae52a94::t_5ac808c71070d6 67-78,83
+  s_69e10dfae52a94::t_52c72fbcdf7b98 41-45
+  s_69e10dfae52a94::t_da08681026fb01 7
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_69e10dfae52a94::t_1b0889b286fc5f 76-81
+src/regime_detection/timeline.py
+  s_69e10dfae52a94::t_fd828f43208f47 67
+  s_69e10dfae52a94::t_afc50698e6ce97 80-85
+  s_69e10dfae52a94::t_0de023bff176fe 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "ef08eb0b6ac6455f4712445aeaba4b710c9e6656",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

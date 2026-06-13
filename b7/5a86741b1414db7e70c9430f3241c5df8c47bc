@@ -1,0 +1,38 @@
+tests/test_boundary_policies.py
+  s_cad40512569b61::t_a343b42c14713c 1-64
+docs/superpowers/specs/2026-05-26-pyright-strict-coverage-design.md
+  7a7d96b8ef435f1f 1-135
+src/regime_detection/boundary_policies.py
+  s_cad40512569b61::t_b46d633ecbc532 1-221
+docs/superpowers/plans/2026-05-26-pyright-strict-coverage-expansion.md
+  7a7d96b8ef435f1f 1-621
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b75a86741b1414db7e70c9430f3241c5df8c47bc",
+  "prompts": {
+    "7a7d96b8ef435f1f": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "d6bbb40a-e15e-4743-954e-9f92dd0a4f64",
+        "model": "custom:GPT-5.4-(via-proxy)-35"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>",
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 756,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_cad40512569b61": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e67ba-fdfb-7e72-a86b-68d4b7034df0",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

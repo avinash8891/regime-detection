@@ -1,0 +1,48 @@
+src/regime_detection/config.py
+  s_1c47c85d071288::t_537bef2a40c173 589-627,629-633,637-647
+src/regime_detection/feature_store.py
+  s_1c47c85d071288::t_709e09a0757398 18
+  s_1c47c85d071288::t_658f06efb29d4b 77-91
+  s_1c47c85d071288::t_a54da80e015200 421-447
+  s_1c47c85d071288::t_4dec633fabb2f6 478
+  s_1c47c85d071288::t_b3b44646674c41 217
+  s_1c47c85d071288::t_3aecf9a7de9881 100
+  s_1c47c85d071288::t_609281361c44fe 199-205
+src/regime_detection/axis_series.py
+  s_1c47c85d071288::t_0624c87b490b2b 1273-1281
+  s_1c47c85d071288::t_d261adb2bcbcb1 1292
+  s_1c47c85d071288::t_e2702c2e91505e 879-1084
+  s_1c47c85d071288::t_d7dbe82013f818 44,49-53
+  s_1c47c85d071288::t_8ba66fb80d54ae 118-121
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_1c47c85d071288::t_5b0b52660b79d9 42-43
+  s_1c47c85d071288::t_62c3916ff91f28 320-360
+tests/test_inflation_growth.py
+  s_1c47c85d071288::t_6fd0fb2aff715c 1-701
+src/regime_detection/inflation_growth.py
+  s_1c47c85d071288::t_a727c1a40be9c8 1-578
+src/regime_detection/models.py
+  s_1c47c85d071288::t_6821deb6ecaa80 85-96,98-106,110-112
+src/regime_detection/timeline.py
+  s_1c47c85d071288::t_92f453ce5b3193 122-124
+  s_1c47c85d071288::t_0006d8f3a6c1ee 134
+  s_1c47c85d071288::t_b5bedc5a6f1edb 237-241
+  s_1c47c85d071288::t_d5517fc55f15f9 325
+  s_1c47c85d071288::t_7c2194e552a7b7 202-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "e649e5f5795fc6bba16588fc1dae7db1b3104e0e",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,45 @@
+docs/shadow_runner_spec.md
+  s_52de661ea8374d::t_17b7dd7ef942f3 101
+docs/market_data_fetch_plan.md
+  s_52de661ea8374d::t_17b7dd7ef942f3 61,98,121,255
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_17b7dd7ef942f3 27
+src/regime_detection/market_context.py
+  s_52de661ea8374d::t_17b7dd7ef942f3 253
+tests/fixtures/raw/PROVENANCE.md
+  s_52de661ea8374d::t_39c9606034ea8f 18
+tests/test_fetch_workflow.py
+  s_52de661ea8374d::t_17b7dd7ef942f3 26,29,34
+tests/test_reconciliation_contracts.py
+  s_52de661ea8374d::t_17b7dd7ef942f3 14
+tests/conftest.py
+  s_52de661ea8374d::t_f0e024f958a63e 55-56,63-74
+  s_52de661ea8374d::t_17b7dd7ef942f3 35,39,52-54,57-62,75-76,85
+tests/test_credit_funding_features.py
+  s_52de661ea8374d::t_17b7dd7ef942f3 91
+  s_52de661ea8374d::t_f0e024f958a63e 102
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_17b7dd7ef942f3 220,225
+tests/fixtures/derived/golden_dates.yaml
+  s_52de661ea8374d::t_cdcfb1ea954cf0 1-2,17,22
+scripts/fetch_regime_engine_v1_data.py
+  s_52de661ea8374d::t_f0e024f958a63e 17-27
+tests/fixtures/verification/golden_dates_report.yaml
+  s_52de661ea8374d::t_cdcfb1ea954cf0 1-2,17,22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "1dd345de241e2389ff72c9f95f12ee97da591c23",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

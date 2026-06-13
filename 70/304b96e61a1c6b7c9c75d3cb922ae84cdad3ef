@@ -1,0 +1,23 @@
+docs/superpowers/plans/2026-06-09-audit-10-findings-resolution.md
+  s_3579a11c274b3d::t_bde70dfffe1c19 879
+pyproject.toml
+  s_3579a11c274b3d::t_a07477675ef931 128
+tests/test_v2_config.py
+  s_3579a11c274b3d::t_252451231115f2 419
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "70304b96e61a1c6b7c9c75d3cb922ae84cdad3ef",
+  "prompts": {},
+  "sessions": {
+    "s_3579a11c274b3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4ff0dba7-5695-4f37-858c-5161163327a0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

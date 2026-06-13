@@ -1,0 +1,37 @@
+src/regime_detection/network_fragility.py
+  s_52de661ea8374d::t_6b62000f2c96c4 229
+tests/test_credit_funding.py
+  s_52de661ea8374d::t_18d1d8c5b1b2ec 97,131-133,135-136
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_0f7fee8edcf276 623,686,688-690
+  s_52de661ea8374d::t_005c24e33fcf70 633
+  s_52de661ea8374d::t_b85ca799951d41 467
+  s_52de661ea8374d::t_e4f3ba5a2742bb 337,395
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_a036a77b74fd22 349,532,646
+src/regime_detection/credit_funding.py
+  s_52de661ea8374d::t_f6826616207a14 314
+src/regime_detection/inflation_growth.py
+  s_52de661ea8374d::t_c63973d1272153 275
+  s_52de661ea8374d::t_82a703576a6317 36,225
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_9cd6f097d71e06 441-443
+  s_52de661ea8374d::t_77e630901f9db7 1199-1204
+  s_52de661ea8374d::t_57cfe02afb49ab 957-962
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "3e56db3b2e4c86ba873a42c1a8326e59741f961a",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

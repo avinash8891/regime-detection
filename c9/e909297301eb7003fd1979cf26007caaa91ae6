@@ -1,0 +1,46 @@
+src/regime_detection/transition_score.py
+  s_1c47c85d071288::t_338d918db844ef 56,58-77,85
+  s_1c47c85d071288::t_f8977267a3fc71 115-116
+  s_1c47c85d071288::t_e6750e0e8fc8e1 158-179,186-187
+pyproject.toml
+  s_1c47c85d071288::t_a965995248dead 17
+tests/test_transition_score_v2.py
+  s_1c47c85d071288::t_65cf7445cad8bd 402-509
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_1c47c85d071288::t_5ba8815171d2b7 255-261,263-264
+src/regime_detection/trend_direction_v2.py
+  s_1c47c85d071288::t_1f0ed0e468bd3d 172,180-182,188-189
+src/regime_detection/config.py
+  s_1c47c85d071288::t_d8cd2a3af58626 503-505
+src/regime_detection/transition_risk_series.py
+  s_1c47c85d071288::t_66c1d1cb716c88 228-244,254-255
+  s_1c47c85d071288::t_66986f39791971 78-82
+  s_1c47c85d071288::t_f3baca7d7e39f8 111
+  s_1c47c85d071288::t_b207a8be2de44b 131-145,155-156
+src/regime_detection/feature_store.py
+  s_1c47c85d071288::t_c41526112b4b20 261-283
+  s_1c47c85d071288::t_1a02fcb86ef831 297
+  s_1c47c85d071288::t_997b9df049c2b1 35,38-39
+  s_1c47c85d071288::t_ab19cbc53acf39 57
+  s_1c47c85d071288::t_372fc9cc348237 121-128
+tests/test_hmm_state.py
+  s_1c47c85d071288::t_dde8149f6f59bb 1-294
+src/regime_detection/hmm_state.py
+  s_1c47c85d071288::t_bff8e7f3535c7e 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "c9e909297301eb7003fd1979cf26007caaa91ae6",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

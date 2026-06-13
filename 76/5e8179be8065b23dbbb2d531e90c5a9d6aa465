@@ -1,0 +1,25 @@
+tests/test_local_daily_ohlcv_sqlite_reader.py
+  s_1c47c85d071288::t_e973eb11bd251a 1-202
+src/regime_data_fetch/pit_constituents.py
+  s_1c47c85d071288::t_ff3e9ef1d6b3b8 190-226
+tests/test_pit_constituents_read.py
+  s_1c47c85d071288::t_18ec4d3560fbf9 1-150
+src/regime_data_fetch/local_daily_ohlcv_sqlite_reader.py
+  s_1c47c85d071288::t_a99c55f89ea46d 1-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "765e8179be8065b23dbbb2d531e90c5a9d6aa465",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

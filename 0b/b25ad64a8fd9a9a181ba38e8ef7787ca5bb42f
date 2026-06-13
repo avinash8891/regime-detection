@@ -1,0 +1,57 @@
+tests/test_event_calendar.py
+  s_34ff7e1ca723db::t_16a8dec5bfd670 12,118-151,174-176
+  s_34ff7e1ca723db::t_96f8a8716de01c 14,152-173
+src/regime_detection/inflation_growth.py
+  s_34ff7e1ca723db::t_13090021db2de3 402-438
+tests/test_network_fragility_rules.py
+  s_34ff7e1ca723db::t_701ebccf599bfa 634,641-645
+  s_34ff7e1ca723db::t_c1deb3d967c331 26,604-633,635-640
+src/regime_detection/event_calendar.py
+  s_7f3c352a4f9447::t_bce6d1af38918e 3-4
+  s_7f3c352a4f9447::t_5d61d9cdb2f7ab 58-73,76,79,81-82,84-134,137-160,162-173,175-203,206-209,212-215
+src/regime_detection/axis_series.py
+  s_7f3c352a4f9447::t_53107d6b4f3bda 4
+  s_34ff7e1ca723db::t_c7c09735a22585 1092-1105,1249-1258
+  s_7f3c352a4f9447::t_2677d208e35c3d 18
+  s_7f3c352a4f9447::t_4b6039fdc15491 1330-1335
+  s_34ff7e1ca723db::t_2750b3cac3c7ea 47,935-955,963-965,1019,1022
+  s_34ff7e1ca723db::t_5455ad10364b48 1336
+  s_34ff7e1ca723db::t_c3165434425f68 59,417-422,449
+src/regime_detection/breadth_state_v2.py
+  s_34ff7e1ca723db::t_a6a9ace5cf7e2c 44,290-291,324-344,346,348-349
+tests/test_inflation_growth.py
+  s_34ff7e1ca723db::t_395aa5957d2c8e 36-37,215-269
+src/regime_detection/network_fragility_rules.py
+  s_34ff7e1ca723db::t_df66bcea9c52ac 47,236-329
+scripts/profile_engine_30d.py
+  s_34ff7e1ca723db::t_8142a45b537fb2 1-19,22-127,131-135,137,144-156,158-183,196-208,210-230,281-406,408-438,440-443,445-591,597-605,626-658
+  s_34ff7e1ca723db::t_9a9784afc5a59a 128-130,136,138-143,157,407,439,444,592-596
+  s_34ff7e1ca723db::t_924c6f1dc3746d 184-195,209,231-280,606-625
+  s_34ff7e1ca723db::t_40fb4c71f42099 20-21
+tests/test_breadth_state_v2_pit_features.py
+  s_34ff7e1ca723db::t_95a3c4bd0b6edb 342-383
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "0bb25ad64a8fd9a9a181ba38e8ef7787ca5bb42f",
+  "prompts": {},
+  "sessions": {
+    "s_34ff7e1ca723db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e222e-e557-7c10-b20d-3cfa14724850",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    },
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

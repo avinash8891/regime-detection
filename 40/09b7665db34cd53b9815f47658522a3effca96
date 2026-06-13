@@ -1,0 +1,23 @@
+tests/test_rolling_ols_slope_consolidation.py
+  s_ab33020b7c1f29::t_7ded204cea1ada 43,268-281
+src/regime_detection/network_fragility.py
+  s_ab33020b7c1f29::t_7ded204cea1ada 247
+src/regime_detection/_rolling_stats.py
+  s_ab33020b7c1f29::t_7ded204cea1ada 105,131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "4009b7665db34cd53b9815f47658522a3effca96",
+  "prompts": {},
+  "sessions": {
+    "s_ab33020b7c1f29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eabb2-f3d1-7c91-b71a-ca44437f87a6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

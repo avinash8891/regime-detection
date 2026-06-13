@@ -1,0 +1,46 @@
+src/regime_detection/feature_store.py
+  s_e5b6ccff7fdef2::t_f8a51b9f351e26 117
+  s_e5b6ccff7fdef2::t_e3d1f607062a79 312,314,321,328-331
+  s_e5b6ccff7fdef2::t_8c89a57be9a677 668-687
+  s_e5b6ccff7fdef2::t_5250795acdcff0 688,349,351-352,692-698,702,706-709,713-715
+  s_e5b6ccff7fdef2::t_96a76ccaac0984 689-691,699-701,703-705,710-712,716-718,730-732,734-735,738,743-745,757,770-772,774-775,778,783-785,804-806,808-809,820,823-824,832-834
+  s_e5b6ccff7fdef2::t_3071e598a1bdf5 876-882
+  s_e5b6ccff7fdef2::t_fb63a63a28787e 883,892
+  s_e5b6ccff7fdef2::t_7dc2567a656a8c 884,885,887,893,894,896,901,902,904,909,910,912,917
+  s_e5b6ccff7fdef2::t_6760dbccdef2be 886,888-891
+  s_e5b6ccff7fdef2::t_696dca002711d7 719,721-726,728-729,733,736-737,740-742
+  s_e5b6ccff7fdef2::t_25055582df1960 720,727,739,749,761,781,800
+  s_e5b6ccff7fdef2::t_bd7f7841da026c 895,897-900
+  s_e5b6ccff7fdef2::t_4ef72f6300f7d0 746,748,750-756,758,760,762-769,773,776-777,779-780,782
+  s_e5b6ccff7fdef2::t_f21ac32cd302ea 747,759
+  s_e5b6ccff7fdef2::t_5f7fc8aafae416 903,905-908
+  s_e5b6ccff7fdef2::t_8ae3e60b2cd0e1 786-799,801-803,807,810-819,821-822,825-831
+  s_e5b6ccff7fdef2::t_32f4c0135ded6e 911,913-916
+tests/test_feature_store_specs.py
+  s_e5b6ccff7fdef2::t_a1b51f15f63e9e 109-127
+  s_e5b6ccff7fdef2::t_debf1f76120651 128,147
+  s_e5b6ccff7fdef2::t_e934ea4ff08d66 129-130,132-133,136-137,140-141,143-144,148-149,151-152,155-156,159-160,162-163,166,168-169,171-174,177-178,180-181,185-188,190-193,196-197,199-200,204-205
+  s_e5b6ccff7fdef2::t_731abd88a113b5 131,134-135,138,142,145-146
+  s_e5b6ccff7fdef2::t_4fa59a5eed6614 139,158,176,195
+  s_e5b6ccff7fdef2::t_bdb843c25ad784 150,153-154,157,161,164-165,167
+  s_e5b6ccff7fdef2::t_7a6ff5b359c525 170,175,179,182-184
+  s_e5b6ccff7fdef2::t_9d8972cb4ac20d 189,194,198,201-203
+tests/test_feature_store_refactors.py
+  s_e5b6ccff7fdef2::t_03e8e2920a1034 154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ff4ee4fa6b0946c797eed97094becda427deaa23",
+  "prompts": {},
+  "sessions": {
+    "s_e5b6ccff7fdef2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5c933e99-2828-4e53-9113-766a176d8b23",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

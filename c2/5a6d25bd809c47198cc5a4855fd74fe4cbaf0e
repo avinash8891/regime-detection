@@ -1,0 +1,33 @@
+src/regime_detection/engine.py
+  6284b163c8208cf2 21,57-64,77,83-84,105-112,154,157,161-162,164-165
+tests/test_trend_direction.py
+  6284b163c8208cf2 1-37
+src/regime_detection/trend_direction.py
+  6284b163c8208cf2 1-205
+scripts/verify_fixtures.py
+  6284b163c8208cf2 1-680,685-710,713-853
+tests/fixtures/derived/golden_dates.yaml
+  6284b163c8208cf2 1-97
+tests/fixtures/verification/golden_dates_report.yaml
+  6284b163c8208cf2 1-667
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "c25a6d25bd809c47198cc5a4855fd74fe4cbaf0e",
+  "prompts": {
+    "6284b163c8208cf2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df886-7a0b-7b10-a22d-6f6c96d80945",
+        "model": "gpt-5.2"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 64,
+      "total_deletions": 15,
+      "accepted_lines": 1879,
+      "overriden_lines": 0
+    }
+  }
+}

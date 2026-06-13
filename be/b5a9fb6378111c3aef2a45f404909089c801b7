@@ -1,0 +1,35 @@
+tests/test_inflation_growth_axis_engine.py
+  s_7e147b89f819ca::t_981e3cd11b4ded 42-44
+src/regime_detection/engine.py
+  s_7e147b89f819ca::t_d91ac03b5d579a 25
+tests/test_inflation_growth.py
+  s_7e147b89f819ca::t_1a37e43e61f08e 24-26
+src/regime_detection/inflation_growth.py
+  s_7e147b89f819ca::t_b8fadd48b59e20 49-50
+src/regime_detection/feature_store.py
+  s_7e147b89f819ca::t_48109c04eac347 103-106
+src/regime_detection/axis_builders/inflation_growth.py
+  s_7e147b89f819ca::t_86dbd1a3930326 17
+src/regime_detection/inflation_growth_rules.py
+  s_7e147b89f819ca::t_732b3d93aa6d0c 1-22,26,29,31-36,38-104,106-233
+scripts/_v2_calibration_helpers.py
+  s_7e147b89f819ca::t_2d11c3d0bbc5df 32
+tests/test_v2_calibration_helpers.py
+  s_7e147b89f819ca::t_c98b5d60b1aaae 22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "beb5a9fb6378111c3aef2a45f404909089c801b7",
+  "prompts": {},
+  "sessions": {
+    "s_7e147b89f819ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c013e7-b3b8-439c-8ee2-73f4562e1a34",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

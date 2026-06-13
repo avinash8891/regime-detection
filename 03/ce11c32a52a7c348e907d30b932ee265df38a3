@@ -1,0 +1,25 @@
+pyproject.toml
+  s_e13bd0da99a610::t_bd0406f4b58444 26-30
+docs/regime_engine_v2_spec.md
+  s_e13bd0da99a610::t_47dd6439ffe151 164-172
+  s_e13bd0da99a610::t_2c2a71495e5c5f 548-552
+tests/test_source_hygiene.py
+  s_e13bd0da99a610::t_4c51ad7b2885c5 185-201,203-210
+  ai_agent 202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "03ce11c32a52a7c348e907d30b932ee265df38a3",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

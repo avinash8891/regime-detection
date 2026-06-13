@@ -1,0 +1,30 @@
+src/regime_detection/loaders.py
+  s_7f3c352a4f9447::t_e4bdeadba71ee5 139-188
+  s_7f3c352a4f9447::t_057964d337a983 38-50,64
+scripts/_v2_calibration_helpers.py
+  s_7f3c352a4f9447::t_1f969f422b7cae 97-124
+  s_7f3c352a4f9447::t_f5d4f2d998dd78 14-18
+  s_7f3c352a4f9447::t_b3c03c0084d5a9 57-59,61-62,64-70
+tests/test_v2_data_ingestion.py
+  s_7f3c352a4f9447::t_16fb9168626c12 16-17
+  s_7f3c352a4f9447::t_5a4916a189cd39 156-257
+scripts/run_v2_calibration.py
+  s_7f3c352a4f9447::t_48f9ab9b788de4 37,46
+  s_7f3c352a4f9447::t_1314969bf6dd76 227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "d1694840abeea8148b19371cf779bbdae46aeb29",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

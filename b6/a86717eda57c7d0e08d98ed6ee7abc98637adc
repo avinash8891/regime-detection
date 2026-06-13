@@ -1,0 +1,69 @@
+tests/test_trend_direction_v2_recovery_rule.py
+  s_9046a7d38f280d::t_07fb68fb855b06 286
+tests/test_volatility_state_v2_features.py
+  s_9046a7d38f280d::t_992f98ef3e94c5 501,517
+src/regime_detection/evidence_payloads.py
+  s_9046a7d38f280d::t_6166c994ab3804 118
+tests/test_axis_builders.py
+  s_9046a7d38f280d::t_80ce65d5e07edf 157-158
+tests/test_breadth_state.py
+  s_9046a7d38f280d::t_1ab19cb9a431a6 43,49
+  s_9046a7d38f280d::t_9263ab43d6a757 33,36-37
+tests/test_trend_character.py
+  s_9046a7d38f280d::t_8c6cc88805d92b 68,71-72
+tests/test_fixture_verification.py
+  s_9046a7d38f280d::t_aa025bc88b64bd 47,57-59,61-67,69-78
+tests/conftest.py
+  s_9046a7d38f280d::t_ac45dc1f4503be 606
+  s_9046a7d38f280d::t_ee1232283d0a04 570,850,862,879
+  s_9046a7d38f280d::t_f7be0de9dbcb9d 583-584
+  s_9046a7d38f280d::t_9eea7241b262a9 587,590-595,603-605
+  s_9046a7d38f280d::t_ebaf587c1ed404 516,522,524-525
+tests/test_reconciliation_contracts.py
+  s_9046a7d38f280d::t_a5ae5aa02a8072 57,62-63,140,144,171,175,198,202
+tests/test_trend_direction.py
+  s_9046a7d38f280d::t_cb5ebdeaad1960 29-30
+  s_9046a7d38f280d::t_db2abc42cd6ffa 23,26-27
+tests/test_volatility_state.py
+  s_9046a7d38f280d::t_fff84d33c759a1 27-28
+  s_9046a7d38f280d::t_1cf0809239a603 21,24-25
+tests/test_monetary_pressure_features.py
+  s_9046a7d38f280d::t_2de9c15d03cbcf 389,395
+tests/test_change_point.py
+  s_9046a7d38f280d::t_69e73f5011d1cf 505,538
+tests/test_breadth_state_v2_features.py
+  s_9046a7d38f280d::t_c5cf0b0a4bd659 321,336
+tests/test_trend_character_v2_labels.py
+  s_9046a7d38f280d::t_0f1f4627aa8136 536,547
+tests/test_cohort_routing.py
+  s_9046a7d38f280d::t_029fcdcdde64a5 366,374-375
+tests/test_breadth_state_v2_labels.py
+  s_9046a7d38f280d::t_5cabaed665e96d 340,343-344
+src/regime_detection/axis_builders/breadth.py
+  s_9046a7d38f280d::t_4d55acf0af90fa 67-69,102
+  s_9046a7d38f280d::t_a8b17b549287b4 63-66,70-71,91
+tests/test_strategy_family_constraints.py
+  s_9046a7d38f280d::t_89da5dbda56e81 237,242-243
+tests/test_volatility_state_v2_rising_vol_rule.py
+  s_9046a7d38f280d::t_29d9e26aec1f53 298
+tests/test_volume_liquidity_v2_features.py
+  s_9046a7d38f280d::t_d88fd976ac2164 215,231
+tests/test_v2_data_ingestion.py
+  s_9046a7d38f280d::t_2af7ae56756d9a 33,36,112,117-118,598,632
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b6a86717eda57c7d0e08d98ed6ee7abc98637adc",
+  "prompts": {},
+  "sessions": {
+    "s_9046a7d38f280d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6cd1-8404-7583-8acb-77518c13a6a2",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

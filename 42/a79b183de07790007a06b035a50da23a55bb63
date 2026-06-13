@@ -1,0 +1,74 @@
+src/regime_data_fetch/aaii_sentiment.py
+  s_75270fdd5c79b3::t_bb03bb281c15cf 42
+src/regime_data_fetch/local_daily_ohlcv_sqlite_reader.py
+  s_75270fdd5c79b3::t_d8a02a520dcc69 51-56
+  s_75270fdd5c79b3::t_9b1f8b51df86c6 5,13,17,48,86-87,99-104
+src/regime_detection/observability.py
+  s_75270fdd5c79b3::t_0bd5339993936c 209-210
+scripts/validate_agents_md.py
+  s_75270fdd5c79b3::t_d9c8c876f30b54 24,63-65
+  s_75270fdd5c79b3::t_02eb3931169e91 10-11,25-30,42-43,62,66-70
+src/regime_data_fetch/daily_ohlcv_contract.py
+  s_75270fdd5c79b3::t_bb03bb281c15cf 31-32,77
+src/regime_data_fetch/fred.py
+  s_75270fdd5c79b3::t_6658a44f9b7a44 156-158
+src/regime_data_fetch/sqlite_identifiers.py
+  s_75270fdd5c79b3::t_9b1f8b51df86c6 1-10
+scripts/verify_fixtures.py
+  s_75270fdd5c79b3::t_d8a02a520dcc69 13,172-175
+  s_75270fdd5c79b3::t_b16992f0737e20 177-179
+  s_75270fdd5c79b3::t_9b1f8b51df86c6 12,38,182-183
+.pre-commit-config.yaml
+  s_75270fdd5c79b3::t_02eb3931169e91 6-17,24-29
+src/regime_detection/axis_builders/breadth.py
+  s_75270fdd5c79b3::t_0bd5339993936c 149-150
+tests/test_sqlite_identifiers.py
+  s_75270fdd5c79b3::t_c5f04733384487 1-22
+src/regime_detection/pytest_runtime_policy.py
+  s_75270fdd5c79b3::t_bb03bb281c15cf 38
+src/regime_data_fetch/event_sources/gpr_gdelt_fetchers.py
+  s_75270fdd5c79b3::t_6658a44f9b7a44 25,271
+tests/test_fixture_verification.py
+  s_75270fdd5c79b3::t_c5f04733384487 226-250
+tests/test_data_fetch_http.py
+  s_75270fdd5c79b3::t_c5f04733384487 103-116
+tests/test_detect_flaky_tests.py
+  s_75270fdd5c79b3::t_c5f04733384487 9-10,79-95
+src/regime_detection/network_fragility.py
+  s_75270fdd5c79b3::t_0bd5339993936c 86-90
+scripts/detect_flaky_tests.py
+  s_75270fdd5c79b3::t_9b1f8b51df86c6 9-10
+src/regime_detection/fragility_universe.py
+  s_75270fdd5c79b3::t_0bd5339993936c 65-74
+src/regime_data_fetch/acquisition_consolidation.py
+  s_75270fdd5c79b3::t_9401fa29d0fe58 309,321
+  s_75270fdd5c79b3::t_9b1f8b51df86c6 6,28,56,301,366,373-378
+  s_75270fdd5c79b3::t_b16992f0737e20 367,371-372
+  s_75270fdd5c79b3::t_438809228a3f43 310
+  s_75270fdd5c79b3::t_6658a44f9b7a44 303-305,308,368-370
+  s_75270fdd5c79b3::t_d8a02a520dcc69 322-324
+src/regime_detection/axis_builders/credit_funding.py
+  s_75270fdd5c79b3::t_0bd5339993936c 434-435,463,477,498,508-513
+src/regime_data_fetch/_http.py
+  s_75270fdd5c79b3::t_9b1f8b51df86c6 5,17,34,61-66
+  s_75270fdd5c79b3::t_d8a02a520dcc69 36
+.github/workflows/dependency-health.yml
+  s_75270fdd5c79b3::t_5649c6afba1f05 34,38,42,46
+  s_75270fdd5c79b3::t_02eb3931169e91 1-33,35-37,39-41,43-45,47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "42a79b183de07790007a06b035a50da23a55bb63",
+  "prompts": {},
+  "sessions": {
+    "s_75270fdd5c79b3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eab95-e573-79b2-98db-efe10a11c602",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

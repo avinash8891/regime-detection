@@ -1,0 +1,19 @@
+docs/verification/pr27_slice_gate_evidence.md
+  s_7f3c352a4f9447::t_7876eb63b9e052 1-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "51ff10d8955dfc3e861262ec588de93f8d2093e5",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

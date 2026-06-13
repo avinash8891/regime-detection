@@ -1,0 +1,48 @@
+docs/regime_engine_v2_spec.md
+  s_69e10dfae52a94::t_5a78536b892bb9 363-399
+  s_69e10dfae52a94::t_2f5385eb5b5dde 298-362,400-402
+src/regime_detection/network_fragility_rules.py
+  s_69e10dfae52a94::t_7d32f121e3ab23 393-402,404,407
+  s_69e10dfae52a94::t_7bdc5bba254adc 32-37,41
+  s_69e10dfae52a94::t_872800c0f2eb8b 152-155,157
+  s_69e10dfae52a94::t_c455b9d85ca7ab 156
+  s_69e10dfae52a94::t_f3586e0db1b7e9 313
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_69e10dfae52a94::t_d737f67881f60b 87-97
+src/regime_detection/config.py
+  s_69e10dfae52a94::t_4b0ac5c165ccec 141-146
+tests/test_per_label_hysteresis.py
+  s_69e10dfae52a94::t_2257c95b6ce991 6,9-13
+src/regime_detection/data_quality.py
+  s_69e10dfae52a94::t_558ce7ac25daa7 23,25-34
+  s_69e10dfae52a94::t_3a940c33fd6f7f 62
+src/regime_detection/axis_series.py
+  s_69e10dfae52a94::t_8766bce0be3826 299-302,307,310
+  s_69e10dfae52a94::t_9353a845325174 327-349,356
+  s_69e10dfae52a94::t_fefbf1310b834d 383
+tests/test_network_fragility_rules.py
+  s_69e10dfae52a94::t_82c616aac9b910 286-343
+  s_69e10dfae52a94::t_cf21f3ccd05959 603-641
+  s_69e10dfae52a94::t_2283881cea95b2 450,453-454,469-485
+tests/test_network_fragility_classifier.py
+  s_69e10dfae52a94::t_807ad1b458476f 373-443
+  s_69e10dfae52a94::t_1cfec8aae8e07d 164-166,172,174-176
+tests/test_v2_config.py
+  s_69e10dfae52a94::t_3e118b1c0fbaa7 54-56,62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "61fceb98984c2ead5c4e0f26a08bf9daa5bd95bc",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

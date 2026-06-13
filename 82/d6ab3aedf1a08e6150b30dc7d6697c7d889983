@@ -1,0 +1,31 @@
+tests/test_build_walkforward_report.py
+  s_e13bd0da99a610::t_879436e41487aa 707-732
+  s_e13bd0da99a610::t_ac407b9abe327f 9
+scripts/run_walkforward_replay_check.py
+  s_e13bd0da99a610::t_a98c1527feb1c3 58-60,62-72,93
+  s_e13bd0da99a610::t_f139d7f6f9588f 36
+  s_e13bd0da99a610::t_445f01d28abee0 110-115,120
+scripts/build_walkforward_report.py
+  s_e13bd0da99a610::t_cd8950b6352bef 386-394
+tests/test_walkforward_replay_check.py
+  s_e13bd0da99a610::t_ed534202c0e80b 85,95-139
+  s_e13bd0da99a610::t_04c7830696fd42 5-6,10
+  s_e13bd0da99a610::t_4f831d5ec13ee3 86-94
+  s_e13bd0da99a610::t_1c47932e23c533 64-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "82d6ab3aedf1a08e6150b30dc7d6697c7d889983",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,50 @@
+src/regime_detection/transition_score.py
+  s_b912beca03c693::t_342e0eef8c04e1 28
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_b912beca03c693::t_7261f05ccf5403 132-136,422-424,488-491,496-497
+tests/test_credit_funding_axis_engine.py
+  s_b912beca03c693::t_c6ac409259af32 84-109,128-153
+tests/test_inflation_growth.py
+  s_b912beca03c693::t_1caf7ed4485608 105-107
+  s_b912beca03c693::t_9d8d98d806dce1 110,118-121
+  s_b912beca03c693::t_faa62366be66cd 94
+  s_b912beca03c693::t_7e2f04e8a5eb5c 86,99-104,108-109,111-117,122-137,504
+src/regime_detection/credit_funding.py
+  s_b912beca03c693::t_d778b5e47b17a6 849-850
+  s_b912beca03c693::t_59c21f4cc31406 6,11,79,94,642,645-646,648-650,652-653,657-662,666-675,682,699-717,873-878,880,884,889-891
+tests/test_network_fragility_classifier.py
+  s_b912beca03c693::t_4ee77b56315a3f 342-343,350-352
+  s_b912beca03c693::t_33d061e1fd7cb0 68,92-149,328-330
+tests/test_network_fragility_rules_precedence_series.py
+  s_b912beca03c693::t_a6ab9adee14493 92,94-95
+  s_b912beca03c693::t_9d1a3477d702e6 253,270
+src/regime_detection/network_fragility_rules.py
+  s_b912beca03c693::t_ad5baad04c990d 13-14,64-66,72-73,79,81-82,101-103,114,503-558,706-707,770-775,782-793,801-803
+src/regime_detection/models.py
+  s_b912beca03c693::t_27126b8c8bb1a5 274,289,291,293-294,322
+src/regime_detection/inflation_growth_rules.py
+  s_b912beca03c693::t_abbcbc7f1a5b58 458-459
+  s_b912beca03c693::t_ba7d8227a9a6be 165-177,249-270,346-368,416-427,444-445,448-449,460-462
+  s_b912beca03c693::t_990c6e616375d6 446-447
+src/regime_detection/inflation_growth.py
+  s_b912beca03c693::t_bea5a7e9015b45 64,66,68-69,80,82,85-86
+docs/decisions/0019-valid-data-rule-partitions.md
+  s_b912beca03c693::t_8d60d57b0d925f 1,8-11,13-18,20,22,24-26,28,30-37,39-42,44-47,49,51,53-69
+  s_b912beca03c693::t_818532822e9ca7 74,78-83,85-86,94-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0ecb8baeff842457da1217eaaaed485c35965465",
+  "prompts": {},
+  "sessions": {
+    "s_b912beca03c693": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e61ee-0ddc-71e3-83c8-79dfbb2b4a49",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

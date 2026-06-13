@@ -1,0 +1,20 @@
+scripts/run_v2_calibration.py
+  s_1c47c85d071288::t_15fb4286453885 113,115,119,125-135
+  s_1c47c85d071288::t_645197ae7b09f9 167-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "6e81b11e16eab0f622c5edd75f1c1ebb7f102f07",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

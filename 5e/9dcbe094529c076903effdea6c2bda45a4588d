@@ -1,0 +1,37 @@
+src/regime_detection/_rule_helpers.py
+  s_c79b3f54cb32d7::t_cfb1c42c0bece4 21,24-25,27,31,35,37
+  s_c79b3f54cb32d7::t_a6091888cc4364 71-73
+src/regime_detection/trend_direction_rules.py
+  s_c79b3f54cb32d7::t_0ebae577567c15 99,101-102,112,114-117,121-124
+  s_c79b3f54cb32d7::t_63d92c6e9cc5b3 100
+src/regime_detection/network_fragility_rules.py
+  s_c79b3f54cb32d7::t_0737fb2dfac3e7 198-199,201-202,249-250,252-253
+  s_c79b3f54cb32d7::t_e9e7174ea31bda 17-18
+  s_c79b3f54cb32d7::t_a3a24430a978f4 48-52,60
+tests/test_source_hygiene.py
+  s_c79b3f54cb32d7::t_5e7f19eb65a1a7 23-25
+  s_c79b3f54cb32d7::t_3a251c8c8e1b86 16-22
+tests/test_rolling_ols_slope_consolidation.py
+  s_c79b3f54cb32d7::t_5edd8f95ce9f24 196-202,211-214
+src/regime_detection/_rolling_stats.py
+  s_c79b3f54cb32d7::t_da9313ff8ee579 7
+  s_c79b3f54cb32d7::t_65b5cf3a540774 107,109-144
+  s_c79b3f54cb32d7::t_8ac6ee5825858c 74-77,82,90-94,96,99-106
+  s_c79b3f54cb32d7::t_bc7690bc733e51 78-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "5e9dcbe094529c076903effdea6c2bda45a4588d",
+  "prompts": {},
+  "sessions": {
+    "s_c79b3f54cb32d7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e80e309c-008c-48d9-9557-f314f96199fa",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

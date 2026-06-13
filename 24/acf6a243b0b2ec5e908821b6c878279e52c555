@@ -1,0 +1,145 @@
+tests/test_foundation.py
+  s_514e63ec111678::t_fa993f07a6f5a5 14,137-138
+  s_514e63ec111678::t_c7992f48028791 139
+tests/test_event_calendar_fetch.py
+  514e63ec1116781b 6,356,508
+tests/test_investing_archive_import.py
+  514e63ec1116781b 6,51,107,152
+src/regime_data_fetch/aaii_sentiment.py
+  514e63ec1116781b 14,66-68,71,175-182,195-198
+src/regime_detection/hmm_state.py
+  s_514e63ec111678::t_04dae2f711a896 219-230
+  s_514e63ec111678::t_ba4cfad023c7b0 326-329
+tests/test_acquisition_artifact_ledger.py
+  514e63ec1116781b 5,35,136,207,261
+tests/test_historical_walkforward.py
+  514e63ec1116781b 10,56,133
+tests/test_shadow_deadman_check.py
+  514e63ec1116781b 7,58,82
+tests/test_acquisition_schema.py
+  514e63ec1116781b 4,101
+tests/test_local_usd_index.py
+  514e63ec1116781b 8,92
+src/regime_data_fetch/aggregate_eps_workbook.py
+  s_514e63ec111678::t_a54fae68e2cb01 31-80,93-98,100-107,109-111,114-118,120-121
+tests/test_local_daily_ohlcv_sqlite_reader.py
+  514e63ec1116781b 6,42,149,195
+src/regime_data_fetch/constituent_ohlcv_tree.py
+  s_514e63ec111678::t_f0d928a1a18d4a 182-185,223-224,226
+src/regime_data_fetch/aggregate_eps.py
+  s_514e63ec111678::t_f769e9fce19143 53-58,93-103,105,107-108,493-496,501-502,504
+  514e63ec1116781b 40,688,690,694,697-698
+tests/test_investing_live_fetch.py
+  514e63ec1116781b 12,250
+tests/test_fomc_minutes.py
+  514e63ec1116781b 7,262
+tests/test_aggregate_eps.py
+  514e63ec1116781b 9,246,823,886
+tests/test_shadow_storage.py
+  514e63ec1116781b 7,38,147,221
+tests/test_powell_speeches.py
+  514e63ec1116781b 7,241
+src/regime_data_fetch/acquisition_store.py
+  s_514e63ec111678::t_e30e8bddc43b6f 6,9,624-625,628-635
+tests/test_pit_constituents.py
+  514e63ec1116781b 7,130
+src/regime_data_fetch/acquisition_consolidation.py
+  514e63ec1116781b 9,82,104,141-142
+src/regime_data_fetch/fetch_workflow.py
+  s_514e63ec111678::t_55fed98c877468 96
+tests/test_news_sentiment_coverage.py
+  s_514e63ec111678::t_bac4ff8f82a955 44,118
+tests/test_local_daily_ohlcv_sqlite.py
+  514e63ec1116781b 6,73,131,275
+tests/test_reconciliation_contracts.py
+  s_514e63ec111678::t_b3a47f756f80af 129-130,132
+src/regime_data_fetch/event_sources/validators_hf_central_bank.py
+  s_514e63ec111678::t_d1e93d18b3c7f8 126-130
+src/regime_data_fetch/local_daily_ohlcv_sqlite.py
+  514e63ec1116781b 9,26,245,258-262,442-445,459-461
+scripts/run_shadow_regime.py
+  514e63ec1116781b 35,48-51,107-114
+tests/test_event_source_group_b_conflict_budget.py
+  514e63ec1116781b 7,339
+tests/test_fetch_workflow.py
+  514e63ec1116781b 7,171,661
+tests/test_pmi_fetch.py
+  514e63ec1116781b 8,427,503
+tests/conftest.py
+  s_514e63ec111678::t_a54d8ef1914c75 231
+tests/test_network_fragility_classifier.py
+  s_514e63ec111678::t_3b438326ce829b 756-761
+src/regime_detection/volatility_state_v2.py
+  s_514e63ec111678::t_fb326a67c73147 305-306
+tests/test_aaii_sentiment_fetch.py
+  514e63ec1116781b 8,88,169,229,449
+src/regime_detection/market_context.py
+  s_514e63ec111678::t_b9fd7a6bed79a1 372
+src/regime_detection/shadow_storage.py
+  s_514e63ec111678::t_f54756d7e2065c 33-39,111
+  514e63ec1116781b 26,262-265
+scripts/build_walkforward_report.py
+  514e63ec1116781b 10,81
+src/regime_data_fetch/local_daily_ohlcv_sqlite_reader.py
+  514e63ec1116781b 7,13,43,59-70
+tests/test_acquisition_consolidation.py
+  514e63ec1116781b 6,65,176
+src/regime_data_fetch/event_sources/validators_gpr_gdelt.py
+  s_514e63ec111678::t_ebd2a677bbd082 714-716,767-779
+tests/test_change_point.py
+  s_514e63ec111678::t_bc374086470c82 429,476
+  s_514e63ec111678::t_ee4caa52f2216d 26
+tests/test_clustering.py
+  s_514e63ec111678::t_eb8b57c41788ad 26,232,273
+tests/test_data_quality_perf_invariants.py
+  s_514e63ec111678::t_422b6cfb664d6f 36-37,39
+src/regime_data_fetch/alpaca_daily.py
+  s_514e63ec111678::t_81f4192c407ddf 134
+tests/test_shadow_runner.py
+  514e63ec1116781b 9,61,89,117,177
+src/regime_data_fetch/cleveland_fed_nowcast.py
+  s_514e63ec111678::t_a86c873e5dc664 348
+tests/test_shadow_replay_check.py
+  514e63ec1116781b 9,52,89,131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "24acf6a243b0b2ec5e908821b6c878279e52c555",
+  "prompts": {
+    "514e63ec1116781b": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "726ca969-101f-40be-ba4c-487de9c5d551",
+        "model": "custom:GPT-5.4-(via-proxy)-35"
+      },
+      "human_author": "Avinash Vankadaru",
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 152,
+      "overriden_lines": 0
+    },
+    "7a7d96b8ef435f1f": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "d6bbb40a-e15e-4743-954e-9f92dd0a4f64",
+        "model": "custom:GPT-5.4-(via-proxy)-35"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>",
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 822,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_514e63ec111678": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "726ca969-101f-40be-ba4c-487de9c5d551",
+        "model": "custom:GPT-5.4-(via-proxy)-35"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

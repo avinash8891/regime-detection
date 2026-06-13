@@ -1,0 +1,29 @@
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_3318a4a7f83540 500-521
+src/regime_detection/monetary_pressure.py
+  s_52de661ea8374d::t_6f4c849eaca949 78-79,89-93,107,111,130-133,141-150,152-204
+tests/test_monetary_pressure.py
+  s_52de661ea8374d::t_287b31c0454a17 41-128
+src/regime_detection/timeline.py
+  s_52de661ea8374d::t_980cdd8b0ad64a 70-71
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_128b0a4dc48e7b 455-456
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_dcb39689d61cfb 361-431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "db185bdeb359124779fd43eb13e1afdca2e42092",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+scripts/fetch_regime_engine_v1_data.py
+  s_1c47c85d071288::t_398ebb8b761ace 203-214
+  s_1c47c85d071288::t_ba81917166df62 21-25
+  s_1c47c85d071288::t_86d6cbf8fdbc08 91-92
+  s_1c47c85d071288::t_d5d9b834b1833f 40
+src/regime_data_fetch/aggregate_eps.py
+  s_1c47c85d071288::t_b9c563e3ef9abd 142-144,151-155,159-175,195-208,227-244,247-251
+  s_1c47c85d071288::t_c9a6a958904980 7
+  s_1c47c85d071288::t_3ec3b6c7e4278b 182-188
+  s_1c47c85d071288::t_1c65abd1d42ab0 145-150,156-158,176-181,189-194,209-226,245-246,252-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "cb0fb17c7e74f6469af5da68a9f943e2db752592",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

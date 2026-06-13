@@ -1,0 +1,22 @@
+tests/test_hmm_state.py
+  s_3579a11c274b3d::t_10f37e75e7d81c 189-204
+src/regime_detection/hmm_state.py
+  s_3579a11c274b3d::t_95f54f29a436f4 233,245,271,300,314
+  s_3579a11c274b3d::t_10f37e75e7d81c 225-232,234-244,246-252,254-256,269-270,272-291,298,301-313,316,318-342,344-362,364-365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "f6754da23be2622074db3d2e1c310d0c4ea7bf73",
+  "prompts": {},
+  "sessions": {
+    "s_3579a11c274b3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4ff0dba7-5695-4f37-858c-5161163327a0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

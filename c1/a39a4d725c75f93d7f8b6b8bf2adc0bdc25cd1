@@ -1,0 +1,61 @@
+src/regime_detection/input_spec.py
+  s_52de661ea8374d::t_39cdd00983e92c 45
+scripts/run_shadow_regime.py
+  s_52de661ea8374d::t_4525c28a264ecd 47,81,92,163,177
+  s_52de661ea8374d::t_3ce7104222e958 18
+tests/test_shadow_replay_check.py
+  s_52de661ea8374d::t_9e9700a354c191 36-49,128-140
+scripts/run_historical_walkforward.py
+  s_52de661ea8374d::t_d29afc7d6bb0fe 21,206,218,245,348,362
+src/regime_detection/engine.py
+  s_52de661ea8374d::t_efb12ba4a9d1f7 64,84,103,113,123,134
+src/regime_detection/breadth_state.py
+  s_52de661ea8374d::t_b2a59dfc89db89 7,43-49,65-89,198,223,256-324
+src/regime_detection/feature_store.py
+  s_52de661ea8374d::t_474a8fd59ba9a0 6-11,33,55-61,72
+src/regime_detection/axis_series.py
+  s_52de661ea8374d::t_2970aa28bd1635 11,146-148,152,157-233,237-245,249-250,254-255,258-264,266-267,271
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_d1fdbe123f42ad 127-172,186-199,284-286
+tests/test_shadow_runner.py
+  s_52de661ea8374d::t_1f6f9aa4c11e72 267-284
+src/regime_detection/models.py
+  s_52de661ea8374d::t_39cdd00983e92c 34-35
+src/regime_detection/market_context.py
+  s_52de661ea8374d::t_6eef95f4fcdf42 34
+  s_52de661ea8374d::t_36001669191386 11,24-25,55-56,70-71,89-92,101-102,132-135,144-145,222-229
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_be51e94f46ebc9 395-400,429-430
+  s_52de661ea8374d::t_323affe00ad7c4 8,217-218
+  s_52de661ea8374d::t_ff6d9f6021e62b 220-223,401-428
+  s_52de661ea8374d::t_989dddcfb4f037 627-628,632,636-637,649
+  s_52de661ea8374d::t_f275607306e560 29,59-60,207-216,219,224-235
+src/regime_detection/package_io.py
+  s_52de661ea8374d::t_938aadf53634a9 10,44,52-58,69,105-106,111
+src/regime_detection/loaders.py
+  s_52de661ea8374d::t_d54439ae284788 40-51,87-112
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_d1fdbe123f42ad 140-173,593-610,612-623,635-650
+src/regime_detection/pit_builder.py
+  s_52de661ea8374d::t_18f395fd4183d8 20,60,83,114,130,310-336,348,372
+src/regime_detection/configs/core3-v1.0.0.yaml
+  s_52de661ea8374d::t_39cdd00983e92c 4
+src/regime_detection/config.py
+  s_52de661ea8374d::t_39cdd00983e92c 73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "c1a39a4d725c75f93d7f8b6b8bf2adc0bdc25cd1",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

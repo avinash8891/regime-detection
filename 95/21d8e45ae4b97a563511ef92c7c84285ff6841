@@ -1,0 +1,27 @@
+src/regime_data_fetch/acquisition_consolidation.py
+  s_9a14adc3ce6f8f::t_229804c930e326 183-185,834-839
+  s_9a14adc3ce6f8f::t_bdb49a8f49fa6f 3,9-11,50,75-84,103-114,233-238,240-241,285,287-585,588-805,840-871
+  s_9a14adc3ce6f8f::t_72867affc4dcdc 1-2,4-8,12-49,51-74,85-102,115-182,186-232,239,242-284,286,586-587,806-833
+tests/test_acquisition_consolidation.py
+  s_9a14adc3ce6f8f::t_d0c6fa890b0ea4 6-7,37-46,54-55,64-65,78-87,89-103
+  s_9a14adc3ce6f8f::t_bf1776a6ae6b1a 35,62
+  s_9a14adc3ce6f8f::t_d1ae6e2dbb9412 1-5,8-34,36,47-53,56-61,63,66-77,88,104-137
+scripts/consolidate_regime_acquisition.py
+  s_9a14adc3ce6f8f::t_d1ae6e2dbb9412 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "9521d8e45ae4b97a563511ef92c7c84285ff6841",
+  "prompts": {},
+  "sessions": {
+    "s_9a14adc3ce6f8f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dfd6e-1679-7780-a181-45455ba346ca",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

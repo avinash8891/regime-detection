@@ -1,0 +1,27 @@
+src/regime_detection/clustering.py
+  s_3579a11c274b3d::t_d6ef911bf0c261 33
+  s_3579a11c274b3d::t_a640e387a2c174 213-215
+  s_3579a11c274b3d::t_25c5e5658a0f00 112-115
+  s_3579a11c274b3d::t_eaeb4c63d51126 175
+  s_3579a11c274b3d::t_36461170c156c0 75-111,116-120
+tests/test_clustering.py
+  s_3579a11c274b3d::t_6e77897c1b0b83 204-208,214-227,235-241,243-244,260-267,270-271,273-279,282,284-287,290-292
+  s_3579a11c274b3d::t_5f4378c4c48b79 196-203,209-213,242,245-259,272,280-281,283,296-297
+  s_3579a11c274b3d::t_25c5e5658a0f00 228-234,268-269,288-289,293-295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "136d4297ac62dd221f5b10ddfeb70cfa0e61e051",
+  "prompts": {},
+  "sessions": {
+    "s_3579a11c274b3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4ff0dba7-5695-4f37-858c-5161163327a0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

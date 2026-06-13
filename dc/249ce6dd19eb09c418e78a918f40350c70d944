@@ -1,0 +1,21 @@
+src/regime_data_fetch/fetch_workflow.py
+  s_1c47c85d071288::t_2a3de58a088f93 49-54
+docs/v2_slice_gate_checklist.md
+  s_1c47c85d071288::t_619ba7546f3fd6 77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "dc249ce6dd19eb09c418e78a918f40350c70d944",
+  "prompts": {},
+  "sessions": {
+    "s_1c47c85d071288": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9a7f5f4a-bdfa-4e7a-982d-255fc02a66d5",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+pyproject.toml
+  s_db04d04d95877a::t_a8a73b3bb67f44 7-8
+tests/test_per_label_hysteresis.py
+  s_db04d04d95877a::t_8110c6ebd69e66 1-192
+tests/test_schema_and_timeline.py
+  s_db04d04d95877a::t_1d64822d8bc8e5 13
+  s_db04d04d95877a::t_87cad4a082729a 140
+src/regime_detection/hysteresis.py
+  s_db04d04d95877a::t_c1840fa1846ed4 67-132
+src/regime_detection/__init__.py
+  s_db04d04d95877a::t_02598673e01198 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "301edc4ba64eafd2dc7794efb4961ce8674e839c",
+  "prompts": {},
+  "sessions": {
+    "s_db04d04d95877a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "514917cc-8426-49e3-bf28-e8825bfc89ea",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

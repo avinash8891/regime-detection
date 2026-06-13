@@ -1,0 +1,25 @@
+scripts/fetch_regime_engine_v1_data.py
+  s_9a14adc3ce6f8f::t_3ac1603c1b8baa 174
+src/regime_data_fetch/fomc_minutes.py
+  s_9a14adc3ce6f8f::t_b913fe193f1626 14-15,181,184-195,197-265,268-282,284-335
+tests/test_fomc_minutes.py
+  s_9a14adc3ce6f8f::t_d16abd6654c507 6,214-263
+docs/market_data_fetch_plan.md
+  s_9a14adc3ce6f8f::t_e4e38bfea97e6d 88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "77fe736387c2d0cbe95ee097a3902232a64c1b49",
+  "prompts": {},
+  "sessions": {
+    "s_9a14adc3ce6f8f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dfd6e-1679-7780-a181-45455ba346ca",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

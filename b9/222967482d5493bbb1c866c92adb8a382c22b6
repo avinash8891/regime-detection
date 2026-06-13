@@ -1,0 +1,19 @@
+tests/test_trend_character.py
+  s_874a3142b8386c::t_b6196bf331fed0 3,7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b9222967482d5493bbb1c866c92adb8a382c22b6",
+  "prompts": {},
+  "sessions": {
+    "s_874a3142b8386c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04c950f9-e520-447c-bea9-a46bacc12b0c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

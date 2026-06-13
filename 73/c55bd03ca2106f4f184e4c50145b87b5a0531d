@@ -1,0 +1,23 @@
+tests/fixtures/derived/followthrough_rate_pinned.yaml
+  s_874a3142b8386c::t_fe062fb0ad2090 1-5203
+tests/test_trend_character.py
+  s_874a3142b8386c::t_e96282db1da806 9-12,15-19,25-65
+scripts/generate_followthrough_pinned_fixture.py
+  s_874a3142b8386c::t_ab9919bb6d2e55 1-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "73c55bd03ca2106f4f184e4c50145b87b5a0531d",
+  "prompts": {},
+  "sessions": {
+    "s_874a3142b8386c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "04c950f9-e520-447c-bea9-a46bacc12b0c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

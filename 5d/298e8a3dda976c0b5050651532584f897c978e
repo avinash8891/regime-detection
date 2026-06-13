@@ -1,0 +1,21 @@
+pyproject.toml
+  s_3579a11c274b3d::t_8e10b68de87dd0 58
+  s_3579a11c274b3d::t_632679b530c6cc 127-129
+  s_3579a11c274b3d::t_a20d91a4a1fa22 109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "5d298e8a3dda976c0b5050651532584f897c978e",
+  "prompts": {},
+  "sessions": {
+    "s_3579a11c274b3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4ff0dba7-5695-4f37-858c-5161163327a0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+src/regime_detection/breadth_state.py
+  s_7e147b89f819ca::t_3a946dfe273163 9
+src/regime_detection/_rule_helpers.py
+  s_7e147b89f819ca::t_e70d900cc8a66e 1-85
+src/regime_detection/credit_funding.py
+  s_7e147b89f819ca::t_97e41032bf346a 70-73
+src/regime_detection/volume_liquidity_rules.py
+  s_7e147b89f819ca::t_963b5d59acda77 37
+src/regime_detection/volatility_state.py
+  s_7e147b89f819ca::t_823c2079d76d8a 9
+src/regime_detection/monetary_pressure.py
+  s_7e147b89f819ca::t_af99cbc9735117 59
+src/regime_detection/inflation_growth.py
+  s_7e147b89f819ca::t_21f50e073b96ee 53-56
+src/regime_detection/trend_direction.py
+  s_7e147b89f819ca::t_afd98cdaad822c 10
+src/regime_detection/trend_character.py
+  s_7e147b89f819ca::t_b0326c7189efa0 11
+src/regime_detection/network_fragility_rules.py
+  s_7e147b89f819ca::t_f0f815e86091f0 50-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "e36b27fe5568f29886cd1826bf41bfea21318f0c",
+  "prompts": {},
+  "sessions": {
+    "s_7e147b89f819ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b9c013e7-b3b8-439c-8ee2-73f4562e1a34",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

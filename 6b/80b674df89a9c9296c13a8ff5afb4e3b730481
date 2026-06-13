@@ -1,0 +1,24 @@
+tests/test_monetary_text_outputs.py
+  s_7f9b9ddd884fd1::t_0eaae0018afcfc 8,12,93-110
+docs/regime_engine_v2_spec.md
+  s_7f9b9ddd884fd1::t_d60c237270738c 205,1762,1976-1977,1979,1981-1985
+  s_7f9b9ddd884fd1::t_2b8100bf16f097 489-491,751-763
+src/regime_detection/loaders.py
+  s_7f9b9ddd884fd1::t_c9f91febf39697 15-17,268-276
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "6b80b674df89a9c9296c13a8ff5afb4e3b730481",
+  "prompts": {},
+  "sessions": {
+    "s_7f9b9ddd884fd1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0676-a0c8-7b63-8fe3-6fc89377e239",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

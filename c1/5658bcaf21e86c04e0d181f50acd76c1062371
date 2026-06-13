@@ -1,0 +1,22 @@
+docs/regime_engine_v2_spec.md
+  s_7f3c352a4f9447::t_92a62a17704c33 617-627,637-640,643-658
+  s_7f3c352a4f9447::t_b99bebef295104 220-224,228,231-241,244
+docs/decisions/0005-vol-crush-implied-vol-and-event-window.md
+  s_7f3c352a4f9447::t_560f8a4f4e59f7 1-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "c15658bcaf21e86c04e0d181f50acd76c1062371",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

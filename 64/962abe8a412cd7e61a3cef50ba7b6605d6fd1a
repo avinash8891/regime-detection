@@ -1,0 +1,27 @@
+docs/market_data_fetch_plan.md
+  s_69e10dfae52a94::t_a0f17f24a752ea 51-57
+  s_69e10dfae52a94::t_6f95c9a9117d37 87-92
+  s_69e10dfae52a94::t_a3f6cd9c5c1192 143
+  s_69e10dfae52a94::t_3722e0edae8897 169-172
+  s_69e10dfae52a94::t_a3c718eb4ee069 256,258-265
+  s_69e10dfae52a94::t_29cf3a35b7949b 12-19
+  s_69e10dfae52a94::t_30a82eabc91951 81
+  s_69e10dfae52a94::t_14482f050e1da6 271,273-277,279,281-285
+  s_69e10dfae52a94::t_66ccfc0db0ec01 289-290,292,294-310
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "64962abe8a412cd7e61a3cef50ba7b6605d6fd1a",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+tests/test_credit_funding.py
+  s_34ff7e1ca723db::t_9625769e6b4567 33-34,246-289
+src/regime_detection/axis_series.py
+  s_34ff7e1ca723db::t_10ab7c4d78e653 30,741-762,772-787,828
+src/regime_detection/credit_funding.py
+  s_34ff7e1ca723db::t_8a8e1bbb767e06 406-440
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "5d0f3db0d315afd9cc058bf219204a02ac636ab8",
+  "prompts": {},
+  "sessions": {
+    "s_34ff7e1ca723db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e222e-e557-7c10-b20d-3cfa14724850",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

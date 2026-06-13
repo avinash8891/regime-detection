@@ -1,0 +1,34 @@
+tests/test_v2_feature_store_and_axis_seams.py
+  s_69e10dfae52a94::t_2533e88ca36cc9 183-190
+  s_69e10dfae52a94::t_8d041a5a9cfa86 91-94,97-99,105-117
+src/regime_detection/axis_series.py
+  s_69e10dfae52a94::t_b7181fa026bf4f 220-222,224-241,248-249,251-252,254-267,269,276-279,281-282,287-309,311-384
+  s_69e10dfae52a94::t_f75297698aff74 24-27,36-40
+  s_69e10dfae52a94::t_6ac2fc15ea7c8f 270-275,280,283-286
+  s_69e10dfae52a94::t_428fb88bb1a109 7-8
+  s_69e10dfae52a94::t_25ba7a5e1722a6 393-398
+tests/test_network_fragility_classifier.py
+  s_69e10dfae52a94::t_6e65d9e8eb6b03 61-66
+  s_69e10dfae52a94::t_4a32b125d80cdd 26
+  s_69e10dfae52a94::t_966a4b37c802bb 1-25,27-50,56-60,67-329,334-336,338-366
+  s_69e10dfae52a94::t_a5653a481c4fcf 51-55
+  s_69e10dfae52a94::t_8670fdd4c8fd85 330-333,337
+src/regime_detection/network_fragility_rules.py
+  s_69e10dfae52a94::t_9d066537c8ceba 71-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "f82eeb0f2bd3a4eba2e448033c05cffe7286af5c",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+tests/test_clustering.py
+  s_361666080a4d44::t_47da6e634b4d92 315,345-352
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4c94c28e81da9eb261705da1af57dac34dd4ff9b",
+  "prompts": {},
+  "sessions": {
+    "s_361666080a4d44": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7e34-dddf-7641-b704-7a4b97c0b07e",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

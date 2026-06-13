@@ -1,0 +1,28 @@
+src/regime_detection/axis_series.py
+  s_db04d04d95877a::t_70755d71d61dfb 60-63
+  s_db04d04d95877a::t_d6e36f990f2178 24-30
+  s_db04d04d95877a::t_d8145694618ce2 208-242,249,256
+src/regime_detection/timeline.py
+  s_db04d04d95877a::t_e4c547f7ae5506 92-94,110,125
+  s_db04d04d95877a::t_f2b92f08f0ec38 36-61
+tests/test_v2_feature_store_and_axis_seams.py
+  s_db04d04d95877a::t_210d1e30049f87 1-176
+src/regime_detection/feature_store.py
+  s_db04d04d95877a::t_a0b894e3dd0464 3-4,21-32,43-46,66-70,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "84224562e8567484b06771257225da619646a008",
+  "prompts": {},
+  "sessions": {
+    "s_db04d04d95877a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "514917cc-8426-49e3-bf28-e8825bfc89ea",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

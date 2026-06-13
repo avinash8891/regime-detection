@@ -1,0 +1,22 @@
+docs/regime_engine_v2_spec.md
+  s_7f3c352a4f9447::t_ba583bfe1a795f 164,167-194
+  s_7f3c352a4f9447::t_0831c5bab02dc9 752-759,761-762,765-794
+docs/decisions/0004-euphoria-sentiment-score-and-vol-rising-pins.md
+  s_7f3c352a4f9447::t_570ce2cfed83aa 3-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "74f20c7b78f6c07178ebc49ec42c1509c10d4f55",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

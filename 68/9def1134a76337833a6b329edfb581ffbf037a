@@ -1,0 +1,24 @@
+scripts/run_historical_walkforward.py
+  s_e13bd0da99a610::t_7f545a84cca660 184-216
+  s_e13bd0da99a610::t_c8e24879665983 271-277,285-289,301-305
+tests/test_historical_walkforward.py
+  s_e13bd0da99a610::t_1d6bd7f91b306c 178-189
+src/regime_detection/shadow_storage.py
+  s_e13bd0da99a610::t_c357b0c32f2784 306-317
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "689def1134a76337833a6b329edfb581ffbf037a",
+  "prompts": {},
+  "sessions": {
+    "s_e13bd0da99a610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e0e3844-14d5-4427-9d01-d46fe24beee0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

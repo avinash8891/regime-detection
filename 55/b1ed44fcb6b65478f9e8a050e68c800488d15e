@@ -1,0 +1,26 @@
+src/regime_data_fetch/local_daily_ohlcv_sqlite.py
+  s_9a14adc3ce6f8f::t_0acdae69bf7707 42,93,95-110
+  s_9a14adc3ce6f8f::t_3121d257287d51 1-41,43-92,94,111-180
+scripts/fetch_regime_engine_v1_data.py
+  s_9a14adc3ce6f8f::t_d5bcfb53caedb7 23,36,69,87-88,214-225
+tests/test_local_daily_ohlcv_sqlite.py
+  s_9a14adc3ce6f8f::t_fba1dcb52b8c42 1-68
+tests/test_fetch_workflow.py
+  s_9a14adc3ce6f8f::t_d0edc8cad5dceb 345,352
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "55b1ed44fcb6b65478f9e8a050e68c800488d15e",
+  "prompts": {},
+  "sessions": {
+    "s_9a14adc3ce6f8f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dfd6e-1679-7780-a181-45455ba346ca",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

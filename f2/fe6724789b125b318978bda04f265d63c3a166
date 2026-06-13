@@ -1,0 +1,22 @@
+tests/test_shadow_replay_check.py
+  s_57f9992e063d4e::t_a8417bd3a03b3e 146-149,159-162
+  s_57f9992e063d4e::t_952e0f46e96994 145,150
+scripts/run_shadow_replay_check.py
+  s_57f9992e063d4e::t_26eea9cd8bccab 22,86-96,180-191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f2fe6724789b125b318978bda04f265d63c3a166",
+  "prompts": {},
+  "sessions": {
+    "s_57f9992e063d4e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7bf3-5fe0-7b43-933e-c145c5a78377",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

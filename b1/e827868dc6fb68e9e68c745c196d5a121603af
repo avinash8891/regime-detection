@@ -1,0 +1,21 @@
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_9288bd74a70ad1 619,621-625,632-640,645-659,673-677
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_9288bd74a70ad1 172-174,181-211,216-217,230,317-319,321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "b1e827868dc6fb68e9e68c745c196d5a121603af",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

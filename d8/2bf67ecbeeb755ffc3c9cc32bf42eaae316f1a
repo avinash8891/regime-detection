@@ -1,0 +1,25 @@
+src/regime_data_fetch/universe.py
+  c765acb160aa0079 52,61-68
+scripts/codex_code_simplifier.sh
+  c765acb160aa0079 21,44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "d82bf67ecbeeb755ffc3c9cc32bf42eaae316f1a",
+  "prompts": {
+    "c765acb160aa0079": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df8d2-7141-7c90-9103-378b0463f526",
+        "model": "gpt-5.2"
+      },
+      "human_author": "Avinash Vankadaru",
+      "messages": [],
+      "total_additions": 11,
+      "total_deletions": 40,
+      "accepted_lines": 11,
+      "overriden_lines": 0
+    }
+  }
+}

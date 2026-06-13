@@ -1,0 +1,54 @@
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_f104cdee586f9c 397-418,421-429
+src/regime_detection/package_io.py
+  s_52de661ea8374d::t_7833f4a085269a 13,55,88-93,112,158-159,168
+src/regime_data_fetch/monetary_features.py
+  s_52de661ea8374d::t_5cb88abb32e7ce 1-237
+tests/test_monetary_features.py
+  s_52de661ea8374d::t_90d3142991bc16 1-8,10-12,14-31,33,35-88,90-104,106-107,109-141,164-168
+  s_52de661ea8374d::t_bbf44129eee858 13,34,105,108,142-163
+  s_52de661ea8374d::t_46d502187f6c5b 9,32
+  s_52de661ea8374d::t_544386d91b7ca3 89
+tests/test_acquisition_consolidation.py
+  s_52de661ea8374d::t_d15ba086ea267a 41
+src/regime_data_fetch/acquisition_consolidation.py
+  s_52de661ea8374d::t_aaf948e74331d9 523-525,680-694
+  s_52de661ea8374d::t_3f2832031a6cc4 79,111
+  s_52de661ea8374d::t_c765daaec4ae95 347-357
+src/regime_detection/loaders.py
+  s_52de661ea8374d::t_e17a520e298156 88-99,217-233
+tests/test_foundation.py
+  s_52de661ea8374d::t_1364882c77436d 124-136
+scripts/fetchers/monetary/build_monetary_features.py
+  s_52de661ea8374d::t_cbb959a14ed911 1-32
+src/regime_detection/input_spec.py
+  s_52de661ea8374d::t_7e4f540a56c003 48
+src/regime_detection/engine.py
+  s_52de661ea8374d::t_9ef40806ff2217 39,53,74,88,100,123,136,149-150,157,174
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_a5e30dc4b1653e 304-360
+src/regime_detection/pit_builder.py
+  s_52de661ea8374d::t_45bd2f2b90becc 22,70,97,132,152,436-469,485,520-523
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_c0f775e071c8fe 288-379
+src/regime_detection/market_context.py
+  s_52de661ea8374d::t_bde9c2958773f5 123,129,184,190,337
+  s_52de661ea8374d::t_f8ba67526d6f2c 14,322-329
+  s_52de661ea8374d::t_9a358ac7e11081 36,47,80-83,97,127-128,130-132,146,188-189,191-193,207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "1300a7929d2d57de3d91ea11245b1035a188605b",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

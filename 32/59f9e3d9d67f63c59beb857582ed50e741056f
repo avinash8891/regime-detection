@@ -1,0 +1,39 @@
+src/regime_detection/transition_risk.py
+  s_52de661ea8374d::t_642e99c7da55e0 26
+tests/fixtures/verification/golden_dates_report.yaml
+  s_52de661ea8374d::t_049e57b0b1fa26 1-2,18,34,89-91,94-95,100,102,197-198,203,205,240,295-297,300-301,306,308,404-405,410,412,507-508,513,515,550,605-607,610-611,616,618,653,708-710,713-714,719,721,756,811-813,816-817,822,824,859,914-916,919-920,925,927,962,1017-1019,1022-1023,1028,1030
+src/regime_detection/strategy_response.py
+  s_52de661ea8374d::t_642e99c7da55e0 51
+scripts/verify_fixtures.py
+  s_52de661ea8374d::t_642e99c7da55e0 464-466,471-474,480-481,488,490,560,612,637,674,686,699,712,725
+src/regime_detection/transition_risk_series.py
+  s_52de661ea8374d::t_642e99c7da55e0 91
+tests/test_transition_and_strategy.py
+  s_52de661ea8374d::t_753a9a283236ee 92,94
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_f2d806a61ea1ab 267-285
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_f2d806a61ea1ab 864-932,981
+tests/fixtures/derived/golden_dates.yaml
+  s_52de661ea8374d::t_049e57b0b1fa26 1-2,18,32,50,77,86,95,104,113
+src/regime_detection/volatility_state.py
+  s_52de661ea8374d::t_642e99c7da55e0 14,18,20,121-123,127-130,136-137,165-167,171-172,183-184
+tests/test_volatility_state.py
+  s_52de661ea8374d::t_753a9a283236ee 27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "3259f9e3d9d67f63c59beb857582ed50e741056f",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

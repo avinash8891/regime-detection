@@ -1,0 +1,28 @@
+scripts/codex_pr_review_toolkit.sh
+  s_ab33020b7c1f29::t_63182ce28f6755 60-61
+  s_ab33020b7c1f29::t_a6efeca04cb269 68-71
+  s_ab33020b7c1f29::t_407a3e90d44ed8 15-28,57,64
+.pre-commit-config.yaml
+  s_ab33020b7c1f29::t_46503229df2c18 33
+scripts/cubic_review.sh
+  s_ab33020b7c1f29::t_5b6af305e9132a 77-79,90
+  s_ab33020b7c1f29::t_07721c74ed6d1f 18-31,71,76,85
+  s_ab33020b7c1f29::t_dab55c4e64ac3d 82-83
+  s_ab33020b7c1f29::t_ab8ccd3aa9f823 84,86-87,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "2db0305dd6c6afdd128a8e1bfb4c69ac20123ed3",
+  "prompts": {},
+  "sessions": {
+    "s_ab33020b7c1f29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eabb2-f3d1-7c91-b71a-ca44437f87a6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

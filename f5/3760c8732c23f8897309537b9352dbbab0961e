@@ -1,0 +1,47 @@
+tests/test_volume_liquidity_classifier.py
+  s_69e10dfae52a94::t_b54a6cfdbc3a49 1-265,267-269,271-273
+  s_69e10dfae52a94::t_cde505f818479d 266,270
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_69e10dfae52a94::t_3b6a6f927c0164 187-213
+src/regime_detection/volume_liquidity_rules.py
+  s_69e10dfae52a94::t_3c6e56b0658f10 1-183
+src/regime_detection/models.py
+  s_69e10dfae52a94::t_1da73948c8cb69 242
+  s_69e10dfae52a94::t_178210e4d88662 115-144
+src/regime_detection/axis_series.py
+  s_69e10dfae52a94::t_2a2e8c684b5e79 534,537-538,543-544
+  s_69e10dfae52a94::t_fa9f2263071254 591-593,601
+  s_69e10dfae52a94::t_e9a496fa30b386 82-85
+  s_69e10dfae52a94::t_efbfe5868b1f70 35,43-47
+  s_69e10dfae52a94::t_40bf2146c917b9 535-536,539-540
+  s_69e10dfae52a94::t_7f7635e8b9e3bf 439-533,541-542,545-578
+tests/test_volume_liquidity_rules.py
+  s_69e10dfae52a94::t_3e2a1e749b98cc 1-288
+tests/test_schema_and_timeline.py
+  s_69e10dfae52a94::t_73ee4f0edb70d5 160
+  s_69e10dfae52a94::t_00ec730ce6214c 47-49,51-56
+src/regime_detection/timeline.py
+  s_69e10dfae52a94::t_5e79eaa3c89b89 120-123
+  s_69e10dfae52a94::t_dfe194aaf32e8c 139-143,168
+docs/regime_engine_v2_spec.md
+  s_69e10dfae52a94::t_f67ffc57d36887 758-813
+src/regime_detection/config.py
+  s_69e10dfae52a94::t_658069b57d6342 523-524
+  s_69e10dfae52a94::t_57cf60b20c4a47 320-383
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "f53760c8732c23f8897309537b9352dbbab0961e",
+  "prompts": {},
+  "sessions": {
+    "s_69e10dfae52a94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ef8c0903-9f31-4c26-be1c-64323350aa48",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

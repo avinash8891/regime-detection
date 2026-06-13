@@ -1,0 +1,32 @@
+docs/regime_engine_v2_spec.md
+  s_52de661ea8374d::t_259a2f6f28f6f2 708-777
+tests/test_schema_and_timeline.py
+  s_52de661ea8374d::t_d135c91425afa8 32,68-72,626
+src/regime_detection/volatility_state.py
+  s_52de661ea8374d::t_d135c91425afa8 38-40,47-49,52-62,78-80,83-85,92-94,193-200,203-205,212-214,216-218,220-222,233-235,240,280,286-313
+docs/regime_engine_v2_implementation_plan.md
+  s_52de661ea8374d::t_259a2f6f28f6f2 218-234
+src/regime_detection/feature_store.py
+  s_52de661ea8374d::t_d135c91425afa8 48-50
+src/regime_detection/axis_series.py
+  s_52de661ea8374d::t_d135c91425afa8 42,128-131,150
+tests/test_volatility_state.py
+  s_52de661ea8374d::t_d135c91425afa8 6,9-11,21-26,28-31
+  s_52de661ea8374d::t_5ff1e69f3a2787 27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "962c8148037bc02d829b3aa042ab82ef7cae9a26",
+  "prompts": {},
+  "sessions": {
+    "s_52de661ea8374d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0292-d7a2-7871-afc0-c6e426b885e7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

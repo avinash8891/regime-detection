@@ -1,0 +1,19 @@
+tests/test_v2_data_ingestion.py
+  s_5a3786e1f57ed0::t_9517e01593788a 104-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "41012094d32b9cf459d19ca8d5fb30046a84aafc",
+  "prompts": {},
+  "sessions": {
+    "s_5a3786e1f57ed0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d0421e9a-9ee4-4278-9e2a-9b317a3418c0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

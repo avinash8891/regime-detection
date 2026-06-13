@@ -1,0 +1,29 @@
+tests/fixtures/audit_step1/current_template.json
+  s_469680dc3246b8::t_15f72b8619d5d5 1-194
+tests/fixtures/audit_step1/runner_names.json
+  s_469680dc3246b8::t_15f72b8619d5d5 1-11
+tests/test_audit_step1_fixture_templates.py
+  s_469680dc3246b8::t_b5c4a2b56e4ed8 23-27
+  s_469680dc3246b8::t_4e308a8622d642 1-5,7-22,28-47
+  s_469680dc3246b8::t_76cd3e94c0121d 6
+tests/fixtures/audit_step1/historical_template.json
+  s_469680dc3246b8::t_15f72b8619d5d5 1-145
+tests/audit_step1_fixture_templates.py
+  s_469680dc3246b8::t_283673e4ac9c9c 1-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3aa8f3db6cde9d48b657a07d4c123a9380e48dd3",
+  "prompts": {},
+  "sessions": {
+    "s_469680dc3246b8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6cd4-74ef-7863-acec-e9013990604d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}

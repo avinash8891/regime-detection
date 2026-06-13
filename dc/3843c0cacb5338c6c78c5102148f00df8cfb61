@@ -1,0 +1,51 @@
+src/regime_detection/feature_store.py
+  s_7f3c352a4f9447::t_b23bbb72c5d5ad 39
+  s_7f3c352a4f9447::t_8f4f96ea3a332d 326-327,329-345,357-358
+src/regime_detection/event_calendar.py
+  s_7f3c352a4f9447::t_58f2d7f062245d 216-296
+src/regime_detection/volatility_state_v2.py
+  s_7f3c352a4f9447::t_5257d62be0366d 376-428,430-431,434
+  s_7f3c352a4f9447::t_16ce956b21e7b0 187-188,190,195-203
+  s_7f3c352a4f9447::t_49917894ce0f28 267-306,314-318
+  s_7f3c352a4f9447::t_4f7f58a3ab4c45 455-456,458-464,468,470-479,484-486
+  s_7f3c352a4f9447::t_dff7c7107d7b7c 99
+  s_7f3c352a4f9447::t_b1c4c3e1be157b 74-88
+tests/test_volatility_state_v2_rising_vol_rule.py
+  s_7f3c352a4f9447::t_e7ddbc28b193e8 93-95
+  s_7f3c352a4f9447::t_6fee14df263b34 347
+src/regime_detection/config.py
+  s_7f3c352a4f9447::t_82190045863b59 270-291
+tests/test_volatility_state_v2_vol_crush.py
+  s_7f3c352a4f9447::t_60d3f0f154341c 1-342
+src/regime_detection/configs/core3-v2.0.0.yaml
+  s_7f3c352a4f9447::t_19010d0178ece2 131-135,142-143,149-154
+src/regime_detection/engine.py
+  s_7f3c352a4f9447::t_bee83f48fff442 40,58,77,97
+src/regime_detection/market_context.py
+  s_7f3c352a4f9447::t_71abf056f1711c 30
+  s_7f3c352a4f9447::t_c0d62d07a6e3fa 133-139
+  s_7f3c352a4f9447::t_387e2aaeb61562 183-188
+  s_7f3c352a4f9447::t_6b5d7ee22c403a 68-70,85
+  s_7f3c352a4f9447::t_c4952a420c386c 46
+src/regime_detection/volatility_state.py
+  s_7f3c352a4f9447::t_959b05582f7d21 295
+  s_7f3c352a4f9447::t_2f39a1e077ba33 385
+src/regime_data_fetch/fetch_workflow.py
+  s_7f3c352a4f9447::t_5f0fdee4c526df 67-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "dc3843c0cacb5338c6c78c5102148f00df8cfb61",
+  "prompts": {},
+  "sessions": {
+    "s_7f3c352a4f9447": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3d45e374-f98d-411d-b6a1-0697dd832539",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
