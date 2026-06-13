@@ -1,0 +1,19 @@
+src/regime_detection/feature_store.py
+  s_b717af8e0074fe::t_7820b23bfee573 165,179,187,204-208,210,229-261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "eb405dfa77f51f4c7ee9ef7630a7937012552866",
+  "prompts": {},
+  "sessions": {
+    "s_b717af8e0074fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ec123-5327-78b1-bbac-f8ce6ef7ee76",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
