@@ -1,0 +1,23 @@
+src/regime_detection/_feature_specs_v2_market.py
+  s_b717af8e0074fe::t_443e218bf1adc2 1-150
+pyproject.toml
+  s_b717af8e0074fe::t_5ae16a470ad759 93
+src/regime_detection/_feature_specs.py
+  s_b717af8e0074fe::t_f45696e2953b82 11-12,119-125,634,642,650,658,666
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "0c53019db26cc28fcec8a72d002f6e3a33188d7f",
+  "prompts": {},
+  "sessions": {
+    "s_b717af8e0074fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ec123-5327-78b1-bbac-f8ce6ef7ee76",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
