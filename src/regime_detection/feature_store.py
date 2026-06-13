@@ -162,7 +162,7 @@ class FeatureStore(BaseModel):
     inflation_growth: InflationGrowthFeatures | None = None
 
 
-def build_feature_store(
+def _build_feature_store_state(
     context: MarketContext,
     *,
     network_fragility_config: NetworkFragilityConfig | None = None,
@@ -176,10 +176,7 @@ def build_feature_store(
     central_bank_text_config: CentralBankTextConfig | None = None,
     news_sentiment_config: NewsSentimentConfig | None = None,
     sentiment_score_config: SentimentScoreConfig | None = None,
-) -> FeatureStore:
-    # TODO(refactor, owner=regime-maintainers): Decompose this builder in a dedicated no-behavior-change
-    # refactor. Keep feature wiring and fixture replay frozen while extracting
-    # helpers so classifier changes do not hide inside the decomposition.
+) -> FeatureStoreBuildState:
     spy_ohlcv = context.spy_ohlcv
     spy_close = series_column(spy_ohlcv, "close")
     effective_sentiment_score_config = (
@@ -187,7 +184,7 @@ def build_feature_store(
         if sentiment_score_config is not None
         else context.config.sentiment_score
     )
-    build_state = FeatureStoreBuildState(
+    return FeatureStoreBuildState(
         context=context,
         spy_ohlcv=spy_ohlcv,
         spy_close=spy_close,
@@ -203,10 +200,14 @@ def build_feature_store(
         news_sentiment_config=news_sentiment_config,
         sentiment_score_config=effective_sentiment_score_config,
     )
-    availability = _run_feature_specs(FEATURE_SPECS, build_state)
 
+
+def _feature_store_from_build_state(
+    build_state: FeatureStoreBuildState,
+    availability: dict[str, FeatureAvailability],
+) -> FeatureStore:
     return FeatureStore(
-        spy_index=as_datetime_index(spy_ohlcv.index),
+        spy_index=as_datetime_index(build_state.spy_ohlcv.index),
         availability=availability,
         trend_direction=require_feature(build_state.trend_direction, "trend_direction"),
         trend_character=require_feature(build_state.trend_character, "trend_character"),
@@ -225,3 +226,36 @@ def build_feature_store(
         credit_funding=build_state.credit_funding,
         inflation_growth=build_state.inflation_growth,
     )
+
+
+def build_feature_store(
+    context: MarketContext,
+    *,
+    network_fragility_config: NetworkFragilityConfig | None = None,
+    trend_direction_v2_config: TrendDirectionV2Config | None = None,
+    volatility_state_v2_config: VolatilityV2Config | None = None,
+    breadth_state_v2_config: BreadthV2Config | None = None,
+    volume_liquidity_v2_config: VolumeLiquidityV2Config | None = None,
+    monetary_pressure_v2_config: MonetaryPressureV2FeaturesConfig | None = None,
+    credit_funding_config: CreditFundingConfig | None = None,
+    inflation_growth_config: InflationGrowthConfig | None = None,
+    central_bank_text_config: CentralBankTextConfig | None = None,
+    news_sentiment_config: NewsSentimentConfig | None = None,
+    sentiment_score_config: SentimentScoreConfig | None = None,
+) -> FeatureStore:
+    build_state = _build_feature_store_state(
+        context,
+        network_fragility_config=network_fragility_config,
+        trend_direction_v2_config=trend_direction_v2_config,
+        volatility_state_v2_config=volatility_state_v2_config,
+        breadth_state_v2_config=breadth_state_v2_config,
+        volume_liquidity_v2_config=volume_liquidity_v2_config,
+        monetary_pressure_v2_config=monetary_pressure_v2_config,
+        credit_funding_config=credit_funding_config,
+        inflation_growth_config=inflation_growth_config,
+        central_bank_text_config=central_bank_text_config,
+        news_sentiment_config=news_sentiment_config,
+        sentiment_score_config=sentiment_score_config,
+    )
+    availability = _run_feature_specs(FEATURE_SPECS, build_state)
+    return _feature_store_from_build_state(build_state, availability)
