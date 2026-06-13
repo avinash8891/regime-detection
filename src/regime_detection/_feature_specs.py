@@ -8,7 +8,8 @@ This module is package-private (leading underscore). It defines:
   series builders (``_build_sentiment_score_series``,
   ``_build_news_sentiment_score_series``). Trainable-evidence resolvers live in
   ``_feature_specs_trainable``; macro-axis resolvers live in
-  ``_feature_specs_macro``.
+  ``_feature_specs_macro``; V2 market-state resolvers live in
+  ``_feature_specs_v2_market``.
 - Module-level constants ``_FRED_DGS2_KEY``, ``_MIN_SENTIMENT_WEEKLY_READINGS``,
   that are used here and re-exposed by ``feature_store`` where needed.
 """
@@ -51,8 +52,6 @@ from regime_detection.credit_funding import (
     CreditFundingFeatures,
     compute_credit_funding_features,
 )
-from regime_detection.event_calendar import compute_event_window_just_passed
-from regime_detection.fragility_universe import SECTOR_ETFS
 from regime_detection.market_context import MarketContext
 from regime_detection.network_fragility import (
     NetworkFragilityFeatures,
@@ -102,7 +101,6 @@ from regime_detection.inflation_growth_rules import (
 from regime_detection.feature_store_runtime import (
     FeatureSpec,
     _Unavailable,
-    _require_build_input,
     _require_feature,
 )
 from regime_detection._feature_specs_trainable import (
@@ -117,6 +115,13 @@ from regime_detection._feature_specs_macro import (
     resolve_credit_funding,
     resolve_inflation_growth,
     resolve_monetary,
+)
+from regime_detection._feature_specs_v2_market import (
+    resolve_breadth_state_v2,
+    resolve_network_fragility,
+    resolve_trend_direction_v2,
+    resolve_volatility_state_v2,
+    resolve_volume_liquidity_v2,
 )
 
 # v2 §1A (spec lines 231-233): euphoria's sentiment_score is NaN until at least
@@ -173,15 +178,6 @@ class _FeatureStoreBuildState:
     credit_funding: CreditFundingFeatures | None = None
     inflation_growth: InflationGrowthFeatures | None = None
     change_point: ChangePointFeatures | None = None
-
-
-def _missing_sector_inputs(state: _FeatureStoreBuildState) -> tuple[str, ...]:
-    sector_closes = state.context.sector_etf_closes
-    if sector_closes is None:
-        return ("sector_etf_closes",)
-    if not any(symbol in sector_closes for symbol in SECTOR_ETFS):
-        return ("sector_etf_closes.any_sector_etf",)
-    return ()
 
 
 def _build_sentiment_score_series(
@@ -467,19 +463,6 @@ def _build_trend_direction_v2(
     )
 
 
-def _resolve_trend_direction_v2(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    if state.trend_direction_v2_config is None:
-        return _Unavailable(missing_inputs=("trend_direction_v2_config",))
-    return {
-        "spy_close": state.spy_close,
-        "config": state.trend_direction_v2_config,
-        "sentiment_score": state.sentiment_score,
-        "news_sentiment_score": state.news_sentiment_score,
-    }
-
-
 def _build_network_fragility(
     sector_etf_closes: dict[str, pd.Series],
     cross_asset_closes: dict[str, pd.Series],
@@ -507,19 +490,6 @@ def _build_network_fragility(
     )
 
 
-def _resolve_network_fragility(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    if state.context.sector_etf_closes is None:
-        return _Unavailable(missing_inputs=("sector_etf_closes",))
-    return {
-        "sector_etf_closes": state.context.sector_etf_closes,
-        "cross_asset_closes": state.context.cross_asset_closes or {},
-        "spy_close": state.spy_close,
-        "config": state.network_fragility_config,
-    }
-
-
 def _build_volatility_state_v2(
     open_: pd.Series,
     high: pd.Series,
@@ -539,79 +509,6 @@ def _build_volatility_state_v2(
         implied_vol_30d=implied_vol_30d,
         event_window_just_passed=event_window_just_passed,
     )
-
-
-def _resolve_volatility_state_v2(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    if state.volatility_state_v2_config is None:
-        return _Unavailable(missing_inputs=("volatility_state_v2_config",))
-    config = state.volatility_state_v2_config
-    event_window = (
-        compute_event_window_just_passed(
-            normalized_event_calendar=state.context.normalized_event_calendar,
-            sessions=tuple(
-                ts.date() for ts in _as_datetime_index(state.spy_close.index)
-            ),
-            trailing_sessions=config.rules.vol_crush_event_window_trailing_sessions,
-        )
-        if state.context.normalized_event_calendar is not None
-        else None
-    )
-    return {
-        "open_": _series_column(state.spy_ohlcv, "open"),
-        "high": _series_column(state.spy_ohlcv, "high"),
-        "low": _series_column(state.spy_ohlcv, "low"),
-        "close": state.spy_close,
-        "config": config,
-        "implied_vol_30d": state.context.implied_vol_30d,
-        "event_window_just_passed": event_window,
-    }
-
-
-def _resolve_breadth_state_v2(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    missing: list[str] = []
-    if state.breadth_state_v2_config is None:
-        missing.append("breadth_state_v2_config")
-    # Sector_etf_closes missingness uses the same helper the legacy report uses,
-    # which returns ("sector_etf_closes",) when None or
-    # ("sector_etf_closes.any_sector_etf",) when none of SECTOR_ETFS match.
-    missing.extend(_missing_sector_inputs(state))
-    if missing:
-        return _Unavailable(missing_inputs=tuple(missing))
-    sector_closes = _require_build_input(
-        state.context.sector_etf_closes, "sector_etf_closes"
-    )
-    return {
-        "sector_etf_closes": sector_closes,
-        "config": state.breadth_state_v2_config,
-        "pit_constituent_intervals": state.context.pit_constituent_intervals,
-        "constituent_ohlcv": state.context.constituent_ohlcv,
-    }
-
-
-def _resolve_volume_liquidity_v2(
-    state: _FeatureStoreBuildState,
-) -> dict[str, object] | _Unavailable:
-    missing: list[str] = []
-    if state.volume_liquidity_v2_config is None:
-        missing.append("volume_liquidity_v2_config")
-    spy_volume: pd.Series | None = None
-    if "volume" not in state.spy_ohlcv.columns:
-        missing.append("spy_ohlcv.volume")
-    else:
-        spy_volume = _series_column(state.spy_ohlcv, "volume")
-        if bool(spy_volume.isna().all()):
-            missing.append("spy_ohlcv.volume.non_nan")
-    if missing:
-        return _Unavailable(missing_inputs=tuple(missing))
-    spy_volume = _require_build_input(spy_volume, "spy_ohlcv.volume")
-    return {
-        "volume": spy_volume,
-        "config": state.volume_liquidity_v2_config,
-    }
 
 
 def _build_realized_vol_21d(close: pd.Series, window: int) -> pd.Series:
@@ -734,7 +631,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         name="trend_direction_v2",
         policy="none",
         required_inputs=("trend_direction_v2_config", "spy_ohlcv.close"),
-        resolve=_resolve_trend_direction_v2,
+        resolve=resolve_trend_direction_v2,
         build=_build_trend_direction_v2,
         store=lambda s, v: setattr(s, "trend_direction_v2", v),
     ),
@@ -742,7 +639,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         name="network_fragility",
         policy="none",
         required_inputs=("sector_etf_closes",),
-        resolve=_resolve_network_fragility,
+        resolve=resolve_network_fragility,
         build=_build_network_fragility,
         store=lambda s, v: setattr(s, "network_fragility", v),
     ),
@@ -750,7 +647,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         name="volatility_state_v2",
         policy="none",
         required_inputs=("volatility_state_v2_config", "spy_ohlcv.ohlc"),
-        resolve=_resolve_volatility_state_v2,
+        resolve=resolve_volatility_state_v2,
         build=_build_volatility_state_v2,
         store=lambda s, v: setattr(s, "volatility_state_v2", v),
     ),
@@ -758,7 +655,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         name="breadth_state_v2",
         policy="none",
         required_inputs=("breadth_state_v2_config", "sector_etf_closes"),
-        resolve=_resolve_breadth_state_v2,
+        resolve=resolve_breadth_state_v2,
         build=compute_breadth_v2_features,
         store=lambda s, v: setattr(s, "breadth_state_v2", v),
     ),
@@ -766,7 +663,7 @@ _FEATURE_SPECS: tuple[FeatureSpec[object, _FeatureStoreBuildState], ...] = (
         name="volume_liquidity_v2",
         policy="none",
         required_inputs=("volume_liquidity_v2_config", "spy_ohlcv.volume"),
-        resolve=_resolve_volume_liquidity_v2,
+        resolve=resolve_volume_liquidity_v2,
         build=compute_volume_liquidity_v2_features,
         store=lambda s, v: setattr(s, "volume_liquidity_v2", v),
     ),
