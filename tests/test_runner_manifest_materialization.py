@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +18,15 @@ from regime_data_fetch.artifact_store import sha256_file
 
 def _store_uri(root: Path, key: str) -> str:
     return (root.resolve() / key).as_uri()
+
+
+def _load_script_module(name: str, script_path: str):
+    repo_root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(name, repo_root / script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[attr-defined]
+    return module
 
 
 def test_walkforward_gate_subprocess_materializes_manifest_defaults(
@@ -225,3 +235,111 @@ def test_runner_entrypoints_materialize_manifest_before_loading_inputs(
 
     assert result.returncode != 0
     assert (data_root / required_for / "marker.txt").read_text() == f"{required_for}\n"
+
+
+def test_historical_walkforward_binds_manifest_resolved_input_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store_root = tmp_path / "store"
+
+    daily_source = store_root / "canonical" / "daily" / "SPY.parquet"
+    macro_source = store_root / "canonical" / "macro-alt" / "macro.parquet"
+    pit_source = store_root / "canonical" / "pit-alt" / "pit.parquet"
+    event_source = store_root / "canonical" / "events-alt" / "events.yaml"
+    for source in (daily_source, macro_source, pit_source, event_source):
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(source.name)
+
+    manifest = ArtifactManifest(
+        artifact_set="historical-walkforward-path-binding",
+        created_at_utc="2026-05-15T12:00:00Z",
+        storage_root=str(store_root),
+        artifacts=[
+            ManifestArtifact.from_dict(
+                {
+                    "name": "daily_ohlcv_parquet_SPY",
+                    "stage": "canonical",
+                    "uri": _store_uri(store_root, "canonical/daily/SPY.parquet"),
+                    "local_path": "data/raw/custom_daily/symbol=SPY/ohlcv.parquet",
+                    "sha256": sha256_file(daily_source),
+                    "required_for": ["historical_walkforward"],
+                }
+            ),
+            ManifestArtifact.from_dict(
+                {
+                    "name": "fred_macro_series",
+                    "stage": "canonical",
+                    "uri": _store_uri(store_root, "canonical/macro-alt/macro.parquet"),
+                    "local_path": "data/raw/manifest_macro/custom_macro.parquet",
+                    "sha256": sha256_file(macro_source),
+                    "required_for": ["historical_walkforward"],
+                }
+            ),
+            ManifestArtifact.from_dict(
+                {
+                    "name": "sp500_pit_constituents",
+                    "stage": "canonical",
+                    "uri": _store_uri(store_root, "canonical/pit-alt/pit.parquet"),
+                    "local_path": "data/raw/manifest_pit/custom_pit.parquet",
+                    "sha256": sha256_file(pit_source),
+                    "required_for": ["historical_walkforward"],
+                }
+            ),
+            ManifestArtifact.from_dict(
+                {
+                    "name": "event_calendar_us",
+                    "stage": "canonical",
+                    "uri": _store_uri(store_root, "canonical/events-alt/events.yaml"),
+                    "local_path": "data/raw/manifest_events/custom_events.yaml",
+                    "sha256": sha256_file(event_source),
+                    "required_for": ["historical_walkforward"],
+                }
+            ),
+        ],
+    )
+    manifest_path = tmp_path / "manifest.yaml"
+    data_root = tmp_path / "data" / "raw"
+    write_manifest(manifest, manifest_path)
+
+    runner = _load_script_module(
+        "run_historical_walkforward_manifest_test",
+        "scripts/run_historical_walkforward.py",
+    )
+    captured: dict[str, Path | None] = {}
+
+    def fake_run_walkforward(**kwargs):
+        captured["event_calendar_path"] = kwargs["event_calendar_path"]
+        captured["macro_parquet_path"] = kwargs["macro_parquet_path"]
+        return {"success_count": 0}
+
+    monkeypatch.setattr(runner, "run_walkforward", fake_run_walkforward)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_historical_walkforward.py",
+            "--market-data",
+            str(tmp_path / "market.parquet"),
+            "--output-root",
+            str(tmp_path / "out"),
+            "--start-date",
+            "2026-05-15",
+            "--end-date",
+            "2026-05-15",
+            "--manifest",
+            str(manifest_path),
+            "--data-root",
+            str(data_root),
+        ],
+    )
+
+    assert runner.main() == 0
+    assert (
+        captured["event_calendar_path"]
+        == data_root / "manifest_events" / "custom_events.yaml"
+    )
+    assert (
+        captured["macro_parquet_path"]
+        == data_root / "manifest_macro" / "custom_macro.parquet"
+    )
