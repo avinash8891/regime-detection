@@ -1,0 +1,37 @@
+src/regime_detection/transition_risk_series.py
+  s_2b2a8495207d95::t_ad08f3980a05f4 172-183
+scripts/_v2_calibration_helpers.py
+  s_2b2a8495207d95::t_ad08f3980a05f4 47-48,127-128
+plans/001-bind-historical-walkforward-manifest-paths.md
+  s_2b2a8495207d95::t_3218badbac90cd 1-15,17-81,86-95
+  s_2b2a8495207d95::t_e2bba46503725f 16,82-85
+scripts/upload_missing_ohlcv_to_manifest.py
+  s_2b2a8495207d95::t_ad08f3980a05f4 177-178
+scripts/publish_canonical_snapshot.py
+  s_2b2a8495207d95::t_ad08f3980a05f4 638-639
+src/regime_data_fetch/acquisition_store.py
+  s_2b2a8495207d95::t_ad08f3980a05f4 806-807,816-817
+plans/README.md
+  s_2b2a8495207d95::t_3218badbac90cd 1-8,11-36
+  s_2b2a8495207d95::t_e2bba46503725f 9
+  s_2b2a8495207d95::t_67aa850e57a72c 10
+plans/002-remove-production-assert-guards.md
+  s_2b2a8495207d95::t_67aa850e57a72c 16,77-80
+  s_2b2a8495207d95::t_3218badbac90cd 1-15,17-76,81-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "d19fe4f54a1848d1a66f88ed9713845c608dba45",
+  "prompts": {},
+  "sessions": {
+    "s_2b2a8495207d95": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019edaf8-fa71-7853-a858-431517456908",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
