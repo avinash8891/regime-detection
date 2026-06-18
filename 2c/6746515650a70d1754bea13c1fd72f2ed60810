@@ -1,0 +1,30 @@
+tests/test_profile_engine.py
+  s_2b2a8495207d95::t_2db69cc1c1849b 1001-1007
+tests/test_cpi_vintages_first_release.py
+  s_2b2a8495207d95::t_00867c45f248cf 110-117
+src/regime_detection/loaders.py
+  s_2b2a8495207d95::t_3226660cbbe3b1 430,435
+  s_2b2a8495207d95::t_47a96919b8cfe2 429,434,439-444
+src/regime_detection/event_calendar_loader.py
+  s_2b2a8495207d95::t_c42bd9ea4c3029 121,123,131,135-136,138-149,152-154,156,158,165,185-194,197
+scripts/profile_engine_timers.py
+  s_2b2a8495207d95::t_2db69cc1c1849b 98,117,122,127,132,137,142,147,152,156,158,163
+tests/test_loaders.py
+  s_2b2a8495207d95::t_3c2933e1be94e8 95-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "2c6746515650a70d1754bea13c1fd72f2ed60810",
+  "prompts": {},
+  "sessions": {
+    "s_2b2a8495207d95": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019edaf8-fa71-7853-a858-431517456908",
+        "model": "gpt-5.5"
+      },
+      "human_author": null
+    }
+  }
+}
