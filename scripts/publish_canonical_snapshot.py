@@ -635,7 +635,8 @@ def run_publish(
         manifest_updates: dict[str, object] = {"sha256": new_sha}
         artifact["sha256"] = new_sha
         if _is_parquet(local):
-            assert canon is not None
+            if canon is None:
+                raise RuntimeError(f"canonical parquet bytes missing for {local}")
             rows = _parquet_row_count(canon)
             artifact["rows"] = rows
             manifest_updates["rows"] = rows

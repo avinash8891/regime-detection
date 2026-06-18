@@ -169,11 +169,18 @@ def build_transition_risk_series(
         raise RuntimeError(
             "transition_risk requires score inputs; missing: " + ", ".join(missing)
         )
-    assert volatility_v2 is not None
-    assert breadth_v2 is not None
-    assert breadth_v2.pct_above_50dma is not None
-    assert network_fragility is not None
-    assert trend_v2 is not None
+    if volatility_v2 is None:
+        raise RuntimeError("transition_risk requires feature_store.volatility_state_v2")
+    if breadth_v2 is None:
+        raise RuntimeError("transition_risk requires feature_store.breadth_state_v2")
+    if breadth_v2.pct_above_50dma is None:
+        raise RuntimeError(
+            "transition_risk requires feature_store.breadth_state_v2.pct_above_50dma"
+        )
+    if network_fragility is None:
+        raise RuntimeError("transition_risk requires feature_store.network_fragility")
+    if trend_v2 is None:
+        raise RuntimeError("transition_risk requires feature_store.trend_direction_v2")
 
     transition_score_inputs_by_date = _build_transition_score_inputs_by_date(
         sessions=sessions,

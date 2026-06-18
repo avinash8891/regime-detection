@@ -803,7 +803,8 @@ class AcquisitionStore:
     def _put_file_artifact(
         self, path: Path, key: str, *, context: str
     ) -> StoredArtifact:
-        assert self.artifact_store is not None
+        if self.artifact_store is None:
+            raise RuntimeError(f"artifact store is required to store {context}: {key}")
         try:
             return self.artifact_store.put_file(path, key)
         except Exception as exc:
@@ -812,7 +813,8 @@ class AcquisitionStore:
     def _put_bytes_artifact(
         self, payload: bytes, key: str, *, context: str
     ) -> StoredArtifact:
-        assert self.artifact_store is not None
+        if self.artifact_store is None:
+            raise RuntimeError(f"artifact store is required to store {context}: {key}")
         try:
             return self.artifact_store.put_bytes(payload, key)
         except Exception as exc:

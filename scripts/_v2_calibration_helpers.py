@@ -44,7 +44,8 @@ logger = logging.getLogger(__name__)
 
 def default_pmi_path(data_root: Path) -> Path:
     spec = get_manifest_input_spec("pmi_path")
-    assert spec.default_relpath is not None
+    if spec.default_relpath is None:
+        raise RuntimeError("pmi_path manifest input has no default_relpath")
     return data_root.joinpath(*spec.default_relpath)
 
 
@@ -123,7 +124,8 @@ def apply_manifest_input_defaults(
 
 def axis_reporting_label_not_wired(output: Any | None) -> str:
     label = axis_reporting_label(output, default="not_wired")
-    assert label is not None
+    if label is None:
+        raise RuntimeError("axis_reporting_label returned None despite default")
     return label
 
 

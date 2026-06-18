@@ -174,7 +174,8 @@ def main(argv: list[str] | None = None) -> int:
         uri = entry["uri"]
 
         if not args.dry_run:
-            assert store is not None
+            if store is None:
+                raise RuntimeError("artifact store is required when dry_run is false")
             import tempfile
 
             with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
