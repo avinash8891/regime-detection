@@ -1,0 +1,26 @@
+CLAUDE.md
+  s_b075e4c0bcdfee::t_476193e8f2d510 44-57
+docs/agents/domain.md
+  s_b075e4c0bcdfee::t_ff4ccfa6a8eba9 19-23,30-38
+  s_b075e4c0bcdfee::t_476193e8f2d510 1-18,24-29,39-51
+docs/agents/triage-labels.md
+  s_b075e4c0bcdfee::t_476193e8f2d510 1-15
+docs/agents/issue-tracker.md
+  s_b075e4c0bcdfee::t_476193e8f2d510 1-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "a1ccd3043a65c802c9004c8e2afdb9387247973e",
+  "prompts": {},
+  "sessions": {
+    "s_b075e4c0bcdfee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019edafb-ccdc-7a11-8bf6-000d96c800ab",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
