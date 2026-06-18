@@ -1,0 +1,20 @@
+.jscpd.json
+  s_2b2a8495207d95::t_c7561c73b35040 12
+  s_2b2a8495207d95::t_5d6acf114cac10 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "1b2157484b07f9d8b0f5a412eaa63c9c29f65386",
+  "prompts": {},
+  "sessions": {
+    "s_2b2a8495207d95": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019edaf8-fa71-7853-a858-431517456908",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
