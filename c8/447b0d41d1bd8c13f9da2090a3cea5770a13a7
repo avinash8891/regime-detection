@@ -1,0 +1,31 @@
+.github/workflows/dependency-health.yml
+  s_2d627a98218dc2::t_969a89edfa749c 25,30,34
+.github/workflows/release.yml
+  s_2d627a98218dc2::t_969a89edfa749c 25,29
+.github/workflows/security.yml
+  s_2d627a98218dc2::t_969a89edfa749c 39,43
+.github/workflows/full-verification.yml
+  s_2d627a98218dc2::t_969a89edfa749c 25,30
+scripts/validate_agents_md.py
+  s_2d627a98218dc2::t_969a89edfa749c 26
+.github/workflows/ci.yml
+  s_2d627a98218dc2::t_969a89edfa749c 23,70
+.github/workflows/flaky-tests.yml
+  s_2d627a98218dc2::t_969a89edfa749c 20,24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "c8447b0d41d1bd8c13f9da2090a3cea5770a13a7",
+  "prompts": {},
+  "sessions": {
+    "s_2d627a98218dc2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019edb2c-05ae-7ad3-82bc-2003dc3eede7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
