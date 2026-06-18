@@ -207,6 +207,9 @@ tempCodeRunnerFile.py
 # Local raw/derived datasets
 data/
 
+# Generated runtime logs
+logs/*.out
+
 # Ruff stuff:
 .ruff_cache/
 .worktrees/
