@@ -426,16 +426,22 @@ def load_cpi_vintages_first_release(
         raise ValueError(f"cpi_vintages source missing required columns: {missing}")
     if df.empty:
         raise ValueError("cpi_vintages source must not be empty")
-    work = df.copy()
-    work.loc[:, "date"] = parse_datetime_series(
-        column_values(work, "date"),
+    parsed_dates = parse_datetime_series(
+        column_values(df, "date"),
         field_name="date",
         context="cpi_vintages source",
     )
-    work.loc[:, "realtime_start"] = parse_datetime_series(
-        column_values(work, "realtime_start"),
+    parsed_realtime_starts = parse_datetime_series(
+        column_values(df, "realtime_start"),
         field_name="realtime_start",
         context="cpi_vintages source",
+    )
+    work = pd.DataFrame(
+        {
+            "date": parsed_dates,
+            "value": column_values(df, "value"),
+            "realtime_start": parsed_realtime_starts,
+        }
     )
     # Earliest realtime_start per reference date = the first release.
     first_releases = (

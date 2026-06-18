@@ -107,6 +107,14 @@ def test_load_cpi_vintages_first_release_deduplicates_release_dates() -> None:
     assert out.tolist() == [309.7]
 
 
+def test_load_cpi_vintages_first_release_accepts_arrow_string_columns() -> None:
+    frame = _build_vintage_frame().convert_dtypes(dtype_backend="pyarrow")
+
+    out = load_cpi_vintages_first_release(frame)
+
+    assert out.loc[pd.Timestamp("2024-02-13")] == 308.5
+
+
 def test_load_cpi_vintages_first_release_empty_raises() -> None:
     empty = pd.DataFrame(columns=["date", "value", "realtime_start"])
     with pytest.raises(ValueError, match="cpi_vintages source must not be empty"):

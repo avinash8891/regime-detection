@@ -998,3 +998,10 @@ def test_timed_inflation_growth_builder_patches_axis_builder_helpers(
     assert timer.counts["axis_series.inflation_growth.assess_series_input_quality"] == 1
     assert timer.counts["axis_series.inflation_growth.build_rule_inputs_by_date"] == 1
     assert timer.counts["axis_series.inflation_growth.evaluate_rules"] == 1
+
+
+def test_install_timers_uses_current_feature_spec_symbols() -> None:
+    timer = profile_engine.StageTimer()
+
+    with profile_engine._install_timers(timer):
+        pass

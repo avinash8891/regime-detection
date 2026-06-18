@@ -95,7 +95,7 @@ def _patched_attr(module: Any, attr_name: str, replacement: Any):
 def install_timers(timer: Any):
     import regime_detection.axis_series as axis_series_module
     import regime_detection.engine as engine_module
-    import regime_detection.feature_store as feature_store_module
+    import regime_detection._feature_specs as feature_specs_module
     import regime_detection.timeline as timeline_module
 
     timed_specs = [
@@ -114,53 +114,53 @@ def install_timers(timer: Any):
             "build_transition_risk_series",
         ),
         (
-            feature_store_module,
+            feature_specs_module,
             "compute_network_fragility_features",
             "feature_store.network_fragility",
         ),
         (
-            feature_store_module,
+            feature_specs_module,
             "compute_trend_v2_features",
             "feature_store.trend_direction_v2",
         ),
         (
-            feature_store_module,
+            feature_specs_module,
             "compute_volatility_v2_features",
             "feature_store.volatility_state_v2",
         ),
         (
-            feature_store_module,
+            feature_specs_module,
             "compute_breadth_v2_features",
             "feature_store.breadth_state_v2",
         ),
         (
-            feature_store_module,
+            feature_specs_module,
             "compute_volume_liquidity_v2_features",
             "feature_store.volume_liquidity_v2",
         ),
         (
-            feature_store_module,
+            feature_specs_module,
             "compute_monetary_pressure_features",
             "feature_store.monetary_pressure_v2",
         ),
         (
-            feature_store_module,
+            feature_specs_module,
             "compute_credit_funding_features",
             "feature_store.credit_funding",
         ),
         (
-            feature_store_module,
+            feature_specs_module,
             "compute_inflation_growth_features",
             "feature_store.inflation_growth",
         ),
-        (feature_store_module, "compute_hmm_features", "feature_store.hmm"),
+        (feature_specs_module, "compute_hmm_features", "feature_store.hmm"),
         (
-            feature_store_module,
+            feature_specs_module,
             "compute_clustering_features",
             "feature_store.gmm_clustering",
         ),
         (
-            feature_store_module,
+            feature_specs_module,
             "compute_change_point_features",
             "feature_store.change_point",
         ),
