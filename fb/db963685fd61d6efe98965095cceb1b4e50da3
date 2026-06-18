@@ -1,0 +1,21 @@
+tests/test_runner_manifest_materialization.py
+  s_2b2a8495207d95::t_16d0d1e321cfd5 3,23-31,238-345
+scripts/run_historical_walkforward.py
+  s_2b2a8495207d95::t_1335c157a1a04b 56-57,545,571-574
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "fbdb963685fd61d6efe98965095cceb1b4e50da3",
+  "prompts": {},
+  "sessions": {
+    "s_2b2a8495207d95": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019edaf8-fa71-7853-a858-431517456908",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
