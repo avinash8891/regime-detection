@@ -1,0 +1,26 @@
+src/regime_detection/config.py
+  s_fae0146c2542d6::t_1f64aaf287cb88 275-276,283,308-312,317-319,336
+  s_fae0146c2542d6::t_b290b359597455 7,279,322
+tests/test_v2_config.py
+  s_fae0146c2542d6::t_bfc627691333ac 120
+  s_fae0146c2542d6::t_212748c34a192e 535,538,548
+  s_fae0146c2542d6::t_2f6f97f64d13a2 11,111-119,121-122
+  s_fae0146c2542d6::t_1693d7f428abad 530-534,536-537,539-547,549-552,554-564
+  s_fae0146c2542d6::t_38090bf9c5b4ad 553
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "f5a6e41587ebaad3161f075ebe912f246a4ed759",
+  "prompts": {},
+  "sessions": {
+    "s_fae0146c2542d6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ede0f-1e55-7860-91fb-50d43e9dc4d5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
