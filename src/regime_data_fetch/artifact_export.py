@@ -9,6 +9,8 @@ from typing import Iterable
 from regime_data_fetch.artifact_manifest import (
     ArtifactManifest,
     ManifestArtifact,
+    has_data_raw_prefix,
+    prepend_data_raw_prefix,
     strip_data_raw_prefix,
     write_manifest,
 )
@@ -173,9 +175,11 @@ def _local_path_for(
         except ValueError:
             return None
         if repo_relative == Path("configs") / "events" / "us_events.yaml":
-            return str(Path("data") / "raw" / "event_calendar" / "us_events.yaml")
+            return str(
+                prepend_data_raw_prefix(Path("event_calendar") / "us_events.yaml")
+            )
         return str(repo_relative)
-    return str(Path("data") / "raw" / relative)
+    return str(prepend_data_raw_prefix(relative))
 
 
 def _store_key_for(local_path: str) -> str:
@@ -191,7 +195,7 @@ def _canonical_artifact_name(*, name: str, local_path: str) -> str:
 
 def _daily_ohlcv_artifact_name(local_path: str) -> str | None:
     parts = Path(local_path).parts
-    if len(parts) < 5 or parts[0:2] != ("data", "raw"):
+    if len(parts) < 5 or not has_data_raw_prefix(Path(local_path)):
         return None
     if not parts[2].startswith("daily_ohlcv"):
         return None
