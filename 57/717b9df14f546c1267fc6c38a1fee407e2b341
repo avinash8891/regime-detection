@@ -1,0 +1,25 @@
+src/regime_detection/market_context.py
+  s_fae0146c2542d6::t_22e8136f89738f 294,300
+tests/test_v2_feature_store_and_axis_seams.py
+  s_fae0146c2542d6::t_f6b45b2eb52cb9 3-6,8,30-31,36-37,62-125,144,146,191,195-196,237,239-240
+  s_fae0146c2542d6::t_416040525b3c23 19-23,33
+  s_fae0146c2542d6::t_5d10cd85241bff 14,24-25,32,34-35
+src/regime_detection/calendar.py
+  s_fae0146c2542d6::t_1490aad2c1bb53 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "57717b9df14f546c1267fc6c38a1fee407e2b341",
+  "prompts": {},
+  "sessions": {
+    "s_fae0146c2542d6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ede0f-1e55-7860-91fb-50d43e9dc4d5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
