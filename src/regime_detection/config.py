@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import copy
 import importlib.resources
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -269,11 +271,24 @@ class RegimeConfig(StrictBaseModel):
         }
 
 
-def load_regime_config(path: str | Path) -> RegimeConfig:
-    data = yaml.safe_load(Path(path).read_text())
+@lru_cache(maxsize=32)
+def _config_data_from_file(
+    resolved_path: str, mtime_ns: int, size: int
+) -> dict[str, object]:
+    del mtime_ns, size
+    data = yaml.safe_load(Path(resolved_path).read_text())
     if not isinstance(data, dict):
         raise ValueError("Config file must contain a YAML mapping at the top level")
-    return RegimeConfig.model_validate(data)
+    return data
+
+
+def load_regime_config(path: str | Path) -> RegimeConfig:
+    config_path = Path(path)
+    stat = config_path.stat()
+    data = _config_data_from_file(
+        str(config_path.resolve()), stat.st_mtime_ns, stat.st_size
+    )
+    return RegimeConfig.model_validate(copy.deepcopy(data))
 
 
 def _default_config_resource_name_for_version(version: str) -> str:
@@ -302,6 +317,14 @@ def default_config_text() -> str:
     return pkg_file.read_text(encoding="utf-8")
 
 
+@lru_cache(maxsize=1)
+def _default_config_data() -> dict[str, object]:
+    data = yaml.safe_load(default_config_text())
+    if not isinstance(data, dict):
+        raise ValueError("Default config must contain a YAML mapping at the top level")
+    return data
+
+
 def load_default_regime_config() -> RegimeConfig:
     """
     Load the packaged default config shipped with the library.
@@ -313,7 +336,4 @@ def load_default_regime_config() -> RegimeConfig:
     NOTE: We load the resource content directly (instead of returning a filesystem
     Path) so this works even when the package is distributed as a zip/egg.
     """
-    data = yaml.safe_load(default_config_text())
-    if not isinstance(data, dict):
-        raise ValueError("Default config must contain a YAML mapping at the top level")
-    return RegimeConfig.model_validate(data)
+    return RegimeConfig.model_validate(copy.deepcopy(_default_config_data()))
