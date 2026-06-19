@@ -47,6 +47,7 @@ from regime_data_fetch.artifact_store import (  # noqa: E402
     strip_content_address,
 )
 from regime_data_fetch.canonical_parquet import (  # noqa: E402
+    canonical_artifact_digest,
     canonicalize_parquet_bytes,
 )
 from regime_data_fetch.daily_ohlcv_contract import (  # noqa: E402
@@ -608,19 +609,16 @@ def run_publish(
             )
             continue
 
-        if _is_parquet(local):
-            canon = canonicalize_parquet_bytes(local)
+        # Same digest scheme as emit (one home: canonical_artifact_digest) — parquet
+        # canonicalized, others raw. ``canon`` is the canonical bytes (None for raw).
+        new_sha, canon = canonical_artifact_digest(local)
+        if canon is not None:
             _validate_daily_ohlcv_symbol_contract(artifact=artifact, payload=canon)
-            new_sha = sha256_bytes(canon)
-            disk_sha = sha256_file(local)
-            if disk_sha != new_sha:
+            if sha256_file(local) != new_sha:
                 # Rewrite on-disk file with canonical bytes (atomic).
                 tmp = local.with_suffix(local.suffix + ".canon.tmp")
                 tmp.write_bytes(canon)
                 os.replace(tmp, local)
-        else:
-            new_sha = sha256_file(local)
-            canon = None
 
         if new_sha == old_sha:
             reports.append(

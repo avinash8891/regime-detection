@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pyarrow as pa
+import pyarrow.parquet as pq
+
 from regime_data_fetch.artifact_export import emit_manifest_for_report_paths
 from regime_data_fetch.artifact_manifest import load_manifest
 from regime_data_fetch.artifact_store import content_addressed_key
+from regime_data_fetch.canonical_parquet import canonical_artifact_digest
 from regime_data_fetch.manifest_inputs import resolve_runner_input_paths
 from regime_data_fetch.sf_fed_news_sentiment import SF_FED_NEWS_SENTIMENT_PARQUET
 
@@ -14,14 +18,34 @@ def _store_uri(root: Path, key: str) -> str:
     return (root.resolve() / key).as_uri()
 
 
+def _write_parquet(path: Path, marker: str) -> None:
+    """Write a real, valid parquet whose bytes are unique per ``marker`` (so two
+    fixtures still get distinct content addresses), as emit's canonicalization
+    requires actual parquet files — not the placeholder bytes the old tests used."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(
+        pa.Table.from_pylist([{"marker": marker, "value": len(marker)}]), path
+    )
+
+
+def _assert_stored_canonical(
+    store_root: Path, key: str, source: Path, sha: str
+) -> None:
+    """The store object is the canonicalized parquet bytes, and the artifact is
+    pinned by the canonical sha (proving emit canonicalized rather than raw-hashed)."""
+    expected_sha, canonical_bytes = canonical_artifact_digest(source)
+    assert sha == expected_sha
+    assert canonical_bytes is not None
+    assert (store_root / key).read_bytes() == canonical_bytes
+
+
 def test_emit_manifest_for_report_paths_uploads_existing_report_outputs(
     tmp_path: Path,
 ) -> None:
     out_dir = tmp_path / "data" / "raw"
     macro = out_dir / "macro" / "fred_macro_series.parquet"
     report = out_dir / "macro_fetch_report.json"
-    macro.parent.mkdir(parents=True)
-    macro.write_bytes(b"macro")
+    _write_parquet(macro, "macro")
     report.write_text(
         json.dumps(
             {
@@ -53,7 +77,7 @@ def test_emit_manifest_for_report_paths_uploads_existing_report_outputs(
     assert loaded.artifacts[0].uri == _store_uri(store_root, macro_key)
     assert loaded.artifacts[0].local_path == "data/raw/macro/fred_macro_series.parquet"
     assert loaded.artifacts[0].required_for == ("v2_calibration",)
-    assert (store_root / macro_key).read_bytes() == b"macro"
+    _assert_stored_canonical(store_root, macro_key, macro, loaded.artifacts[0].sha256)
 
 
 def test_emit_manifest_for_report_paths_expands_partitioned_parquet_directories(
@@ -61,8 +85,7 @@ def test_emit_manifest_for_report_paths_expands_partitioned_parquet_directories(
 ) -> None:
     out_dir = tmp_path / "data" / "raw"
     part = out_dir / "daily_ohlcv" / "symbol=SPY" / "part.parquet"
-    part.parent.mkdir(parents=True)
-    part.write_bytes(b"spy")
+    _write_parquet(part, "spy")
     report = out_dir / "fetch_report.json"
     report.write_text(
         json.dumps({"paths": {"daily_ohlcv_parquet": str(out_dir / "daily_ohlcv")}})
@@ -83,7 +106,9 @@ def test_emit_manifest_for_report_paths_expands_partitioned_parquet_directories(
     spy_key = content_addressed_key(
         "canonical/daily_ohlcv/symbol=SPY/part.parquet", manifest.artifacts[0].sha256
     )
-    assert (tmp_path / "store" / spy_key).read_bytes() == b"spy"
+    _assert_stored_canonical(
+        tmp_path / "store", spy_key, part, manifest.artifacts[0].sha256
+    )
 
 
 def test_emit_manifest_for_report_paths_allows_multi_file_symbol_partitions(
@@ -93,19 +118,15 @@ def test_emit_manifest_for_report_paths_allows_multi_file_symbol_partitions(
     symbol_dir = out_dir / "daily_ohlcv_762" / "symbol=SPY"
     part_0 = symbol_dir / "part-0.parquet"
     part_1 = symbol_dir / "part-1.parquet"
-    symbol_dir.mkdir(parents=True)
-    part_0.write_bytes(b"spy-0")
-    part_1.write_bytes(b"spy-1")
+    _write_parquet(part_0, "spy-0")
+    _write_parquet(part_1, "spy-1")
     macro = out_dir / "macro" / "fred_macro_series.parquet"
     pit = out_dir / "pit_constituents" / "sp500_ticker_intervals.parquet"
     events = out_dir / "event_calendar" / "us_events.yaml"
-    for path, payload in [
-        (macro, b"macro"),
-        (pit, b"pit"),
-        (events, b"events: []\n"),
-    ]:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
+    _write_parquet(macro, "macro")
+    _write_parquet(pit, "pit")
+    events.parent.mkdir(parents=True, exist_ok=True)
+    events.write_bytes(b"events: []\n")
     report = out_dir / "combined_report.json"
     report.write_text(
         json.dumps(
@@ -218,8 +239,7 @@ def test_emit_manifest_for_report_paths_fails_when_one_report_has_no_exportable_
 ) -> None:
     out_dir = tmp_path / "data" / "raw"
     macro = out_dir / "macro" / "fred_macro_series.parquet"
-    macro.parent.mkdir(parents=True)
-    macro.write_bytes(b"macro")
+    _write_parquet(macro, "macro")
     good_report = out_dir / "macro_fetch_report.json"
     good_report.write_text(json.dumps({"paths": {"macro_parquet": str(macro)}}))
     bad_report = out_dir / "sf_fed_news_sentiment_fetch_report.json"
@@ -252,8 +272,7 @@ def test_emit_manifest_for_report_paths_allows_explicit_non_materializable_repor
 ) -> None:
     out_dir = tmp_path / "data" / "raw"
     macro = out_dir / "macro" / "fred_macro_series.parquet"
-    macro.parent.mkdir(parents=True)
-    macro.write_bytes(b"macro")
+    _write_parquet(macro, "macro")
     good_report = out_dir / "macro_fetch_report.json"
     good_report.write_text(json.dumps({"paths": {"macro_parquet": str(macro)}}))
     ledger_report = out_dir / "ledger_report.json"
@@ -355,8 +374,7 @@ def test_emit_manifest_for_report_paths_honors_explicit_materialized_local_path(
 ) -> None:
     source_root = tmp_path / "archive" / "daily_ohlcv_762"
     source_file = source_root / "symbol=SPY" / "ohlcv.parquet"
-    source_file.parent.mkdir(parents=True)
-    source_file.write_bytes(b"spy-762")
+    _write_parquet(source_file, "spy-762")
     out_dir = tmp_path / "repo" / "data" / "raw"
     report = out_dir / "daily_ohlcv_local_sqlite_import_report.json"
     report.parent.mkdir(parents=True)
@@ -392,7 +410,9 @@ def test_emit_manifest_for_report_paths_honors_explicit_materialized_local_path(
         "canonical/daily_ohlcv_762/symbol=SPY/ohlcv.parquet",
         manifest.artifacts[0].sha256,
     )
-    assert (tmp_path / "store" / ohlcv_key).read_bytes() == b"spy-762"
+    _assert_stored_canonical(
+        tmp_path / "store", ohlcv_key, source_file, manifest.artifacts[0].sha256
+    )
 
 
 def test_emit_manifest_for_report_paths_exports_sf_fed_news_sentiment_report(
@@ -401,8 +421,7 @@ def test_emit_manifest_for_report_paths_exports_sf_fed_news_sentiment_report(
     out_dir = tmp_path / "data" / "raw"
     parquet = out_dir / "news_sentiment" / SF_FED_NEWS_SENTIMENT_PARQUET
     report = out_dir / "sf_fed_news_sentiment_fetch_report.json"
-    parquet.parent.mkdir(parents=True)
-    parquet.write_bytes(b"sf-fed-news")
+    _write_parquet(parquet, "sf-fed-news")
     report.write_text(
         json.dumps(
             {
@@ -431,7 +450,9 @@ def test_emit_manifest_for_report_paths_exports_sf_fed_news_sentiment_report(
         f"canonical/news_sentiment/{SF_FED_NEWS_SENTIMENT_PARQUET}",
         manifest.artifacts[0].sha256,
     )
-    assert (tmp_path / "store" / news_key).read_bytes() == b"sf-fed-news"
+    _assert_stored_canonical(
+        tmp_path / "store", news_key, parquet, manifest.artifacts[0].sha256
+    )
 
 
 def test_emitted_manifest_resolves_profile_runner_inputs(tmp_path: Path) -> None:
@@ -440,14 +461,11 @@ def test_emitted_manifest_resolves_profile_runner_inputs(tmp_path: Path) -> None
     macro = out_dir / "macro" / "fred_macro_series.parquet"
     pit = out_dir / "pit_constituents" / "sp500_ticker_intervals.parquet"
     events = out_dir / "event_calendar" / "us_events.yaml"
-    for path, payload in [
-        (daily, b"spy"),
-        (macro, b"macro"),
-        (pit, b"pit"),
-        (events, b"events: []\n"),
-    ]:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
+    _write_parquet(daily, "spy")
+    _write_parquet(macro, "macro")
+    _write_parquet(pit, "pit")
+    events.parent.mkdir(parents=True, exist_ok=True)
+    events.write_bytes(b"events: []\n")
     report = out_dir / "combined_report.json"
     report.write_text(
         json.dumps(
