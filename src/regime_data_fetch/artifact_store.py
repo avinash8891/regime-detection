@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from urllib.parse import urlparse
+
+_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ArtifactStoreError(RuntimeError):
@@ -74,6 +77,38 @@ class StoreCheckResult:
 
     status: StoreCheckStatus
     observed_sha: str | None = None
+
+
+def content_addressed_key(logical_key: str, sha256: str) -> str:
+    """Embed ``sha256`` into a canonical store key so distinct content lands at a
+    distinct, immutable key.
+
+    ``canonical/x/y.parquet`` + ``<sha>`` -> ``canonical/x/y.<sha>.parquet``.
+    This is what makes a re-publish of changed content write a NEW object instead
+    of overwriting one an older lockfile still pins. The logical key carries the
+    human-readable path; the sha makes the object byte-immutable.
+    """
+    if not _SHA256_HEX_RE.match(sha256):
+        raise ValueError(f"content address requires a lowercase hex sha256: {sha256!r}")
+    normalized = _normalize_relative_key(logical_key)
+    path = Path(normalized)
+    return str(path.with_name(f"{path.stem}.{sha256}{path.suffix}"))
+
+
+def strip_content_address(key: str) -> str:
+    """Inverse of :func:`content_addressed_key`: recover the stable logical key by
+    removing an embedded sha256, if present. Idempotent on already-logical keys, so
+    a re-publish can re-derive the base regardless of whether the manifest uri was
+    written by the legacy (path-only) or content-addressed scheme."""
+    path = Path(_normalize_relative_key(key))
+    # name.<sha>.ext  -> stem is "name.<sha>"
+    stem_parts = path.stem.rsplit(".", 1)
+    if len(stem_parts) == 2 and _SHA256_HEX_RE.match(stem_parts[1]):
+        return str(path.with_name(f"{stem_parts[0]}{path.suffix}"))
+    # name.<sha>  (no original extension) -> suffix is ".<sha>"
+    if path.suffix.startswith(".") and _SHA256_HEX_RE.match(path.suffix[1:]):
+        return str(path.with_suffix(""))
+    return str(path)
 
 
 def sha256_bytes(payload: bytes) -> str:

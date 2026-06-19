@@ -14,7 +14,11 @@ from regime_data_fetch.artifact_manifest import (
     strip_data_raw_prefix,
     write_manifest,
 )
-from regime_data_fetch.artifact_store import build_artifact_store
+from regime_data_fetch.artifact_store import (
+    build_artifact_store,
+    content_addressed_key,
+    sha256_file,
+)
 
 REPORT_PATH_NAME_TO_ARTIFACT_NAME = {
     "macro_parquet": "fred_macro_series",
@@ -65,7 +69,9 @@ def emit_manifest_for_report_paths(
             if local_path in seen_local_paths:
                 continue
             seen_local_paths.add(local_path)
-            key = _store_key_for(local_path)
+            key = content_addressed_key(
+                canonical_logical_key(local_path), sha256_file(path)
+            )
             stored = store.put_file(path, key)
             artifact_name = _canonical_artifact_name(name=name, local_path=local_path)
             artifacts.append(
@@ -182,7 +188,10 @@ def _local_path_for(
     return str(prepend_data_raw_prefix(relative))
 
 
-def _store_key_for(local_path: str) -> str:
+def canonical_logical_key(local_path: str) -> str:
+    """The stable, human-readable canonical store key for a ``data/raw`` path,
+    independent of content. Content-addressing (sha embedding) is applied on top
+    of this via ``content_addressed_key`` at the mint site."""
     return str(Path("canonical") / strip_data_raw_prefix(Path(local_path)))
 
 

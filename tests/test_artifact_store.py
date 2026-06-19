@@ -12,13 +12,100 @@ from regime_data_fetch.artifact_store import (
     LocalArtifactStore,
     S3ArtifactStore,
     build_artifact_store,
+    content_addressed_key,
     sha256_bytes,
     sha256_file,
+    strip_content_address,
 )
 
 
 def _store_uri(root: Path, key: str) -> str:
     return (root.resolve() / key).as_uri()
+
+
+def test_content_addressed_key_embeds_sha_before_extension() -> None:
+    sha = sha256_bytes(b"sp500-constituents")
+    key = content_addressed_key(
+        "canonical/pit_constituents/sp500_ticker_intervals.parquet", sha
+    )
+    assert key == f"canonical/pit_constituents/sp500_ticker_intervals.{sha}.parquet"
+
+
+def test_content_addressed_key_is_deterministic_and_content_separating() -> None:
+    base = "canonical/pit_constituents/sp500_ticker_intervals.parquet"
+    sha_a = sha256_bytes(b"constituents-rev-A")
+    sha_b = sha256_bytes(b"constituents-rev-B")
+    assert content_addressed_key(base, sha_a) == content_addressed_key(base, sha_a)
+    assert content_addressed_key(base, sha_a) != content_addressed_key(base, sha_b)
+
+
+def test_content_addressed_key_handles_extensionless_name() -> None:
+    sha = sha256_bytes(b"events")
+    assert (
+        content_addressed_key("canonical/event_calendar/us_events", sha)
+        == f"canonical/event_calendar/us_events.{sha}"
+    )
+
+
+def test_content_addressed_key_rejects_non_hex_sha() -> None:
+    with pytest.raises(ValueError, match="sha256"):
+        content_addressed_key(
+            "canonical/macro/fred_macro_series.parquet", "not-a-real-sha"
+        )
+
+
+def test_content_addressed_key_rejects_path_escape() -> None:
+    sha = sha256_bytes(b"x")
+    with pytest.raises(ValueError, match="relative"):
+        content_addressed_key("../escape.parquet", sha)
+
+
+def test_strip_content_address_round_trips_and_is_idempotent() -> None:
+    base = "canonical/pit_constituents/sp500_ticker_intervals.parquet"
+    sha_a = sha256_bytes(b"constituents-rev-A")
+    sha_b = sha256_bytes(b"constituents-rev-B")
+
+    addressed = content_addressed_key(base, sha_a)
+    assert strip_content_address(addressed) == base
+    # Idempotent on a legacy/logical key (no embedded sha).
+    assert strip_content_address(base) == base
+    # Re-addressing a previously-addressed key uses the base, never doubling shas.
+    assert content_addressed_key(strip_content_address(addressed), sha_b) == (
+        content_addressed_key(base, sha_b)
+    )
+
+
+def test_republish_changed_content_does_not_clobber_pinned_artifact(
+    tmp_path: Path,
+) -> None:
+    """Regression (June-18 clobber): a re-publish of changed content must not
+    overwrite the object an older lockfile pins. Content-addressed keys keep both
+    revisions resolvable, with NO overwrite flag."""
+    store = LocalArtifactStore(tmp_path / "store")
+    logical = "canonical/pit_constituents/sp500_ticker_intervals.parquet"
+
+    rev_a = tmp_path / "rev_a.parquet"
+    rev_a.write_bytes(b"sp500-constituents-1246-rows")
+    rev_b = tmp_path / "rev_b.parquet"
+    rev_b.write_bytes(b"sp500-constituents-1243-rows")
+    sha_a = sha256_file(rev_a)
+    sha_b = sha256_file(rev_b)
+
+    stored_a = store.put_file(rev_a, content_addressed_key(logical, sha_a))
+    # Later run re-fetches changed content and re-publishes — no overwrite=True.
+    stored_b = store.put_file(rev_b, content_addressed_key(logical, sha_b))
+
+    assert stored_a.uri != stored_b.uri
+    # The older pinned artifact is byte-unchanged and still resolves.
+    out_a = store.get_file(
+        stored_a.uri, tmp_path / "out_a.parquet", expected_sha256=sha_a
+    )
+    assert out_a.read_bytes() == b"sp500-constituents-1246-rows"
+    # The newer artifact resolves independently.
+    out_b = store.get_file(
+        stored_b.uri, tmp_path / "out_b.parquet", expected_sha256=sha_b
+    )
+    assert out_b.read_bytes() == b"sp500-constituents-1243-rows"
 
 
 def test_local_artifact_store_put_get_and_verify_hash(tmp_path: Path) -> None:

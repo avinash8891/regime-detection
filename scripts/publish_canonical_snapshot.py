@@ -41,8 +41,10 @@ if str(_REPO_ROOT / "src") not in sys.path:
 from regime_data_fetch.artifact_store import (  # noqa: E402
     ArtifactStore,
     build_artifact_store,
+    content_addressed_key,
     sha256_bytes,
     sha256_file,
+    strip_content_address,
 )
 from regime_data_fetch.canonical_parquet import (  # noqa: E402
     canonicalize_parquet_bytes,
@@ -626,14 +628,20 @@ def run_publish(
             )
             continue
 
-        # Manifest entry must be updated. Upload first if applicable.
+        # Content changed: mint a NEW content-addressed key so the new object never
+        # overwrites the one an older lockfile still pins. Derive the logical key
+        # from local_path (stable) — not the current uri, which may already carry a
+        # prior sha.
+        new_key = content_addressed_key(
+            strip_content_address(str(artifact["uri"])), new_sha
+        )
         if not skip_upload and store is not None:
-            key = str(artifact["uri"])
-            store.put_file(local, key, overwrite=True)
+            store.put_file(local, new_key)
 
         # Update artifact in place to preserve YAML anchors / structure.
-        manifest_updates: dict[str, object] = {"sha256": new_sha}
+        manifest_updates: dict[str, object] = {"sha256": new_sha, "uri": new_key}
         artifact["sha256"] = new_sha
+        artifact["uri"] = new_key
         if _is_parquet(local):
             if canon is None:
                 raise RuntimeError(f"canonical parquet bytes missing for {local}")
