@@ -1,0 +1,33 @@
+tests/test_artifact_manifest.py
+  s_296a9a2e58e018::t_76587d9ae3e935 172-190
+  s_296a9a2e58e018::t_657d8eeb4b7277 13,15-16
+src/regime_data_fetch/manifest_inputs.py
+  s_296a9a2e58e018::t_1f2f74054f8057 357-358,361
+  s_296a9a2e58e018::t_8cca7651d963fd 6-10
+src/regime_data_fetch/artifact_manifest.py
+  s_296a9a2e58e018::t_1b0148976b00d5 18-22,25,30-32
+src/regime_data_fetch/artifact_export.py
+  s_296a9a2e58e018::t_4b6d6f2ae6b79f 178-180
+  s_296a9a2e58e018::t_561474c9bec49d 198
+  s_296a9a2e58e018::t_d12a650f6f848b 182
+  s_296a9a2e58e018::t_fc493f51922197 12-13
+src/regime_data_fetch/materialization.py
+  s_296a9a2e58e018::t_dc16d36ae8989d 161
+  s_296a9a2e58e018::t_2975e527a7dd65 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "1a93f87bd8b38b50f4b3c6ad993a20a132b3e5c1",
+  "prompts": {},
+  "sessions": {
+    "s_296a9a2e58e018": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c6a587c-ecec-4590-8110-74a2dc0f62f5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
