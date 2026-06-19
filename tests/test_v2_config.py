@@ -8,6 +8,7 @@ References:
 from __future__ import annotations
 
 import importlib.resources
+import os
 from pathlib import Path
 
 import pytest
@@ -534,3 +535,34 @@ def test_load_default_regime_config_uses_parsed_version_dispatch(monkeypatch) ->
     cfg = load_default_regime_config()
 
     assert cfg.config_version == "core3-v2.0.0"
+
+
+def test_file_config_cache_tracks_same_size_same_mtime_replacement(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "regime.yaml"
+    data = load_default_regime_config().model_dump(mode="python")
+    data["data_quality"]["max_freshness_days"] = 3
+    config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    original_stat = config_path.stat()
+
+    first = load_regime_config(config_path)
+    data["data_quality"]["max_freshness_days"] = 4
+    config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    os.utime(config_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    second = load_regime_config(config_path)
+
+    assert config_path.stat().st_size == original_stat.st_size
+    assert config_path.stat().st_mtime_ns == original_stat.st_mtime_ns
+    assert first.data_quality.max_freshness_days == 3
+    assert second.data_quality.max_freshness_days == 4
+
+
+def test_default_config_cache_is_keyed_by_version(monkeypatch) -> None:
+    monkeypatch.setattr(config_module, "__version__", "2.0.0")
+    assert load_default_regime_config().config_version == "core3-v2.0.0"
+
+    monkeypatch.setattr(config_module, "__version__", "1.9.9")
+
+    assert load_default_regime_config().config_version == "core3-v1.0.0"

@@ -272,11 +272,9 @@ class RegimeConfig(StrictBaseModel):
 
 
 @lru_cache(maxsize=32)
-def _config_data_from_file(
-    resolved_path: str, mtime_ns: int, size: int
-) -> dict[str, object]:
-    del mtime_ns, size
-    data = yaml.safe_load(Path(resolved_path).read_text())
+def _config_data_from_text(source: str, text: str) -> dict[str, object]:
+    del source
+    data = yaml.safe_load(text)
     if not isinstance(data, dict):
         raise ValueError("Config file must contain a YAML mapping at the top level")
     return data
@@ -284,10 +282,8 @@ def _config_data_from_file(
 
 def load_regime_config(path: str | Path) -> RegimeConfig:
     config_path = Path(path)
-    stat = config_path.stat()
-    data = _config_data_from_file(
-        str(config_path.resolve()), stat.st_mtime_ns, stat.st_size
-    )
+    resolved_path = str(config_path.resolve())
+    data = _config_data_from_text(resolved_path, config_path.read_text())
     return RegimeConfig.model_validate(copy.deepcopy(data))
 
 
@@ -317,12 +313,11 @@ def default_config_text() -> str:
     return pkg_file.read_text(encoding="utf-8")
 
 
-@lru_cache(maxsize=1)
 def _default_config_data() -> dict[str, object]:
-    data = yaml.safe_load(default_config_text())
-    if not isinstance(data, dict):
-        raise ValueError("Default config must contain a YAML mapping at the top level")
-    return data
+    resource_name = _default_config_resource_name_for_version(__version__)
+    pkg_file = importlib.resources.files("regime_detection").joinpath(resource_name)
+    text = pkg_file.read_text(encoding="utf-8")
+    return _config_data_from_text(resource_name, text)
 
 
 def load_default_regime_config() -> RegimeConfig:
