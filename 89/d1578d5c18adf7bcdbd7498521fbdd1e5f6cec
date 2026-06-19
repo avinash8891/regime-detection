@@ -1,0 +1,40 @@
+tests/test_canonical_parquet.py
+  s_296a9a2e58e018::t_22ffb844fe5183 1-71
+src/regime_data_fetch/artifact_export.py
+  s_296a9a2e58e018::t_b456eab1e67a78 72-79
+  s_296a9a2e58e018::t_d6594683e825a3 21
+tests/test_artifact_export.py
+  s_296a9a2e58e018::t_dd47563693ab8a 377
+  s_296a9a2e58e018::t_1d15dd5fd8db66 80
+  s_296a9a2e58e018::t_1896521d381914 453-455
+  s_296a9a2e58e018::t_016625d738b1ef 464-468
+  s_296a9a2e58e018::t_045dbb6da617bd 424
+  s_296a9a2e58e018::t_64d473e9f58a7b 242,275
+  s_296a9a2e58e018::t_3144a7ab2b32a4 6-8,12,21-39
+  s_296a9a2e58e018::t_0b96ec87ea995c 88
+  s_296a9a2e58e018::t_c8d8ec8b0fcdcb 121-122,126-129
+  s_296a9a2e58e018::t_803687b76d4b1d 413-415
+  s_296a9a2e58e018::t_97f0d26a27a86e 48
+  s_296a9a2e58e018::t_acbabcee734686 109-111
+scripts/publish_canonical_snapshot.py
+  s_296a9a2e58e018::t_b6103c5f69316d 612-615,617
+  s_296a9a2e58e018::t_c0b788f6360626 50
+src/regime_data_fetch/canonical_parquet.py
+  s_296a9a2e58e018::t_a3655ce8c6791a 12-13,18-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "89d1578d5c18adf7bcdbd7498521fbdd1e5f6cec",
+  "prompts": {},
+  "sessions": {
+    "s_296a9a2e58e018": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8c6a587c-ecec-4590-8110-74a2dc0f62f5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
