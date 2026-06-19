@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import date
+import logging
 import os
 from pathlib import Path
+import time
 from typing import Literal
 
 import pandas as pd
@@ -29,7 +31,10 @@ from regime_detection.inflation_growth_rules import (
 )
 from regime_detection.market_context import build_market_context
 from regime_detection.models import RegimeOutput, RegimeTimeline
+from regime_detection.observability import log_event
 from regime_detection.timeline import build_regime_timeline
+
+LOGGER = logging.getLogger(__name__)
 
 ClassifyRequestSource = Literal["direct", "profile_manifest"]
 V2RequestInputPolicy = Literal["required", "optional_evidence"]
@@ -564,47 +569,75 @@ class RegimeEngine:
     def classify_request(self, request: ClassifyRequest) -> RegimeTimeline:
         """Classify a validated request through the canonical engine path."""
 
-        _validate_request_source(request)
-        lookback_days = _require_positive_lookback_days(request.lookback_days)
+        start_time = time.perf_counter()
         end_date = as_date(request.end_date)
-        require_nyse_trading_day(end_date)
-        event_calendar = _require_event_calendar(request.event_calendar)
-        # F-042 / §2.4.1: a config override may only be a validated RegimeConfig
-        # instance. ClassifyRequest is a plain dataclass (no Pydantic enforcement), so
-        # reject a non-RegimeConfig loudly at the boundary instead of failing deep inside
-        # build_market_context. The isinstance reads as "unnecessary" to pyright (the
-        # static annotation is RegimeConfig | None) but it is a real RUNTIME guard — the
-        # dataclass does not enforce the annotation at construction.
-        if request.config is not None and not isinstance(request.config, RegimeConfig):  # type: ignore[reportUnnecessaryIsInstance]
-            raise TypeError(
-                "ClassifyRequest.config override must be a RegimeConfig instance "
-                f"(§2.4.1), got {type(request.config).__name__}"
+        try:
+            _validate_request_source(request)
+            lookback_days = _require_positive_lookback_days(request.lookback_days)
+            require_nyse_trading_day(end_date)
+            event_calendar = _require_event_calendar(request.event_calendar)
+            # F-042 / §2.4.1: a config override may only be a validated RegimeConfig
+            # instance. ClassifyRequest is a plain dataclass (no Pydantic enforcement), so
+            # reject a non-RegimeConfig loudly at the boundary instead of failing deep inside
+            # build_market_context. The isinstance reads as "unnecessary" to pyright (the
+            # static annotation is RegimeConfig | None) but it is a real RUNTIME guard — the
+            # dataclass does not enforce the annotation at construction.
+            if request.config is not None and not isinstance(request.config, RegimeConfig):  # type: ignore[reportUnnecessaryIsInstance]
+                raise TypeError(
+                    "ClassifyRequest.config override must be a RegimeConfig instance "
+                    f"(§2.4.1), got {type(request.config).__name__}"
+                )
+            cfg = request.config if request.config is not None else self._config
+            # F-038: validate the V2 input contracts at the boundary BEFORE building the
+            # market context. A missing required V2 input must surface as the explicit
+            # contract error, not as an opaque failure deep inside build_market_context.
+            _validate_v2_request_input_contracts(request, cfg)
+            context = build_market_context(
+                end_date=end_date,
+                market_data=request.market_data,
+                config=cfg,
+                vix_data=request.vix_data,
+                event_calendar=event_calendar,
+                sector_etf_closes=request.sector_etf_closes,
+                cross_asset_closes=request.cross_asset_closes,
+                macro_series=request.macro_series,
+                pit_constituent_intervals=request.pit_constituent_intervals,
+                constituent_ohlcv=request.constituent_ohlcv,
+                aaii_sentiment=request.aaii_sentiment,
+                implied_vol_30d=request.implied_vol_30d,
+                central_bank_text_releases=request.central_bank_text_releases,
+                cpi_first_release=request.cpi_first_release,
+                news_sentiment=request.news_sentiment,
             )
-        cfg = request.config if request.config is not None else self._config
-        # F-038: validate the V2 input contracts at the boundary BEFORE building the
-        # market context. A missing required V2 input must surface as the explicit
-        # contract error, not as an opaque failure deep inside build_market_context.
-        _validate_v2_request_input_contracts(request, cfg)
-        context = build_market_context(
-            end_date=end_date,
-            market_data=request.market_data,
-            config=cfg,
-            vix_data=request.vix_data,
-            event_calendar=event_calendar,
-            sector_etf_closes=request.sector_etf_closes,
-            cross_asset_closes=request.cross_asset_closes,
-            macro_series=request.macro_series,
-            pit_constituent_intervals=request.pit_constituent_intervals,
-            constituent_ohlcv=request.constituent_ohlcv,
-            aaii_sentiment=request.aaii_sentiment,
-            implied_vol_30d=request.implied_vol_30d,
-            central_bank_text_releases=request.central_bank_text_releases,
-            cpi_first_release=request.cpi_first_release,
-            news_sentiment=request.news_sentiment,
-        )
-        return build_regime_timeline(
-            context=context, lookback_days=lookback_days, config=cfg
-        )
+            timeline = build_regime_timeline(
+                context=context, lookback_days=lookback_days, config=cfg
+            )
+            log_event(
+                LOGGER,
+                logging.INFO,
+                "classify_request_completed",
+                request_source=request.request_source,
+                end_date=end_date.isoformat(),
+                lookback_days=lookback_days,
+                outputs=len(timeline.outputs),
+                config_version=cfg.config_version,
+                elapsed_ms=round((time.perf_counter() - start_time) * 1000.0, 3),
+            )
+            return timeline
+        except Exception as error:
+            log_event(
+                LOGGER,
+                logging.ERROR,
+                "classify_request_failed",
+                request_source=request.request_source,
+                end_date=end_date.isoformat(),
+                lookback_days=request.lookback_days,
+                error_type=type(error).__name__,
+                message=str(error),
+                operator_action="fix request inputs or config",
+                elapsed_ms=round((time.perf_counter() - start_time) * 1000.0, 3),
+            )
+            raise
 
     def classify_window(
         self,

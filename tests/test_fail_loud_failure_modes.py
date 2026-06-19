@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from datetime import date
 from types import SimpleNamespace
 
@@ -89,6 +91,27 @@ def test_event_calendar_absence_fails_loudly_for_direct_callers() -> None:
             sessions=sessions,
             trailing_sessions=3,
         )
+
+
+def test_regime_engine_logs_rejected_request(
+    raw_market_data: pd.DataFrame,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cfg = load_default_regime_config()
+
+    with caplog.at_level(logging.ERROR, logger="regime_detection.engine"):
+        with pytest.raises(ValueError, match="event_calendar is required"):
+            RegimeEngine().classify(
+                as_of_date=date(2024, 2, 1),
+                market_data=raw_market_data,
+                config=cfg,
+            )
+
+    payload = json.loads(caplog.records[-1].message)
+    assert payload["event"] == "classify_request_failed"
+    assert payload["end_date"] == "2024-02-01"
+    assert payload["error_type"] == "ValueError"
+    assert payload["operator_action"] == "fix request inputs or config"
 
 
 def test_optional_evidence_absence_fails_loudly_for_direct_callers() -> None:
