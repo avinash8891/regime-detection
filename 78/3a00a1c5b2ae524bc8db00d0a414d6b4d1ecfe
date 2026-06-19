@@ -1,0 +1,25 @@
+tests/test_classify_series.py
+  s_a642e1232fa7b2::t_390c47acbf1d1e 10-11,90-107
+tests/test_fail_loud_failure_modes.py
+  s_a642e1232fa7b2::t_390c47acbf1d1e 3-4,96-114
+src/regime_detection/engine.py
+  s_a642e1232fa7b2::t_390c47acbf1d1e 6,9,34,37-38,572,574-610,612-640
+src/regime_detection/observability.py
+  s_a642e1232fa7b2::t_390c47acbf1d1e 54-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "783a00a1c5b2ae524bc8db00d0a414d6b4d1ecfe",
+  "prompts": {},
+  "sessions": {
+    "s_a642e1232fa7b2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ede06-3d6a-7e43-a79a-055c3cb43324",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
