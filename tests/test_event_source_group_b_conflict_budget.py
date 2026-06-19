@@ -3,8 +3,9 @@ from __future__ import annotations
 import datetime as dt
 import json
 import sqlite3
-from pathlib import Path
 from contextlib import closing
+from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -573,7 +574,7 @@ Sec. 155. To remain available until September 30, 2029.
 
 def test_default_official_budget_fetcher_combines_live_official_sources() -> None:
     def fake_fetch(url: str) -> str:
-        if "home.treasury.gov" in url:
+        if urlsplit(url).hostname == "home.treasury.gov":
             return """
 <a href="/system/files/136/Debt-Limit-Letter-to-Congress-20211116.pdf">
 Secretary Yellen Sends Debt Limit Letter to Congress (11/16/2021)</a>
@@ -624,7 +625,7 @@ def test_generator_default_fetcher_uses_requested_years_for_govinfo_discovery() 
 
     def fake_fetch(url: str) -> str:
         fetched_urls.append(url)
-        if "home.treasury.gov" in url:
+        if urlsplit(url).hostname == "home.treasury.gov":
             return ""
         if "PLAW-117publ70" in url:
             return """
