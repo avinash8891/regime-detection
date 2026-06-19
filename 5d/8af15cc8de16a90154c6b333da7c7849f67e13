@@ -1,0 +1,21 @@
+src/regime_detection/hmm_state.py
+  s_fae0146c2542d6::t_e66c0e09576eaf 32,226
+  s_fae0146c2542d6::t_61c457f06286e8 233-265,267-270,296
+  s_fae0146c2542d6::t_382dcb1d9f0c2e 24,266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "5d8af15cc8de16a90154c6b333da7c7849f67e13",
+  "prompts": {},
+  "sessions": {
+    "s_fae0146c2542d6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ede0f-1e55-7860-91fb-50d43e9dc4d5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
