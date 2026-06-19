@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,7 +29,7 @@ import numpy as np
 import pandas as pd
 from hmmlearn.base import ConvergenceMonitor
 from hmmlearn.hmm import GaussianHMM
-from joblib import Parallel, delayed
+from joblib import Parallel, cpu_count, delayed
 from scipy.optimize import linear_sum_assignment
 
 from regime_detection.config import HMMConfig
@@ -222,14 +223,51 @@ def compute_hmm_features(
     # pytest), drop to in-process serial execution so the patch takes
     # effect; otherwise dispatch the seed sweep across processes.
     is_patched = getattr(GaussianHMM, "__module__", "") != "hmmlearn.hmm"
-    n_workers = 1 if is_patched else min(len(config.random_seeds), os.cpu_count() or 1)
+    n_workers = 1 if is_patched else min(len(config.random_seeds), cpu_count())
     train_end_positions = list(
         range(n_train - 1, len(frame), max(1, config.retrain_cadence_days))
     )
     if train_end_positions[-1] != len(frame) - 1:
         train_end_positions.append(len(frame) - 1)
     backend = "threading" if is_patched else "loky"
-    with Parallel(n_jobs=n_workers, backend=backend, batch_size=1) as parallel:
+
+    def _run_seed_sweep(
+        fit_frame: np.ndarray,
+        predict_frame: np.ndarray,
+        parallel: Parallel | None,
+    ) -> list[dict[str, Any]]:
+        if parallel is None:
+            return [
+                _fit_single_seed(
+                    fit_frame=fit_frame,
+                    predict_frame=predict_frame,
+                    seed=int(seed),
+                    n_states=config.n_states,
+                    covariance_type=config.covariance_type,
+                    min_covar=config.min_covar,
+                    tol=config.tol,
+                )
+                for seed in config.random_seeds
+            ]
+        return parallel(
+            delayed(_fit_single_seed)(
+                fit_frame=fit_frame,
+                predict_frame=predict_frame,
+                seed=int(seed),
+                n_states=config.n_states,
+                covariance_type=config.covariance_type,
+                min_covar=config.min_covar,
+                tol=config.tol,
+            )
+            for seed in config.random_seeds
+        )
+
+    parallel_context = (
+        nullcontext(None)
+        if n_workers == 1
+        else Parallel(n_jobs=n_workers, backend=backend, batch_size=1)
+    )
+    with parallel_context as parallel:
         for offset, train_end_pos in enumerate(train_end_positions):
             train_frame = frame.iloc[train_end_pos - n_train + 1 : train_end_pos + 1]
             next_train_end_pos = (
@@ -255,18 +293,7 @@ def compute_hmm_features(
                 continue
             best: dict[str, Any] | None = None
             try:
-                seed_results = parallel(
-                    delayed(_fit_single_seed)(
-                        fit_frame=fit_frame,
-                        predict_frame=predict_frame,
-                        seed=int(seed),
-                        n_states=config.n_states,
-                        covariance_type=config.covariance_type,
-                        min_covar=config.min_covar,
-                        tol=config.tol,
-                    )
-                    for seed in config.random_seeds
-                )
+                seed_results = _run_seed_sweep(fit_frame, predict_frame, parallel)
             except (np.linalg.LinAlgError, ValueError) as exc:
                 _LOGGER.warning(
                     "GaussianHMM fit/predict failed at checkpoint %s; " "skipping: %s",
