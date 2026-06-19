@@ -42,7 +42,7 @@ jobs:
         run: python -m radon cc src/regime_detection/observability.py -s -n B
 
       - name: jscpd
-        run: npx jscpd --config .jscpd.json
+        run: npx jscpd@4.0.5 --config .jscpd.json
 
       - name: Deptry
         run: python -m deptry . --ignore DEP003
