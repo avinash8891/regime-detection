@@ -20,6 +20,7 @@ class TradingDayNeighbors:
     next_trading_day: date
 
 
+@lru_cache(maxsize=1)
 def nyse_calendar() -> mcal.MarketCalendar:
     return mcal.get_calendar("NYSE")
 
