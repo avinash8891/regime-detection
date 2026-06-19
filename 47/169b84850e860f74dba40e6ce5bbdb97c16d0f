@@ -1,0 +1,27 @@
+tests/test_v2_config.py
+  s_27990b968ddd89::t_e78feb74bac66d 11,538-568
+src/regime_detection/observability.py
+  s_27990b968ddd89::t_4371573bf21c34 280
+  s_27990b968ddd89::t_85873122caa4ae 169-245,260-261,269-278,282-284,290,340-365,384
+src/regime_detection/config.py
+  s_27990b968ddd89::t_34af2760011e63 275-277,285-286,317-320
+.jscpd.json
+  s_27990b968ddd89::t_5a19e453e9d8dd 2
+  s_27990b968ddd89::t_1562bbb96d2e6a 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "47169b84850e860f74dba40e6ce5bbdb97c16d0f",
+  "prompts": {},
+  "sessions": {
+    "s_27990b968ddd89": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019edeb0-0dc7-7a00-8189-1ba29680e6f0",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
