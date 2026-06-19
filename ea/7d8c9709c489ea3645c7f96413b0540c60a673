@@ -1,0 +1,19 @@
+tests/test_event_source_group_b_conflict_budget.py
+  s_b3ee14bb5c2c26::t_22dc86cc8e08a8 7-8,577,628
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "ea7d8c9709c489ea3645c7f96413b0540c60a673",
+  "prompts": {},
+  "sessions": {
+    "s_b3ee14bb5c2c26": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019edeee-1f04-7a30-9aa5-40b088130eb3",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
