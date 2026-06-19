@@ -1,0 +1,21 @@
+.github/workflows/ci.yml
+  s_fae0146c2542d6::t_2f508b2cc625a2 86
+.github/workflows/full-verification.yml
+  s_fae0146c2542d6::t_2f508b2cc625a2 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "3e6dfc7e924b394553b55fe7b5b166579bdcfcf8",
+  "prompts": {},
+  "sessions": {
+    "s_fae0146c2542d6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ede0f-1e55-7860-91fb-50d43e9dc4d5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Avinash Vankadaru <avinashvankadaru@MacBook-Air-2.local>"
+    }
+  }
+}
