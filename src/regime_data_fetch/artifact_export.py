@@ -17,8 +17,8 @@ from regime_data_fetch.artifact_manifest import (
 from regime_data_fetch.artifact_store import (
     build_artifact_store,
     content_addressed_key,
-    sha256_file,
 )
+from regime_data_fetch.canonical_parquet import canonical_artifact_digest
 
 REPORT_PATH_NAME_TO_ARTIFACT_NAME = {
     "macro_parquet": "fred_macro_series",
@@ -69,10 +69,15 @@ def emit_manifest_for_report_paths(
             if local_path in seen_local_paths:
                 continue
             seen_local_paths.add(local_path)
-            key = content_addressed_key(
-                canonical_logical_key(local_path), sha256_file(path)
+            # Canonicalize parquet artifacts so emit pins the same content address
+            # publish_canonical_snapshot would — one sha scheme across both paths.
+            sha, canonical_bytes = canonical_artifact_digest(path)
+            key = content_addressed_key(canonical_logical_key(local_path), sha)
+            stored = (
+                store.put_bytes(canonical_bytes, key)
+                if canonical_bytes is not None
+                else store.put_file(path, key)
             )
-            stored = store.put_file(path, key)
             artifact_name = _canonical_artifact_name(name=name, local_path=local_path)
             artifacts.append(
                 ManifestArtifact.from_dict(
