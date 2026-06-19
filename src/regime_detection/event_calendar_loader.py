@@ -50,10 +50,6 @@ _V2_MANUAL_TYPES = {
 _ALLOWED_TYPES = _SCHEDULED_TYPES | _V2_MANUAL_TYPES | {"ad_hoc"}
 
 
-def _none_series(index: pd.Index) -> pd.Series:
-    return pd.Series([None] * len(index), index=index, dtype="object")
-
-
 def _matches_event_market(value: object, market: str) -> bool:
     return not is_missing(value) and value in {market, "GLOBAL"}
 
@@ -122,10 +118,9 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
 
     market_values = column_values(df, "market")
     market_mask = [_matches_event_market(value, market) for value in market_values]
-    out = df.loc[market_mask].copy()
+    filtered = df.loc[market_mask]
 
-    type_values = [str(value) for value in column_values(out, "type")]
-    out.loc[:, "type"] = pd.Series(type_values, index=out.index, dtype="object")
+    type_values = [str(value) for value in column_values(filtered, "type")]
     bad_types = sorted(set(type_values) - _ALLOWED_TYPES)
     if bad_types:
         raise ValueError(
@@ -133,46 +128,41 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
         )
 
     parsed_dates = parse_date_series(
-        column_values(out, "date"),
+        column_values(filtered, "date"),
         field_name="date",
         context="event_calendar",
     )
-    out.loc[:, "date"] = parsed_dates
-    if "window_days" not in out.columns:
-        out.loc[:, "window_days"] = _none_series(out.index)
+    if "window_days" not in filtered.columns:
+        window_days_values = [None] * len(filtered)
     else:
-        out.loc[:, "window_days"] = pd.Series(
-            [_parse_window_days(value) for value in column_values(out, "window_days")],
-            index=out.index,
-            dtype="object",
-        )
-    if "publication_date" in out.columns:
-        out.loc[:, "publication_date"] = parse_date_series(
-            column_values(out, "publication_date"),
-            field_name="publication_date",
-            context="event_calendar",
-            nullable=True,
-        )
-    else:
-        out.loc[:, "publication_date"] = _none_series(out.index)
-    if "approved_label" not in out.columns:
-        out.loc[:, "approved_label"] = _none_series(out.index)
-    else:
-        approved = [
-            None if is_missing(value) else value
-            for value in column_values(out, "approved_label")
+        window_days_values = [
+            _parse_window_days(value)
+            for value in column_values(filtered, "window_days")
         ]
-        out.loc[:, "approved_label"] = pd.Series(
-            approved,
-            index=out.index,
-            dtype="object",
+    if "publication_date" in filtered.columns:
+        publication_date_values = list(
+            parse_date_series(
+                column_values(filtered, "publication_date"),
+                field_name="publication_date",
+                context="event_calendar",
+                nullable=True,
+            )
         )
+    else:
+        publication_date_values = [None] * len(filtered)
+    if "approved_label" not in filtered.columns:
+        approved_label_values = [None] * len(filtered)
+    else:
+        approved_label_values = [
+            None if is_missing(value) else value
+            for value in column_values(filtered, "approved_label")
+        ]
 
     normalized_publication_dates: list[date] = []
     for event_type, event_date_value, publication_date_value in zip(
         type_values,
         list(parsed_dates),
-        column_values(out, "publication_date"),
+        publication_date_values,
         strict=True,
     ):
         if not isinstance(event_date_value, date):
@@ -190,33 +180,21 @@ def _validate_event_df(df: pd.DataFrame, *, market: str) -> pd.DataFrame:
             else:
                 normalized_publication_dates.append(event_date_value)
             continue
-        if not isinstance(publication_date_value, date):
-            raise ValueError(
-                "event_calendar contains malformed publication_date values"
-            )
         normalized_publication_dates.append(publication_date_value)
 
-    out.loc[:, "publication_date"] = pd.Series(
-        normalized_publication_dates,
-        index=out.index,
-        dtype="object",
+    out = pd.DataFrame(
+        {
+            "date": list(parsed_dates),
+            "market": column_values(filtered, "market"),
+            "type": type_values,
+            "importance": column_values(filtered, "importance"),
+            "publication_date": normalized_publication_dates,
+            "window_days": window_days_values,
+            "approved_label": approved_label_values,
+        }
     )
 
-    return (
-        out[
-            [
-                "date",
-                "market",
-                "type",
-                "importance",
-                "publication_date",
-                "window_days",
-                "approved_label",
-            ]
-        ]
-        .sort_values(["date", "type"])
-        .reset_index(drop=True)
-    )
+    return out.sort_values(["date", "type"]).reset_index(drop=True)
 
 
 def _parse_window_days(value: object) -> list[int] | None:

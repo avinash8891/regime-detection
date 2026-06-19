@@ -10,7 +10,10 @@ from regime_data_fetch.artifact_manifest import (
     ArtifactStage,
     ManifestArtifact,
     ManifestValidationError,
+    has_data_raw_prefix,
     load_manifest,
+    prepend_data_raw_prefix,
+    strip_data_raw_prefix,
     write_manifest,
 )
 
@@ -166,3 +169,22 @@ def test_manifest_required_artifacts_for_use_case() -> None:
         "macro",
         "aaii",
     ]
+
+
+def test_data_raw_prefix_helpers_round_trip_writer_and_reader() -> None:
+    # The writer prepends the prefix to a repo-relative path; the reader strips
+    # it back. Both must agree, so prepend then strip is the identity.
+    repo_relative = Path("daily_ohlcv") / "symbol=SPY" / "ohlcv.parquet"
+    manifest_path = prepend_data_raw_prefix(repo_relative)
+
+    assert manifest_path == Path("data/raw/daily_ohlcv/symbol=SPY/ohlcv.parquet")
+    assert has_data_raw_prefix(manifest_path) is True
+    assert strip_data_raw_prefix(manifest_path) == repo_relative
+
+
+def test_data_raw_prefix_detection_rejects_non_prefixed_paths() -> None:
+    configs_path = Path("configs/events/us_events.yaml")
+
+    assert has_data_raw_prefix(configs_path) is False
+    # strip is a no-op when the prefix is absent.
+    assert strip_data_raw_prefix(configs_path) == configs_path

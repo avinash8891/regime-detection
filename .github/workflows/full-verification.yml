@@ -22,13 +22,12 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-          cache-dependency-path: requirements-dev.txt
+          cache-dependency-path: pyproject.toml
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -e . --no-deps
+          pip install -e ".[dev,audit]"
 
       - name: Ruff
         run: python -m ruff check .

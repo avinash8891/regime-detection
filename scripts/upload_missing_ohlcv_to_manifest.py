@@ -24,6 +24,7 @@ if str(_REPO_ROOT / "src") not in sys.path:
 
 from regime_data_fetch.artifact_store import (
     build_artifact_store,
+    content_addressed_key,
     sha256_bytes,
 )  # noqa: E402
 from regime_data_fetch.canonical_parquet import (  # noqa: E402
@@ -83,7 +84,9 @@ def _date_range(canon: bytes) -> tuple[str | None, str | None]:
 def _build_artifact_entry(symbol: str, canon: bytes, sha: str) -> dict:
     row_count = pq.ParquetFile(io.BytesIO(canon)).metadata.num_rows
     min_d, max_d = _date_range(canon)
-    uri = f"canonical/daily_ohlcv_762/symbol={symbol}/ohlcv.parquet"
+    uri = content_addressed_key(
+        f"canonical/daily_ohlcv_762/symbol={symbol}/ohlcv.parquet", sha
+    )
     local_path = f"data/raw/daily_ohlcv_762/symbol={symbol}/ohlcv.parquet"
     entry: dict = {
         "name": f"daily_ohlcv_762_{symbol}",
@@ -174,14 +177,15 @@ def main(argv: list[str] | None = None) -> int:
         uri = entry["uri"]
 
         if not args.dry_run:
-            assert store is not None
+            if store is None:
+                raise RuntimeError("artifact store is required when dry_run is false")
             import tempfile
 
             with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
                 tmp.write(canon)
                 tmp_path = Path(tmp.name)
             try:
-                store.put_file(tmp_path, uri, overwrite=True)
+                store.put_file(tmp_path, uri)
             finally:
                 tmp_path.unlink(missing_ok=True)
 

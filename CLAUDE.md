@@ -41,3 +41,17 @@ reconcile toward the shipped behavior — verify the code first, then fix whiche
   framing/context, AGENTS.md is the rules of engagement).
 - **Phase specs:** the four `docs/*_spec.md` files above.
 - **Latest spec-compliance review:** `spec_review.md` (root).
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default five-label triage vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo. See `docs/agents/domain.md`.

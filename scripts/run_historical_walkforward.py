@@ -53,6 +53,8 @@ from regime_detection.fragility_universe import SECTOR_ETFS  # noqa: E402
 from scripts._v2_calibration_helpers import (  # noqa: E402
     RUNNER_CROSS_ASSET_SYMBOLS,
     apply_manifest_input_defaults,
+    apply_manifest_input_paths,
+    manifest_input_overrides,
     register_manifest_input_args,
 )
 
@@ -540,6 +542,7 @@ def _parse_args() -> argparse.Namespace:
     )
     args = parser.parse_args()
     args.event_calendar = None
+    args.manifest_input_overrides = manifest_input_overrides(sys.argv[1:])
     apply_manifest_input_defaults(
         args,
         args.data_root,
@@ -564,6 +567,11 @@ def main() -> int:
         repo_root=REPO_ROOT,
         store_root=args.artifact_store,
         required_for="historical_walkforward",
+    )
+    apply_manifest_input_paths(
+        args,
+        runner_name="historical_walkforward",
+        repo_root=REPO_ROOT,
     )
     result = run_walkforward(
         market_data_path=args.market_data,

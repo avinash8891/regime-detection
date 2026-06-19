@@ -23,7 +23,7 @@ FULL_VERIFICATION_COMMANDS = (
 )
 SECURITY_COMMANDS = ("gitleaks/gitleaks-action@v2",)
 DEPENDENCY_HEALTH_COMMANDS = (
-    "python -m pip_audit -r requirements.txt -r requirements-dev.txt --progress-spinner off",
+    "python -m pip_audit --progress-spinner off",
     "python -m pip list --outdated",
     "python -m vulture src scripts --min-confidence 80",
     "python -m ruff check . --select S",

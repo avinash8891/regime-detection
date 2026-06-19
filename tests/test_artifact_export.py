@@ -5,6 +5,7 @@ from pathlib import Path
 
 from regime_data_fetch.artifact_export import emit_manifest_for_report_paths
 from regime_data_fetch.artifact_manifest import load_manifest
+from regime_data_fetch.artifact_store import content_addressed_key
 from regime_data_fetch.manifest_inputs import resolve_runner_input_paths
 from regime_data_fetch.sf_fed_news_sentiment import SF_FED_NEWS_SENTIMENT_PARQUET
 
@@ -46,14 +47,13 @@ def test_emit_manifest_for_report_paths_uploads_existing_report_outputs(
     loaded = load_manifest(manifest_path)
     assert loaded == manifest
     assert [artifact.name for artifact in loaded.artifacts] == ["fred_macro_series"]
-    assert loaded.artifacts[0].uri == _store_uri(
-        store_root, "canonical/macro/fred_macro_series.parquet"
+    macro_key = content_addressed_key(
+        "canonical/macro/fred_macro_series.parquet", loaded.artifacts[0].sha256
     )
+    assert loaded.artifacts[0].uri == _store_uri(store_root, macro_key)
     assert loaded.artifacts[0].local_path == "data/raw/macro/fred_macro_series.parquet"
     assert loaded.artifacts[0].required_for == ("v2_calibration",)
-    assert (
-        store_root / "canonical" / "macro" / "fred_macro_series.parquet"
-    ).read_bytes() == b"macro"
+    assert (store_root / macro_key).read_bytes() == b"macro"
 
 
 def test_emit_manifest_for_report_paths_expands_partitioned_parquet_directories(
@@ -80,9 +80,10 @@ def test_emit_manifest_for_report_paths_expands_partitioned_parquet_directories(
     assert [artifact.local_path for artifact in manifest.artifacts] == [
         "data/raw/daily_ohlcv/symbol=SPY/part.parquet"
     ]
-    assert (
-        tmp_path / "store" / "canonical" / "daily_ohlcv" / "symbol=SPY" / "part.parquet"
-    ).read_bytes() == b"spy"
+    spy_key = content_addressed_key(
+        "canonical/daily_ohlcv/symbol=SPY/part.parquet", manifest.artifacts[0].sha256
+    )
+    assert (tmp_path / "store" / spy_key).read_bytes() == b"spy"
 
 
 def test_emit_manifest_for_report_paths_allows_multi_file_symbol_partitions(
@@ -341,13 +342,12 @@ def test_emit_manifest_for_report_paths_exports_repo_relative_event_config(
         required_for=["profile_engine"],
     )
 
-    assert manifest.artifacts[0].local_path == "data/raw/event_calendar/us_events.yaml"
-    assert manifest.artifacts[0].uri == _store_uri(
-        tmp_path / "store", "canonical/event_calendar/us_events.yaml"
+    events_key = content_addressed_key(
+        "canonical/event_calendar/us_events.yaml", manifest.artifacts[0].sha256
     )
-    assert (
-        tmp_path / "store" / "canonical" / "event_calendar" / "us_events.yaml"
-    ).read_text() == "events: []\n"
+    assert manifest.artifacts[0].local_path == "data/raw/event_calendar/us_events.yaml"
+    assert manifest.artifacts[0].uri == _store_uri(tmp_path / "store", events_key)
+    assert (tmp_path / "store" / events_key).read_text() == "events: []\n"
 
 
 def test_emit_manifest_for_report_paths_honors_explicit_materialized_local_path(
@@ -388,14 +388,11 @@ def test_emit_manifest_for_report_paths_honors_explicit_materialized_local_path(
     assert [artifact.name for artifact in manifest.artifacts] == [
         "constituent_ohlcv_SPY"
     ]
-    assert (
-        tmp_path
-        / "store"
-        / "canonical"
-        / "daily_ohlcv_762"
-        / "symbol=SPY"
-        / "ohlcv.parquet"
-    ).read_bytes() == b"spy-762"
+    ohlcv_key = content_addressed_key(
+        "canonical/daily_ohlcv_762/symbol=SPY/ohlcv.parquet",
+        manifest.artifacts[0].sha256,
+    )
+    assert (tmp_path / "store" / ohlcv_key).read_bytes() == b"spy-762"
 
 
 def test_emit_manifest_for_report_paths_exports_sf_fed_news_sentiment_report(
@@ -430,13 +427,11 @@ def test_emit_manifest_for_report_paths_exports_sf_fed_news_sentiment_report(
     assert manifest.artifacts[0].local_path == (
         f"data/raw/news_sentiment/{SF_FED_NEWS_SENTIMENT_PARQUET}"
     )
-    assert (
-        tmp_path
-        / "store"
-        / "canonical"
-        / "news_sentiment"
-        / SF_FED_NEWS_SENTIMENT_PARQUET
-    ).read_bytes() == b"sf-fed-news"
+    news_key = content_addressed_key(
+        f"canonical/news_sentiment/{SF_FED_NEWS_SENTIMENT_PARQUET}",
+        manifest.artifacts[0].sha256,
+    )
+    assert (tmp_path / "store" / news_key).read_bytes() == b"sf-fed-news"
 
 
 def test_emitted_manifest_resolves_profile_runner_inputs(tmp_path: Path) -> None:

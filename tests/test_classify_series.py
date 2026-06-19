@@ -7,6 +7,8 @@ classify() on every emitted session.
 
 from __future__ import annotations
 
+import json
+import logging
 from datetime import date
 from pathlib import Path
 
@@ -83,6 +85,26 @@ def test_classify_series_agrees_with_pointwise_classify(
     assert row["volatility_state"] == point.volatility_state.active_label
     assert row["breadth_state"] == point.breadth_state.active_label
     assert row["transition_risk"] == point.transition_risk.state
+
+
+def test_classify_logs_completed_run(
+    raw_market_data: pd.DataFrame,
+    event_calendar_df: pd.DataFrame,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.INFO, logger="regime_detection.engine"):
+        RegimeEngine().classify(
+            as_of_date=date(2024, 1, 10),
+            market_data=raw_market_data,
+            event_calendar=event_calendar_df,
+            config=_v1_config(),
+        )
+
+    payload = json.loads(caplog.records[-1].message)
+    assert payload["event"] == "classify_request_completed"
+    assert payload["end_date"] == "2024-01-10"
+    assert payload["outputs"] == 1
+    assert payload["config_version"] == "core3-v1.0.0"
 
 
 def test_classify_series_agrees_with_pointwise_classify_multi_day(

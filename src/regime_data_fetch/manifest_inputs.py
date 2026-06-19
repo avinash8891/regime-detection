@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from regime_data_fetch.artifact_manifest import ManifestArtifact, load_manifest
+from regime_data_fetch.artifact_manifest import (
+    ManifestArtifact,
+    has_data_raw_prefix,
+    load_manifest,
+)
 from regime_data_fetch.materialization import destination_for
 
 
@@ -350,10 +354,11 @@ def _constituent_tree_root(
 def _is_constituent_ohlcv_artifact(artifact: ManifestArtifact) -> bool:
     if artifact.name.startswith(("constituent_ohlcv_", "daily_ohlcv_parquet_")):
         return True
-    parts = Path(artifact.local_path).parts
+    local_path = Path(artifact.local_path)
+    parts = local_path.parts
     return (
         len(parts) >= 5
-        and parts[0:2] == ("data", "raw")
+        and has_data_raw_prefix(local_path)
         and parts[2].startswith("daily_ohlcv")
         and parts[3].startswith("symbol=")
     )

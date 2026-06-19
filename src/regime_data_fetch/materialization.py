@@ -6,8 +6,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from regime_data_fetch.artifact_manifest import (
-    DATA_RAW_PREFIX,
     ManifestArtifact,
+    has_data_raw_prefix,
     load_manifest,
     strip_data_raw_prefix,
 )
@@ -158,7 +158,7 @@ def destination_for(
     artifact: ManifestArtifact, local_root: Path, *, repo_root: Path | None = None
 ) -> Path:
     local_path = Path(artifact.local_path)
-    if local_path.parts[: len(DATA_RAW_PREFIX)] == DATA_RAW_PREFIX:
+    if has_data_raw_prefix(local_path):
         return local_root / strip_data_raw_prefix(local_path)
     if repo_root is None:
         return local_root / local_path

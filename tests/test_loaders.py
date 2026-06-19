@@ -92,3 +92,18 @@ def test_load_event_calendar_ignores_missing_market_values() -> None:
     loaded = load_event_calendar(source)
 
     assert list(loaded["type"]) == ["CPI"]
+
+
+def test_load_event_calendar_accepts_arrow_string_columns() -> None:
+    source = pd.DataFrame(
+        {
+            "date": ["2026-01-02"],
+            "market": ["US"],
+            "type": ["FOMC"],
+            "importance": ["high"],
+        }
+    ).convert_dtypes(dtype_backend="pyarrow")
+
+    loaded = load_event_calendar(source)
+
+    assert loaded.loc[0, "date"] == date(2026, 1, 2)

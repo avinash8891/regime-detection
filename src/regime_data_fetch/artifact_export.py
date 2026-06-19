@@ -9,10 +9,16 @@ from typing import Iterable
 from regime_data_fetch.artifact_manifest import (
     ArtifactManifest,
     ManifestArtifact,
+    has_data_raw_prefix,
+    prepend_data_raw_prefix,
     strip_data_raw_prefix,
     write_manifest,
 )
-from regime_data_fetch.artifact_store import build_artifact_store
+from regime_data_fetch.artifact_store import (
+    build_artifact_store,
+    content_addressed_key,
+    sha256_file,
+)
 
 REPORT_PATH_NAME_TO_ARTIFACT_NAME = {
     "macro_parquet": "fred_macro_series",
@@ -63,7 +69,9 @@ def emit_manifest_for_report_paths(
             if local_path in seen_local_paths:
                 continue
             seen_local_paths.add(local_path)
-            key = _store_key_for(local_path)
+            key = content_addressed_key(
+                canonical_logical_key(local_path), sha256_file(path)
+            )
             stored = store.put_file(path, key)
             artifact_name = _canonical_artifact_name(name=name, local_path=local_path)
             artifacts.append(
@@ -173,12 +181,17 @@ def _local_path_for(
         except ValueError:
             return None
         if repo_relative == Path("configs") / "events" / "us_events.yaml":
-            return str(Path("data") / "raw" / "event_calendar" / "us_events.yaml")
+            return str(
+                prepend_data_raw_prefix(Path("event_calendar") / "us_events.yaml")
+            )
         return str(repo_relative)
-    return str(Path("data") / "raw" / relative)
+    return str(prepend_data_raw_prefix(relative))
 
 
-def _store_key_for(local_path: str) -> str:
+def canonical_logical_key(local_path: str) -> str:
+    """The stable, human-readable canonical store key for a ``data/raw`` path,
+    independent of content. Content-addressing (sha embedding) is applied on top
+    of this via ``content_addressed_key`` at the mint site."""
     return str(Path("canonical") / strip_data_raw_prefix(Path(local_path)))
 
 
@@ -191,7 +204,7 @@ def _canonical_artifact_name(*, name: str, local_path: str) -> str:
 
 def _daily_ohlcv_artifact_name(local_path: str) -> str | None:
     parts = Path(local_path).parts
-    if len(parts) < 5 or parts[0:2] != ("data", "raw"):
+    if len(parts) < 5 or not has_data_raw_prefix(Path(local_path)):
         return None
     if not parts[2].startswith("daily_ohlcv"):
         return None

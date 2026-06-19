@@ -51,6 +51,12 @@ def _json_log(
     logger.log(level, json.dumps(body, sort_keys=True, default=str))
 
 
+def log_event(
+    logger: logging.Logger, level: int, event: str, **payload: object
+) -> None:
+    _json_log(logger, level, event, **payload)
+
+
 def _env_float(name: str, default: float) -> float:
     raw_value = os.environ.get(name)
     if raw_value is None or not raw_value.strip():

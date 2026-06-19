@@ -15,11 +15,21 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 DATA_RAW_PREFIX: tuple[str, ...] = ("data", "raw")
 
 
+def has_data_raw_prefix(path: Path) -> bool:
+    """True if ``path`` begins with the conventional ``data/raw/`` prefix."""
+    return path.parts[: len(DATA_RAW_PREFIX)] == DATA_RAW_PREFIX
+
+
 def strip_data_raw_prefix(path: Path) -> Path:
     """Strip the conventional ``data/raw/`` prefix from a manifest-relative path."""
-    if path.parts[: len(DATA_RAW_PREFIX)] == DATA_RAW_PREFIX:
+    if has_data_raw_prefix(path):
         return Path(*path.parts[len(DATA_RAW_PREFIX) :])
     return path
+
+
+def prepend_data_raw_prefix(path: Path) -> Path:
+    """Prepend the conventional ``data/raw/`` prefix to a repo-relative path."""
+    return Path(*DATA_RAW_PREFIX) / path
 
 
 class ManifestValidationError(ValueError):
