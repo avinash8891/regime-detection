@@ -9,8 +9,26 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pyarrow.types as pat
 
+from regime_data_fetch.artifact_store import sha256_bytes, sha256_file
+
 _PARQUET_COMPRESSION = "snappy"
 _PARQUET_COERCE_TIMESTAMPS = "us"
+
+
+def canonical_artifact_digest(path: Path) -> tuple[str, bytes | None]:
+    """Digest an artifact for content-addressed storage using ONE sha scheme.
+
+    Parquet files are canonicalized: the returned sha is over the canonical bytes,
+    and those bytes are returned so the caller stores them verbatim. Non-parquet
+    files are hashed raw (sha over the file as-is) and ``None`` bytes signal "store
+    the file unchanged". This keeps every artifact-creation path (emit and
+    ``publish_canonical_snapshot``) on the same scheme, so a parquet artifact gets
+    the same content address regardless of which path produced it.
+    """
+    if path.suffix.lower() == ".parquet":
+        canonical = canonicalize_parquet_bytes(path)
+        return sha256_bytes(canonical), canonical
+    return sha256_file(path), None
 
 
 def canonicalize_parquet_bytes(source: Path | BinaryIO) -> bytes:
