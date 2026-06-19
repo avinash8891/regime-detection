@@ -291,13 +291,13 @@ def _require_market_data_contract(
         raise ValueError(
             f"market_data must include {cap_weight_symbol} row for as_of_date={as_of_date.isoformat()}"
         )
-    uniq_dates = sorted({d for d in dates.dropna().unique()})
+    uniq_dates = set(dates.dropna().unique())
     if uniq_dates:
         start = min(uniq_dates)
         end = max(uniq_dates)
         sessions = nyse_sessions_between(start, end)
         session_set = set(sessions)
-        bad_dates = [d for d in uniq_dates if d not in session_set]
+        bad_dates = sorted(d for d in uniq_dates if d not in session_set)
         if bad_dates:
             raise ValueError(
                 "market_data contains non-NYSE session dates (forbidden in V1). "

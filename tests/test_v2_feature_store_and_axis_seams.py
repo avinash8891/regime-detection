@@ -1,19 +1,38 @@
 from __future__ import annotations
 
+import os
+import pickle
+import time
+from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from regime_detection.axis_series import (
+    AxisSeriesBundle,
     build_network_fragility_axis_series,
     build_axis_series_bundle,
 )
 from regime_detection.engine import RegimeEngine
-from regime_detection.feature_store import NetworkFragilityFeatures, build_feature_store
-from regime_detection.market_context import build_market_context
+from regime_detection.feature_store import (
+    FeatureStore,
+    NetworkFragilityFeatures,
+    build_feature_store,
+)
+from regime_detection.market_context import MarketContext, build_market_context
+from regime_detection.models import NetworkFragilityOutput
 
 _REAL_V2_AS_OF = date(2026, 5, 13)
+
+
+@dataclass(frozen=True)
+class _RealV2NetworkFragilityArtifacts:
+    context: MarketContext
+    store: FeatureStore
+    network_fragility_axis: dict[date, NetworkFragilityOutput] | None
+    bundle: AxisSeriesBundle
 
 
 def _build_context_with_real_v2_universe(
@@ -40,6 +59,70 @@ def _build_context_with_real_v2_universe(
     )
 
 
+def _build_real_v2_network_fragility_artifacts(
+    v2_market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
+) -> _RealV2NetworkFragilityArtifacts:
+    context = _build_context_with_real_v2_universe(
+        v2_market_df_for_asof,
+        synthetic_v2_kwargs_for_market_data,
+    )
+    store = build_feature_store(context, **context.config.v2_feature_build_configs())
+    network_fragility_axis = build_network_fragility_axis_series(context, store)
+    bundle = build_axis_series_bundle(context=context, feature_store=store)
+    return _RealV2NetworkFragilityArtifacts(
+        context=context,
+        store=store,
+        network_fragility_axis=network_fragility_axis,
+        bundle=bundle,
+    )
+
+
+@pytest.fixture(scope="session")
+def real_v2_network_fragility_artifacts(
+    v2_market_df_for_asof,
+    synthetic_v2_kwargs_for_market_data,
+    tmp_path_factory: pytest.TempPathFactory,
+    worker_id: str,
+) -> _RealV2NetworkFragilityArtifacts:
+    if worker_id == "master":
+        return _build_real_v2_network_fragility_artifacts(
+            v2_market_df_for_asof,
+            synthetic_v2_kwargs_for_market_data,
+        )
+
+    shared_dir = Path(tmp_path_factory.getbasetemp()).parent
+    cache_path = shared_dir / "real_v2_network_fragility_artifacts_2026_05_13.pkl"
+    lock_path = shared_dir / "real_v2_network_fragility_artifacts_2026_05_13.lock"
+
+    if cache_path.exists():
+        return pickle.loads(cache_path.read_bytes())
+
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+        result = _build_real_v2_network_fragility_artifacts(
+            v2_market_df_for_asof,
+            synthetic_v2_kwargs_for_market_data,
+        )
+        tmp = cache_path.with_suffix(".pkl.tmp")
+        tmp.write_bytes(pickle.dumps(result))
+        tmp.replace(cache_path)
+        return result
+    except FileExistsError:
+        pass
+
+    deadline = time.monotonic() + 300.0
+    while time.monotonic() < deadline:
+        if cache_path.exists():
+            return pickle.loads(cache_path.read_bytes())
+        time.sleep(0.2)
+    raise RuntimeError(
+        "real_v2_network_fragility_artifacts build timed out waiting on "
+        f"peer worker; cache_path={cache_path}"
+    )
+
+
 # ---------- feature_store seam -----------------------------------------------
 
 
@@ -58,15 +141,9 @@ def test_feature_store_network_fragility_fails_loudly_without_sector_data(
 
 
 def test_feature_store_populates_network_fragility_with_real_v2_universe(
-    v2_market_df_for_asof,
-    synthetic_v2_kwargs_for_market_data,
+    real_v2_network_fragility_artifacts,
 ) -> None:
-    context = _build_context_with_real_v2_universe(
-        v2_market_df_for_asof,
-        synthetic_v2_kwargs_for_market_data,
-    )
-
-    store = build_feature_store(context, **context.config.v2_feature_build_configs())
+    store = real_v2_network_fragility_artifacts.store
 
     assert store.network_fragility is not None
     assert store.availability["network_fragility"].available is True
@@ -111,18 +188,12 @@ def test_network_fragility_classifier_fails_loudly_without_sector_data(
 
 
 def test_network_fragility_classifier_returns_real_fixture_outputs(
-    v2_market_df_for_asof,
-    synthetic_v2_kwargs_for_market_data,
+    real_v2_network_fragility_artifacts,
 ) -> None:
     """Slice 1.4: with tracked real V2 universe data the classifier emits
     deterministic per-day outputs from the v2 §3.3 label set."""
-    context = _build_context_with_real_v2_universe(
-        v2_market_df_for_asof,
-        synthetic_v2_kwargs_for_market_data,
-    )
-    store = build_feature_store(context, **context.config.v2_feature_build_configs())
-
-    result = build_network_fragility_axis_series(context, store)
+    context = real_v2_network_fragility_artifacts.context
+    result = real_v2_network_fragility_artifacts.network_fragility_axis
 
     assert result is not None
     assert set(result.keys()) == set(context.sessions)
@@ -163,16 +234,10 @@ def test_axis_bundle_network_fragility_is_none_in_pure_v1_mode(
 
 
 def test_axis_bundle_network_fragility_present_with_real_v2_universe(
-    v2_market_df_for_asof,
-    synthetic_v2_kwargs_for_market_data,
+    real_v2_network_fragility_artifacts,
 ) -> None:
-    context = _build_context_with_real_v2_universe(
-        v2_market_df_for_asof,
-        synthetic_v2_kwargs_for_market_data,
-    )
-    store = build_feature_store(context, **context.config.v2_feature_build_configs())
-
-    bundle = build_axis_series_bundle(context=context, feature_store=store)
+    context = real_v2_network_fragility_artifacts.context
+    bundle = real_v2_network_fragility_artifacts.bundle
 
     assert bundle.network_fragility is not None
     assert len(bundle.network_fragility) == len(context.sessions)
